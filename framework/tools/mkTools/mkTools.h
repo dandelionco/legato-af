@@ -14,7 +14,7 @@
 #ifndef LEGATO_MKTOOLS_H_INCLUDE_GUARD
 #define LEGATO_MKTOOLS_H_INCLUDE_GUARD
 
-
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <list>
