@@ -480,6 +480,11 @@ if [ "$OPT_KMESG" -ne 1 ]; then
    message $COLOR_WARN " Kernel logs disabled, it should take few seconds to boot"
 fi
 
+echo "RUNNING:"
+echo $QEMU_BIN
+echo $ARGS
+echo $CMDLINE
+
 $QEMU_BIN $ARGS -append "$CMDLINE"
 EXIT_CODE=$?
 

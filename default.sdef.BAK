@@ -19,12 +19,14 @@ apps:
     $LEGATO_ROOT/apps/platformServices/smsInboxService
     $LEGATO_ROOT/apps/platformServices/voiceCallService
     $LEGATO_ROOT/apps/platformServices/gpioService
-    $LEGATO_ROOT/apps/platformServices/atClient
-    $LEGATO_ROOT/apps/platformServices/atServer
-    $LEGATO_ROOT/apps/platformServices/spiService
 
     // Command-line tools.
     $LEGATO_ROOT/apps/tools/tools
+
+    // Dandelion Custom Applications
+    $LEGATO_ROOT/apps/dandelionApps/cellularMonitor/cellularMonitor
+    //$LEGATO_ROOT/apps/dandelionApps/wifiController/wifiController
+    $LEGATO_ROOT/apps/dandelionApps/heatPumpManager/heatPumpManager
 }
 
 commands:
@@ -33,8 +35,6 @@ commands:
     fwupdate = tools:/bin/fwupdate
     secstore = tools:/bin/secstore
     pmtool = tools:/bin/pmtool
-    gnss = tools:/bin/gnss
-    uartMode = tools:/bin/uartMode
 }
 
 bindings:
