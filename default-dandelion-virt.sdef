@@ -25,7 +25,7 @@ apps:
 
     // Dandelion Custom Applications
     $LEGATO_ROOT/apps/dandelionApps/cellularMonitor/cellularMonitor
-    //$LEGATO_ROOT/apps/dandelionApps/wifiController/wifiController
+    $LEGATO_ROOT/apps/dandelionApps/wifiController/wifiController
     $LEGATO_ROOT/apps/dandelionApps/heatPumpManager/heatPumpManager
 }
 
