@@ -60,3 +60,6 @@ docManagement
 
 # 3rd Party content
 3rdParty/*
+
+#dandelion custom apps copied here by yocto
+apps/dandelionApps
