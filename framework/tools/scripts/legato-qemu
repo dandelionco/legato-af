@@ -659,6 +659,11 @@ fi
 while true; do
     QEMU_START=$(date +%s)
 
+    echo "RUNNING:"
+    echo $QEMU_BIN
+    echo $ARGS
+    echo $CMDLINE
+
     $QEMU_BIN $ARGS -append "$CMDLINE"
     EXIT_CODE=$?
 

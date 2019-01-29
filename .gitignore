@@ -68,3 +68,6 @@ docManagement
 # Apps
 # apps/platformServices/airVantageConnector/
 # apps/leTP
+
+#dandelion custom apps copied here by yocto
+apps/dandelionApps
