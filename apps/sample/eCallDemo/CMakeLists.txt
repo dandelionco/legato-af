@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 # Creates application from eCallDemo.adef
@@ -11,6 +11,6 @@ mkapp(eCallDemo.adef
 )
 
 # This is a sample application
-add_dependencies(samples eCallDemo)
+add_dependencies(samples_c eCallDemo)
 
 generate_header(eCallAppComponent/ecallApp.api)

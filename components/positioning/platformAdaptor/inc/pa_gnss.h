@@ -5,7 +5,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -13,7 +13,7 @@
  *
  * Legato @ref c_pa_gnss include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PA_GNSS_INCLUDE_GUARD
@@ -71,14 +71,15 @@ pa_Gnss_Date_t;
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct {
-    uint16_t                satId;          ///< Satellite in View ID number.
-    le_gnss_Constellation_t satConst;       ///< GNSS constellation type.
-    bool                    satUsed;        ///< TRUE if satellite in View Used for Navigation.
-    uint8_t                 satSnr;         ///< Satellite in View Signal To Noise Ratio [dBHz].
-    uint16_t                satAzim;        ///< Satellite in View Azimuth [degrees].
-                                            ///< Range: 0 to 360
-    uint8_t                satElev;         ///< Satellite in View Elevation [degrees].
-                                            ///< Range: 0 to 90
+    uint16_t                satId;        ///< Satellite in View ID number.
+    le_gnss_Constellation_t satConst;     ///< GNSS constellation type.
+    bool                    satUsed;      ///< TRUE if satellite in View is used for fix Navigation.
+    bool                    satTracked;   ///< TRUE if satellite in View is tracked for Navigation.
+    uint8_t                 satSnr;       ///< Satellite in View Signal To Noise Ratio [dBHz].
+    uint16_t                satAzim;      ///< Satellite in View Azimuth [degrees].
+                                          ///< Range: 0 to 360
+    uint8_t                satElev;       ///< Satellite in View Elevation [degrees].
+                                          ///< Range: 0 to 90
 }
 Pa_Gnss_SvInfo_t;
 
@@ -114,6 +115,10 @@ typedef struct {
     int32_t            altitude;  ///< The Altitude in meters, above Mean Sea Level,
                                   ///  with 3 decimal places.
 
+    bool               altitudeAssumedValid; ///< if true, altitude assumed is set
+    bool               altitudeAssumed;  ///< if false, the altitude is calculated
+                                         ///< if true the altitude is assumed.
+
     bool               altitudeOnWgs84Valid; ///< if true, altitudeOnWgs84 is set
     int32_t            altitudeOnWgs84;  ///< The altitudeOnWgs84 in meters, between WGS-84 earth
                                          ///  ellipsoid and mean sea level with 3 decimal places.
@@ -135,17 +140,23 @@ typedef struct {
                                   ///  decimal place (308  = 30.8 degrees).
 
     bool               hdopValid; ///< if true, horizontal dilution is set
-    uint16_t           hdop;      ///< The horizontal Dilution of Precision (DOP)
+    uint32_t           hdop;      ///< The horizontal dilution of precision (DOP)
 
     bool               pdopValid; ///< if true, position dilution is set
-    uint16_t           pdop;      ///< The Position dilution of precision (DOP)
+    uint32_t           pdop;      ///< The position dilution of precision (DOP)
 
-    bool               vdopValid; ///< if true, vertical dilition is set
-    uint16_t           vdop;      ///< The vertical Dilution of Precision (DOP)
+    bool               vdopValid; ///< if true, vertical dilution is set
+    uint32_t           vdop;      ///< The vertical dilution of precision (DOP)
+
+    bool               gdopValid; ///< if true, geometric dilution is set
+    uint32_t           gdop;      ///< The geometric dilution of precision (DOP)
+
+    bool               tdopValid; ///< if true, time dilution is set
+    uint32_t           tdop;      ///< The time dilution of precision (DOP)
 
     bool               hUncertaintyValid; ///< if true, horizontal uncertainty is set
     uint32_t           hUncertainty;  ///< The horizontal uncertainty in meters,
-                                      ///  with 1 decimal place
+                                      ///  with 2 decimal places
 
     bool               vUncertaintyValid; ///< if true, vertical uncertainty is set
     uint32_t           vUncertainty;  ///< The vertical uncertainty in meters,
@@ -167,17 +178,23 @@ typedef struct {
     uint32_t           directionUncertainty;        ///< The direction uncertainty in degrees,
                                                     ///  with 1 decimal place
     // UTC time
-    bool               timeValid;                   ///< if true, time is set
-    pa_Gnss_Time_t     time;                        ///< The time of the fix
-    bool               dateValid;                   ///< if true, date is set
-    pa_Gnss_Date_t     date;                        ///< The date of the fix
+    bool               timeValid;           ///< if true, time is set
+    pa_Gnss_Time_t     time;                ///< The time of the fix
+    uint64_t           epochTime;           ///< Epoch time in milliseconds since Jan. 1, 1970
+    bool               dateValid;           ///< if true, date is set
+    pa_Gnss_Date_t     date;                ///< The date of the fix
+
+    // Leap Seconds
+    bool               leapSecondsValid;    ///< if true, leapSeconds is set
+    uint8_t            leapSeconds;         ///< UTC leap seconds in advance in seconds
+
     // GPS time
     bool               gpsTimeValid;        ///< if true, GPS time is set
     uint32_t           gpsWeek;             ///< GPS week number from midnight, Jan. 6, 1980.
     uint32_t           gpsTimeOfWeek;       ///< Amount of time in milliseconds into the GPS week.
     // Time accuracy
     bool            timeAccuracyValid;      ///< if true, timeAccuracy is set
-    uint32_t        timeAccuracy;           ///< Estimated Accuracy for time in milliseconds
+    uint32_t        timeAccuracy;           ///< Estimated Accuracy for time in nanoseconds
 
     // Position measurement latency
     bool            positionLatencyValid;   ///< if true, positionLatency is set
@@ -445,6 +462,23 @@ LE_SHARED le_result_t pa_gnss_DisableExtendedEphemerisFile
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * This function must be called to inject UTC time into the GNSS device.
+ *
+ * @return
+ *  - LE_OK            The function succeeded.
+ *  - LE_FAULT         The function failed to inject the UTC time.
+ *  - LE_TIMEOUT       A time-out occurred.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_gnss_InjectUtcTime
+(
+    uint64_t timeUtc,      ///< [IN] UTC time since Jan. 1, 1970 in milliseconds
+    uint32_t timeUnc       ///< [IN] Time uncertainty in milliseconds
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function must be called to restart the GNSS device.
  *
  * @return LE_FAULT         The function failed.
@@ -551,6 +585,7 @@ LE_SHARED le_result_t pa_gnss_SetSuplServerUrl
  *
  * @return
  *  - LE_OK on success
+ *  - LE_BAD_PARAMETER on invalid parameter
  *  - LE_FAULT on failure
  *  - LE_BUSY service is busy
  *  - LE_TIMEOUT a time-out occurred
@@ -570,6 +605,7 @@ LE_SHARED le_result_t pa_gnss_InjectSuplCertificate
  *
  * @return
  *  - LE_OK on success
+ *  - LE_BAD_PARAMETER on invalid parameter
  *  - LE_FAULT on failure
  *  - LE_BUSY service is busy
  *  - LE_TIMEOUT a time-out occurred
@@ -608,6 +644,90 @@ LE_SHARED le_result_t pa_gnss_SetNmeaSentences
 LE_SHARED le_result_t pa_gnss_GetNmeaSentences
 (
     le_gnss_NmeaBitMask_t* nmeaMaskPtr ///< [OUT] Bit mask for enabled NMEA sentences.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the GNSS minimum elevation.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_gnss_SetMinElevation
+(
+    uint8_t  minElevation      ///< [IN] Minimum elevation.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ *   Get the GNSS minimum elevation.
+ *
+* @return
+*  - LE_OK on success
+*  - LE_BAD_PARAMETER if minElevationPtr is NULL
+*  - LE_FAULT on failure
+*  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_gnss_GetMinElevation
+(
+   uint8_t*  minElevationPtr     ///< [OUT] Minimum elevation.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the area for the GNSS constellation
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ *  - LE_BAD_PARAMETER on invalid constellation area
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_gnss_SetConstellationArea
+(
+    le_gnss_Constellation_t satConstellation,        ///< [IN] GNSS constellation used in solution.
+    le_gnss_ConstellationArea_t constellationArea    ///< [IN] GNSS constellation area.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the area for the GNSS constellation
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_gnss_GetConstellationArea
+(
+    le_gnss_Constellation_t satConstellation,         ///< [IN] GNSS constellation used in solution.
+    le_gnss_ConstellationArea_t* constellationAreaPtr ///< [OUT] GNSS constellation area.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Convert a location data parameter from/to multi-coordinate system
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_BAD_PARAMETER if locationDataDstPtr is NULL
+ *  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_gnss_ConvertDataCoordinateSystem
+(
+    le_gnss_CoordinateSystem_t coordinateSrc,    ///< [IN] Coordinate system to convert from.
+    le_gnss_CoordinateSystem_t coordinateDst,    ///< [IN] Coordinate system to convert to.
+    le_gnss_LocationDataType_t locationDataType, ///< [IN] Type of location data to convert.
+    int64_t locationDataSrc,                     ///< [IN] Data to convert.
+    int64_t* locationDataDstPtr                  ///< [OUT] Converted Data.
 );
 
 #endif // LEGATO_PA_GNSS_INCLUDE_GUARD

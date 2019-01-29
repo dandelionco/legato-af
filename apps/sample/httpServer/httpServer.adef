@@ -2,15 +2,8 @@ sandboxed: true
 
 bundles:
 {
-    file:
-    {
-        [x] binaries/lighttpd /usr/local/bin/
-
-    }
-
     dir:
     {
-        binaries/lib /modlibs
         pages /pages
         cfg /cfg
     }
@@ -24,9 +17,7 @@ requires:
         /etc/nsswitch.conf /etc/nsswitch.conf
         /lib/libnss_compat.so.2 /lib/libnss_compat.so.2
         /lib/libnsl.so.1 /lib/libnsl.so.1
-        /lib/libproc-3.2.8.so /lib/libproc-3.2.8.so
         /etc/passwd /etc/passwd    // needed by python to lookup user
-        /lib/libcrypto.so.1.0.0 /lib/libcrypto.so.1.0.0
         /legato/systems/current/version /legato/systems/current/version
         /legato/systems/current/status /legato/systems/current/status
     }
@@ -57,6 +48,17 @@ requires:
     }
 }
 
+extern:
+{
+    requires:
+    {
+        le_cfg = $LEGATO_ROOT/interfaces/le_cfg.api
+        le_update = $LEGATO_ROOT/interfaces/le_update.api
+        le_appInfo = $LEGATO_ROOT/interfaces/le_appInfo.api
+    }
+
+}
+
 bindings:
 {
     *.le_cfg -> <root>.le_cfg
@@ -74,6 +76,13 @@ processes:
 
     run:
     {
-        (lighttpd -m /modlibs/ -D -f /cfg/lighttpd.conf )
+        ( lighttpd -m /modlibs/ -D -f /cfg/lighttpd.conf )
     }
+}
+
+components:
+{
+    ${LEGATO_ROOT}/components/3rdParty/openssl
+    ${LEGATO_ROOT}/components/3rdParty/lighttpd
+    sslCertComponent
 }

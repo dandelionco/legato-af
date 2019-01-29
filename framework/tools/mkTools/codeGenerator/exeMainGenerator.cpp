@@ -2,7 +2,7 @@
 /**
  * @file exeMainGenerator.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -37,9 +37,10 @@ void GenerateCLangExeMain
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating startup code for executable '" << exeName << "'"
-                     " (" << exePtr->path << ") "
-                     "in '" << sourceFile << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating startup code for executable '%s' (%s) "
+                                        "in '%s'."),
+                                exeName, exePtr->path, sourceFile)
+                  << std::endl;
     }
 
     // Open the file as an output stream.
@@ -47,7 +48,9 @@ void GenerateCLangExeMain
     std::ofstream outputFile(sourceFile);
     if (outputFile.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + sourceFile + ",' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), sourceFile)
+        );
     }
 
     // Generate the file header comment and #include directives.
@@ -56,9 +59,8 @@ void GenerateCLangExeMain
                   "// This is a generated file, do not edit.\n"
                   "\n"
                   "#include \"legato.h\"\n"
-                  "#include \"../src/eventLoop.h\"\n"
-                  "#include \"../src/log.h\"\n"
-                  "#include \"../src/args.h\"\n"
+                  "#include \"../liblegato/eventLoop.h\"\n"
+                  "#include \"../liblegato/log.h\"\n"
                   "#include <dlfcn.h>\n"
                   "\n"
                   "\n";
@@ -132,7 +134,7 @@ void GenerateCLangExeMain
                   "int main(int argc, char* argv[])\n"
                   "{\n"
                   "    // Pass the args to the Command Line Arguments API.\n"
-                  "    arg_SetArgs((size_t)argc, (char**)argv);\n"
+                  "    le_arg_SetArgs((size_t)argc, (char**)argv);\n"
 
     // Make stdout line buffered.
                   "    // Make stdout line buffered so printf shows up in logs without flushing.\n"
@@ -171,9 +173,12 @@ void GenerateCLangExeMain
                 outputFile << "    LoadLib(\"" << filePath << "\");\n";
             }
         }
-        if (!componentPtr->lib.empty())
+
+        std::string componentLib = componentPtr->getTargetInfo<target::LinuxComponentInfo_t>()->lib;
+
+        if (!componentLib.empty())
         {
-            outputFile << "    LoadLib(\"" << path::GetLastNode(componentPtr->lib) << "\");\n";
+            outputFile << "    LoadLib(\"" << path::GetLastNode(componentLib) << "\");\n";
         }
     }
 
@@ -185,6 +190,14 @@ void GenerateCLangExeMain
         outputFile << "// Queue the default component's COMPONENT_INIT to Event Loop.\n"
                       "    event_QueueComponentInit(" << initFuncName << ");\n";
     }
+
+    outputFile << "    // Set the Signal Fault handler\n"
+                  "    le_sig_InstallShowStackHandler();\n"
+                  "\n";
+
+    outputFile << "    // Set the Signal Term handler\n"
+                  "    le_sig_InstallDefaultTermHandler();\n"
+                  "\n";
 
     // Start the event loop and finish up the file.
     outputFile << "    LE_DEBUG(\"== Starting Event Processing Loop ==\");\n"

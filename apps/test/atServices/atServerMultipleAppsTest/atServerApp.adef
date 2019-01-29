@@ -17,8 +17,9 @@ processes:
 }
 
 start: manual
+sandboxed: false
 
 bindings:
 {
-    atServerApp.atServerApp.le_atServer -> atServer.le_atServer
+    atServerApp.atServerApp.le_atServer -> atService.le_atServer
 }

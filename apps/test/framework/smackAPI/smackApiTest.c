@@ -3,7 +3,7 @@
  *
  * Unit test for the SMACK API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -42,8 +42,17 @@ COMPONENT_INIT
     LE_TEST(smack_SetLabel("/dev/null", "testLabel1") == LE_OK);
 
     char label[LIMIT_MAX_SMACK_LABEL_BYTES];
-    LE_TEST( (getxattr("/dev/null", "security.SMACK64", label, sizeof(label)) >= 0) &&
-             (strcmp(label, "testLabel1") == 0) );
+    ssize_t labelSize;
+    LE_TEST((labelSize = getxattr("/dev/null", "security.SMACK64", label, sizeof(label)-1)) >= 0);
+    if (labelSize >= 0)
+    {
+        label[labelSize] = '\0';
+    }
+    else
+    {
+        label[0] = '\0';
+    }
+    LE_TEST(strcmp(label, "testLabel1") == 0);
 
     // Test set my process label.
     smack_SetMyLabel("smackTest");

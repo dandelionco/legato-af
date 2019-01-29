@@ -1,16 +1,17 @@
 #!/bin/bash
 # source this for functions only
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 
 BIN_PATH="/legato/systems/current/bin"
 
-# if SSH_PORT is defined add the port option to ssh
-SSH_PORT=${SSH_PORT:=22}
-SSH_OPTS="-p $SSH_PORT"
-#because scp uses upper case 'p' for port option!
-SCP_OPTS="-P $SSH_PORT"
+# If SSH_PORT is defined add the port option to ssh
+SSH_PORT="${SSH_PORT:=22}"
+SSH_EXTRA_OPTS="-o ServerAliveInterval=5 -o ServerAliveCountMax=1 ${SSH_EXTRA_OPTS}"
+SSH_OPTS="-p ${SSH_PORT} ${SSH_EXTRA_OPTS}"
+# Because scp uses upper case 'p' for port option!
+SCP_OPTS="-P ${SSH_PORT} ${SSH_EXTRA_OPTS}"
 
-commandName=$(basename $0)
+commandName="$(basename "$0")"
 
 SetMarkup() {
     markedup="<!--${MARKUP_HELP_DOX}-->"
@@ -27,12 +28,12 @@ SetMarkup() {
 }
 
 UsageHasOptionalTargetIp() {
-for name in ${help_usage[@]}; do
-    if [[ $name = "[TARGET_IP]" ]];then
-        return 0
-    fi
-done
-return 1
+    for name in ${help_usage[@]}; do
+        if [[ $name = "[TARGET_IP]" ]];then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # We don't use options ergo don't implement options section yet
@@ -148,6 +149,16 @@ ExitWithError()
     exit 1
 }
 
+CheckRet()
+{
+    local retval=$?
+    if [ $retval -ne 0 ]; then
+
+        local message=${1:-"Exit code $retval"}
+        ExitWithError "$message"
+    fi
+}
+
 AddSshOpts()
 {
     SSH_OPTS+=" $@"
@@ -210,15 +221,25 @@ SetTargetIP()
 # Function to be able to use the toolchain within a script
 FindToolchain() {
     toolchain_dir_env_name=${TARGET^^}_TOOLCHAIN_DIR
+    toolchain_prefix_env_name=${TARGET^^}_TOOLCHAIN_PREFIX
 
     TOOLCHAIN_DIR=${!toolchain_dir_env_name}
     if [ -z "$TOOLCHAIN_DIR" ]; then
-        TOOLCHAIN_DIR=$(findtoolchain $TARGET)
+        TOOLCHAIN_DIR=$(findtoolchain $TARGET dir)
+    fi
+
+    TOOLCHAIN_PREFIX=${!toolchain_prefix_env_name}
+    if [ -z "$TOOLCHAIN_PREFIX" ]; then
+        TOOLCHAIN_PREFIX=$(findtoolchain $TARGET prefix)
+    fi
+
+    if [ -z "$LEGATO_SYSROOT" ]; then
+        LEGATO_SYSROOT=$(findtoolchain $TARGET sysroot)
     fi
 
     TOOLCHAIN_ROOT=$(readlink -f "$TOOLCHAIN_DIR/../../..")
 
-    export PATH=$TOOLCHAIN_ROOT/usr/bin:$TOOLCHAIN_ROOT/usr/sbin:$PATH
+    export PATH=$TOOLCHAIN_ROOT/usr/bin:$TOOLCHAIN_ROOT/usr/sbin:$TOOLCHAIN_ROOT/sbin:$PATH
 }
 
 # Function to find a tool, eventually considering the toolchain if FindToolchain

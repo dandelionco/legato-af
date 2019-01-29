@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
 # Contributors:
 #     Sierra Wireless - initial API and implementation
@@ -16,7 +16,8 @@ set(TESTLOG_STDERR_FILE_PATH            ${CMAKE_CURRENT_BINARY_DIR}/logStdErr.tx
 set(TESTLOG_LOGTEST_PATH                ${EXECUTABLE_OUTPUT_PATH}/${TEST_EXEC})
 
 add_definitions(-DTESTLOG_LOGTOOL_PATH="${TESTLOG_LOGTOOL_PATH}"
-                -DTESTLOG_STDERR_FILE_PATH="${TESTLOG_STDERR_FILE_PATH}")
+                -DTESTLOG_STDERR_FILE_PATH="${TESTLOG_STDERR_FILE_PATH}"
+                -I${LEGATO_ROOT}/framework/liblegato)
 
 # Executable
 
@@ -29,11 +30,6 @@ add_legato_executable(${TEST_EXEC}
     component2.c
 )
 
-# Dependencies
-
-add_dependencies(${TEST_EXEC} logDaemon)
-add_dependencies(${TEST_EXEC} log)
-
 # Testing
 
 # FIXME: log tool has evolved and tests have not been updated
@@ -41,3 +37,5 @@ add_dependencies(${TEST_EXEC} log)
 #set_tests_properties(testFwLog PROPERTIES
 #    ENVIRONMENT "SERVICE_DIRECTORY_PATH=${TESTLOG_SERVICE_DIRECTORY_PATH};LOGDAEMON_PATH=${TESTLOG_LOGDAEMON_PATH};LOG_STDERR_PATH=${TESTLOG_STDERR_FILE_PATH};LOGTOOL_PATH=${TESTLOG_LOGTOOL_PATH};LOGTEST_PATH=${TESTLOG_LOGTEST_PATH}")
 
+# This is a C test
+add_dependencies(tests_c ${TEST_EXEC})

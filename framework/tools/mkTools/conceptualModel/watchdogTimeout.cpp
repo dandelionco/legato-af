@@ -2,7 +2,7 @@
 /**
  *  Implementation of the WatchdogTimeout class.
  *
- *  Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -17,9 +17,11 @@ namespace model
  * Assignment operator.  Validates and stores watchdogTimeout value
  *
  * @throws mk::Exception_t if timeout is not -1, 0 or positive.
+ *
+ * @return reference of this object.
  */
 //--------------------------------------------------------------------------------------------------
-void WatchdogTimeout_t::operator =
+WatchdogTimeout_t& WatchdogTimeout_t::operator =
 (
     int32_t milliseconds
 )
@@ -32,9 +34,11 @@ void WatchdogTimeout_t::operator =
     }
     else
     {
-        throw mk::Exception_t("watchdogTimeout must be a positive number of milliseconds,"
-                                   " 0 (expire immediately) or -1 (never expire).");
+        throw mk::Exception_t(LE_I18N("watchdogTimeout must be a positive number of milliseconds,"
+                                " 0 (expire immediately) or -1 (never expire)."));
     }
+
+    return *this;
 }
 
 
@@ -43,9 +47,11 @@ void WatchdogTimeout_t::operator =
  * Assignment operator.  Validates and stores the timeout value for 'never' timeout (-1)
  *
  * @throws mk::Exception_t if string is not 'never'
+ *
+ * @return reference of this object.
  */
 //--------------------------------------------------------------------------------------------------
-void WatchdogTimeout_t::operator =
+WatchdogTimeout_t& WatchdogTimeout_t::operator =
 (
     const std::string &never
 )
@@ -53,8 +59,8 @@ void WatchdogTimeout_t::operator =
 {
     if (never != "never")
     {
-        throw mk::Exception_t("WatchdogTimeout must be a positive number of milliseconds or"
-                                   " 'never'.");
+        throw mk::Exception_t(LE_I18N("WatchdogTimeout must be a positive number of milliseconds or"
+                                      " 'never'."));
     }
     else
     {
@@ -63,6 +69,8 @@ void WatchdogTimeout_t::operator =
         value = -1;
         isSet = true;
     }
+
+    return *this;
 }
 
 
@@ -84,7 +92,7 @@ const
 {
     if (!isSet)
     {
-        throw mk::Exception_t("Fetching watchdog timeout that has not been set.");
+        throw mk::Exception_t(LE_I18N("Fetching watchdog timeout that has not been set."));
     }
 
     return value;

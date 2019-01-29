@@ -5,15 +5,22 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
 #include "interfaces.h"
 #include "le_spiLibrary.h"
+#include "watchdogChain.h"
 
 #define MAX_EXPECTED_DEVICES (8)
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * The timer interval to kick the watchdog chain.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MS_WDOG_INTERVAL 8
 
 typedef struct
 {
@@ -25,6 +32,7 @@ typedef struct
 
 static bool IsDeviceOwnedByCaller(const Device_t* handle);
 static Device_t const* FindDeviceWithInode(ino_t inode);
+static void CloseDevice(le_spi_DeviceHandleRef_t handle, Device_t* device);
 static void CloseAllHandlesOwnedByClient(le_msg_SessionRef_t owner);
 static void ClientSessionClosedHandler(le_msg_SessionRef_t clientSession, void* context);
 
@@ -54,6 +62,12 @@ le_result_t le_spi_Open
                                    ///  access the SPI device
 )
 {
+    if (handle == NULL)
+    {
+        LE_KILL_CLIENT("handle is NULL.");
+        return LE_FAULT;
+    }
+
     *handle = NULL;
 
     char devicePath[256];
@@ -149,16 +163,9 @@ void le_spi_Close
         return;
     }
 
-    // Remove the handle from the map so it can't be used again
-    le_ref_DeleteRef(DeviceHandleRefMap, handle);
-
-    int closeResult = close(device->fd);
-    if (closeResult != 0)
-    {
-        LE_WARN("Couldn't close the fd cleanly: (%m)");
-    }
-    le_mem_Release(device);
+    CloseDevice(handle, device);
 }
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -211,6 +218,12 @@ le_result_t le_spi_WriteReadHD
     size_t* readDataLength        ///< [in/out] Number of bytes in rx message
 )
 {
+    if (readData == NULL)
+    {
+        LE_KILL_CLIENT("readData is NULL.");
+        return LE_FAULT;
+    }
+
     Device_t* device = le_ref_Lookup(DeviceHandleRefMap, handle);
     if (device == NULL)
     {
@@ -282,6 +295,12 @@ le_result_t le_spi_WriteReadFD
     size_t *readDataLength        ///< [in/out] Number of bytes in rx message
 )
 {
+    if (readData == NULL)
+    {
+        LE_KILL_CLIENT("readData is NULL.");
+        return LE_FAULT;
+    }
+
     Device_t* device = le_ref_Lookup(DeviceHandleRefMap, handle);
     if (device == NULL)
     {
@@ -322,6 +341,12 @@ le_result_t le_spi_ReadHD
     size_t* readDataLength        ///< [in/out] Number of bytes in tx message
 )
 {
+    if (readData == NULL)
+    {
+        LE_KILL_CLIENT("readData is NULL.");
+        return LE_FAULT;
+    }
+
     Device_t* device = le_ref_Lookup(DeviceHandleRefMap, handle);
     if (device == NULL)
     {
@@ -384,6 +409,27 @@ static Device_t const* FindDeviceWithInode
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Close the device associated with the handle.
+ *
+ * No check is performed to verify that the device is associated with the handle
+ * because it is assumed that the caller will have already verified this.
+ */
+//--------------------------------------------------------------------------------------------------
+static void CloseDevice(le_spi_DeviceHandleRef_t handle, Device_t* device)
+{
+    // Remove the handle from the map so it can't be used again
+    le_ref_DeleteRef(DeviceHandleRefMap, handle);
+
+    int closeResult = close(device->fd);
+    if (closeResult != 0)
+    {
+        LE_WARN("Couldn't close the fd cleanly: (%m)");
+    }
+    le_mem_Release(device);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Closes all of the handles that are owned by a specific client session.  The purpose of this
  * function is to free resources on the server side when it is detected that a client has
  * disconnected.
@@ -400,7 +446,7 @@ static void CloseAllHandlesOwnedByClient
     bool finished = le_ref_NextNode(it) != LE_OK;
     while (!finished)
     {
-        Device_t const* device = le_ref_GetValue(it);
+        Device_t* device = le_ref_GetValue(it);
         LE_ASSERT(device != NULL);
         // In order to prevent invalidating the iterator, we store the reference of the device we
         // want to close and advance the iterator before calling le_spi_Close which will remove the
@@ -410,7 +456,7 @@ static void CloseAllHandlesOwnedByClient
         finished = le_ref_NextNode(it) != LE_OK;
         if (toClose != NULL)
         {
-            le_spi_Close(toClose);
+            CloseDevice(toClose, device);
         }
     }
 }
@@ -438,4 +484,9 @@ COMPONENT_INIT
 
     // Register a handler to be notified when clients disconnect
     le_msg_AddServiceCloseHandler(le_spi_GetServiceRef(), ClientSessionClosedHandler, NULL);
+
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_Init(1);
+    le_wdogChain_MonitorEventLoop(0, watchdogInterval);
 }

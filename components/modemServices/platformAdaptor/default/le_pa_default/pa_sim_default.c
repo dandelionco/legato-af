@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_sim.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -105,6 +105,25 @@ le_result_t pa_sim_GetState
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * This function rerieves the identifier for the embedded Universal Integrated Circuit Card (EID)
+ * (16 digits)
+ *
+ * @return LE_OK            The function succeeded.
+ * @return LE_FAULT         The function failed.
+ * @return LE_UNSUPPORTED   The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_GetCardEID
+(
+   pa_sim_Eid_t eid               ///< [OUT] the EID value
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function must be called to register a handler for new SIM state notification handling.
  *
  * @return A handler reference, which is only needed for later removal of the handler.
@@ -141,11 +160,11 @@ le_result_t pa_sim_RemoveNewStateHandler
 /**
  * This function enter the PIN code.
  *
+ * @return LE_OK            The function succeeded.
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
- * @return LE_TIMEOUT       No response was received from the SIM card.
- * @return LE_OK            The function succeeded.
- */
+ * @return LE_TIMEOUT       No response received from the SIM card.
+  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_sim_EnterPIN
 (
@@ -393,6 +412,7 @@ le_result_t pa_sim_CloseLogicalChannel
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_sim_SendApdu
 (
+    uint8_t        channel, ///< [IN] Logical channel.
     const uint8_t* apduPtr, ///< [IN] APDU message buffer
     uint32_t       apduLen, ///< [IN] APDU message length in bytes
     uint8_t*       respPtr, ///< [OUT] APDU message response.
@@ -489,57 +509,147 @@ le_result_t pa_sim_ConfirmSimToolkitCommand
  *      - LE_NOT_FOUND      - The function failed to select the SIM card for this operation
  *                          - The requested SIM file is not found
  *      - LE_OVERFLOW       Response buffer is too small to copy the SIM answer.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_sim_SendCommand
 (
-    le_sim_Command_t command,
-        ///< [IN]
-        ///< The SIM command.
-
-    const char* fileIdentifier,
-        ///< [IN]
-        ///< File identifier
-
-    uint8_t p1,
-        ///< [IN]
-        ///< Parameter P1 passed to the SIM
-
-    uint8_t p2,
-        ///< [IN]
-        ///< Parameter P2 passed to the SIM
-
-    uint8_t p3,
-        ///< [IN]
-        ///< Parameter P3 passed to the SIM
-
-    const uint8_t* dataPtr,
-        ///< [IN]
-        ///< data command.
-
-    size_t dataNumElements,
-        ///< [IN]
-
-    const char* path,
-        ///< [IN]
-        ///< path of the elementary file
-
-    uint8_t* sw1Ptr,
-        ///< [OUT]
-        ///< SW1 received from the SIM
-
-    uint8_t* sw2Ptr,
-        ///< [OUT]
-        ///< SW2 received from the SIM
-
-    uint8_t* responsePtr,
-        ///< [OUT]
-        ///< SIM response.
-
-    size_t* responseNumElementsPtr
-        ///< [INOUT]
+    le_sim_Command_t command,               ///< [IN] The SIM command
+    const char*      fileIdentifierPtr,     ///< [IN] File identifier
+    uint8_t          p1,                    ///< [IN] Parameter P1 passed to the SIM
+    uint8_t          p2,                    ///< [IN] Parameter P2 passed to the SIM
+    uint8_t          p3,                    ///< [IN] Parameter P3 passed to the SIM
+    const uint8_t*   dataPtr,               ///< [IN] Data command
+    size_t           dataNumElements,       ///< [IN] Size of data command
+    const char*      pathPtr,               ///< [IN] Path of the elementary file
+    uint8_t*         sw1Ptr,                ///< [OUT] SW1 received from the SIM
+    uint8_t*         sw2Ptr,                ///< [OUT] SW2 received from the SIM
+    uint8_t*         responsePtr,           ///< [OUT] SIM response
+    size_t*          responseNumElementsPtr ///< [IN/OUT] Size of response
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to reset the SIM.
+ *
+ * @return
+ *      - LE_OK          On success.
+ *      - LE_FAULT       On failure.
+ *      - LE_UNSUPPORTED The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_Reset
+(
+    void
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to write the FPLMN list into the modem.
+ *
+ * @return
+ *      - LE_OK             On success.
+ *      - LE_FAULT          On failure.
+ *      - LE_BAD_PARAMETER  A parameter is invalid.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_WriteFPLMNList
+(
+    le_dls_List_t *FPLMNListPtr ///< [IN] List of FPLMN operators
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the number of FPLMN operators present in the list.
+ *
+ * @return
+ *      - LE_OK             On success.
+ *      - LE_FAULT          On failure.
+ *      - LE_BAD_PARAMETER  A parameter is invalid.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_CountFPLMNOperators
+(
+    uint32_t*  nbItemPtr     ///< [OUT] number of FPLMN operator found if success.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to read the FPLMN list.
+ *
+ * @return
+ *      - LE_OK             On success.
+ *      - LE_NOT_FOUND      If no FPLMN network is available.
+ *      - LE_BAD_PARAMETER  A parameter is invalid.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_ReadFPLMNOperators
+(
+    pa_sim_FPLMNOperator_t* FPLMNOperatorPtr,   ///< [OUT] FPLMN operators.
+    uint32_t* FPLMNOperatorCountPtr             ///< [IN/OUT] FPLMN operator count.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieve the last SIM Toolkit status.
+ *
+ * @return
+ *      - LE_OK             On success.
+ *      - LE_BAD_PARAMETER  A parameter is invalid.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_GetLastStkStatus
+(
+    pa_sim_StkEvent_t*  stkStatus  ///< [OUT] last SIM Toolkit event status
+)
+{
+    if (NULL == stkStatus)
+    {
+        return LE_BAD_PARAMETER;
+    }
+
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Powers up or down the current SIM card.
+ *
+ * @return
+ *      - LE_OK          On success
+ *      - LE_FAULT       For unexpected error
+ *      - LE_UNSUPPORTED The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_sim_SetPower
+(
+    le_onoff_t power     ///< [IN] The power state.
+)
+{
+    return LE_UNSUPPORTED;
 }

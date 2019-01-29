@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 find_package(Legato REQUIRED)
@@ -10,4 +10,4 @@ mkapp(modemDemo.adef
 )
 
 # This is a sample application
-add_dependencies(samples modemDemo)
+add_dependencies(samples_c modemDemo)

@@ -4,13 +4,15 @@
  *
  * This file contains the source code of the Ring Indicator signal API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
 #include "legato.h"
 #include "interfaces.h"
 #include "pa_riPin.h"
+#include "le_ms_local.h"
+#include "watchdogChain.h"
 
 
 //--------------------------------------------------------------------------------------------------
@@ -121,6 +123,11 @@ static void* PulseRingSignalThread
 
     le_sem_Post(ThreadSemaphore);
 
+    // Watchdog riPin loop
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_MonitorEventLoop(MS_WDOG_RIPIN_LOOP, watchdogInterval);
+
     // Run the event loop
     le_event_RunLoop();
 
@@ -165,15 +172,16 @@ le_result_t le_riPin_Init
  * Check whether the application core is the current owner of the Ring Indicator signal.
  *
  * @return
- *      - LE_OK           The function succeeded.
- *      - LE_FAULT        The function failed.
- *      - LE_UNSUPPORTED  The platform does not support this operation.
+ *      - LE_OK              The function succeeded.
+ *      - LE_FAULT           The function failed.
+ *      - LE_BAD_PARAMETER   Bad input parameter.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_riPin_AmIOwnerOfRingSignal
 (
-    bool* amIOwnerPtr ///< true when application core is the owner of the Ring Indicator signal,
-                      ///  false when modem core is the owner of the Ring Indicator signal.
+    bool* amIOwnerPtr ///< [OUT] true when application core is the owner of the Ring Indicator
+                      ///        signal,
+                      ///        false when modem core is the owner of the Ring Indicator signal
 )
 {
     return pa_riPin_AmIOwnerOfRingSignal(amIOwnerPtr);
@@ -231,13 +239,13 @@ void le_riPin_PulseRingSignal
 
     res = pa_riPin_AmIOwnerOfRingSignal(&isAppCoreOwner);
 
-    if (res == LE_FAULT)
+    if (LE_OK != res)
     {
         LE_ERROR("Cannot determine the RI pin owner");
         return;
     }
 
-    if ((res == LE_OK) && !isAppCoreOwner)
+    if (false == isAppCoreOwner)
     {
         LE_WARN("Cannot perform this operation, Modem core is the owner of the signal!");
         return;

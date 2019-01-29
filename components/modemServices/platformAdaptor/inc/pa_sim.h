@@ -30,7 +30,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -38,7 +38,7 @@
  *
  * Legato @ref c_pa_sim include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PASIM_INCLUDE_GUARD
@@ -84,6 +84,14 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Maximum EID Code length.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+#define PA_SIM_EID_MAX_LEN     32
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Type of PIN.
  *
  */
@@ -126,7 +134,6 @@ typedef char pa_sim_Imsi_t[PA_SIM_IMSI_MAX_LEN+1];
 //--------------------------------------------------------------------------------------------------
 /**
  * Type definition for a pin code (8 digit max)
- *
  */
 //--------------------------------------------------------------------------------------------------
 typedef char pa_sim_Pin_t[PA_SIM_PIN_MAX_LEN+1];
@@ -134,36 +141,68 @@ typedef char pa_sim_Pin_t[PA_SIM_PIN_MAX_LEN+1];
 //--------------------------------------------------------------------------------------------------
 /**
  * Type definition for a puk code (8 digit max)
- *
  */
 //--------------------------------------------------------------------------------------------------
 typedef char pa_sim_Puk_t[PA_SIM_PUK_MAX_LEN+1];
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Type definition for EID code (32 digits)
+ */
+//--------------------------------------------------------------------------------------------------
+typedef char pa_sim_Eid_t[PA_SIM_EID_MAX_LEN+1];
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Event type used for new SIM state notification.
- *
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    le_sim_Id_t      simId;   ///< The SIM identififier
-    le_sim_States_t  state;   ///< The SIM state.
+    le_sim_Id_t      simId;   ///< The SIM identifier
+    le_sim_States_t  state;   ///< The SIM state
 }
 pa_sim_Event_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
  * Event type used for SIM Toolkit notification.
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    le_sim_Id_t              simId;             ///< The SIM identifier
+    le_sim_StkEvent_t        stkEvent;          ///< The SIM Toolkit event
+    le_sim_StkRefreshMode_t  stkRefreshMode;    ///< The SIM Toolkit Refresh mode
+    le_sim_StkRefreshStage_t stkRefreshStage;   ///< The SIM Toolkit Refresh stage
+}
+pa_sim_StkEvent_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Mobile code.
  *
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    le_sim_Id_t        simId;      ///< The SIM identififier
-    le_sim_StkEvent_t  stkEvent;   ///< The SIM Toolkit event.
+    char mcc[LE_MRC_MCC_BYTES]; ///< MCC: Mobile Country Code
+    char mnc[LE_MRC_MNC_BYTES]; ///< MNC: Mobile Network Code
 }
-pa_sim_StkEvent_t;
+pa_sim_MobileCode_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * FPLMN operators.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    pa_sim_MobileCode_t mobileCode; ///< Mobile code
+    le_dls_Link_t       link;       ///< link for the FPLMN list
+}
+pa_sim_FPLMNOperator_t;
 
 //--------------------------------------------------------------------------------------------------
 // APIs.
@@ -204,7 +243,7 @@ LE_SHARED le_result_t pa_sim_SelectCard
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function get the card on which operations are operated.
+ * This function gets the card on which operations are operated.
  *
  * @return LE_FAULT         The function failed.
  * @return LE_TIMEOUT       No response was received.
@@ -218,7 +257,7 @@ LE_SHARED le_result_t pa_sim_GetSelectedCard
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function get the card identification (ICCID).
+ * This function gets the card identification (ICCID).
  *
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
@@ -233,7 +272,7 @@ LE_SHARED le_result_t pa_sim_GetCardIdentification
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function get the International Mobile Subscriber Identity (IMSI).
+ * This function gets the International Mobile Subscriber Identity (IMSI).
  *
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
@@ -243,12 +282,27 @@ LE_SHARED le_result_t pa_sim_GetCardIdentification
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_sim_GetIMSI
 (
-    pa_sim_Imsi_t imsi   ///< [OUT] IMSI value
+    pa_sim_Imsi_t imsi        ///< [OUT] IMSI value
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function get the SIM Status.
+ * This function rerieves the identifier for the embedded Universal Integrated Circuit Card (EID)
+ * (16 digits)
+ *
+ * @return LE_OK            The function succeeded.
+ * @return LE_FAULT         The function failed.
+ * @return LE_UNSUPPORTED   The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_GetCardEID
+(
+   pa_sim_Eid_t eid           ///< [OUT] the EID value
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function gets the SIM Status.
  *
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
@@ -291,11 +345,11 @@ LE_SHARED le_result_t pa_sim_RemoveNewStateHandler
 /**
  * This function enter the PIN code.
  *
+ * @return LE_OK            The function succeeded.
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
- * @return LE_TIMEOUT       No response was received from the SIM card.
- * @return LE_OK            The function succeeded.
- */
+ * @return LE_TIMEOUT       No response received from the SIM card.
+  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_sim_EnterPIN
 (
@@ -305,7 +359,7 @@ LE_SHARED le_result_t pa_sim_EnterPIN
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function set the new PIN code.
+ * This function sets the new PIN code.
  *
  *  - use to set pin code by providing the PUK
  *
@@ -326,7 +380,7 @@ LE_SHARED le_result_t pa_sim_EnterPUK
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function get the remaining attempts of a pin code.
+ * This function gets the remaining attempts of a pin code.
  *
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
@@ -342,7 +396,7 @@ LE_SHARED le_result_t pa_sim_GetPINRemainingAttempts
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function get the remaining attempts of a puk code.
+ * This function gets the remaining attempts of a puk code.
  *
  * @return LE_BAD_PARAMETER The parameters are invalid.
  * @return LE_FAULT         The function failed.
@@ -495,6 +549,7 @@ LE_SHARED le_result_t pa_sim_CloseLogicalChannel
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_sim_SendApdu
 (
+    uint8_t        channel, ///< [IN] Logical channel.
     const uint8_t* apduPtr, ///< [IN] APDU message buffer
     uint32_t       apduLen, ///< [IN] APDU message length in bytes
     uint8_t*       respPtr, ///< [OUT] APDU message response.
@@ -571,56 +626,117 @@ LE_SHARED le_result_t pa_sim_ConfirmSimToolkitCommand
  *      - LE_NOT_FOUND      - The function failed to select the SIM card for this operation
  *                          - The requested SIM file is not found
  *      - LE_OVERFLOW       Response buffer is too small to copy the SIM answer.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_sim_SendCommand
 (
-    le_sim_Command_t command,
-        ///< [IN]
-        ///< The SIM command.
-
-    const char* fileIdentifier,
-        ///< [IN]
-        ///< File identifier
-
-    uint8_t p1,
-        ///< [IN]
-        ///< Parameter P1 passed to the SIM
-
-    uint8_t p2,
-        ///< [IN]
-        ///< Parameter P2 passed to the SIM
-
-    uint8_t p3,
-        ///< [IN]
-        ///< Parameter P3 passed to the SIM
-
-    const uint8_t* dataPtr,
-        ///< [IN]
-        ///< data command.
-
-    size_t dataNumElements,
-        ///< [IN]
-
-    const char* path,
-        ///< [IN]
-        ///< path of the elementary file
-
-    uint8_t* sw1Ptr,
-        ///< [OUT]
-        ///< SW1 received from the SIM
-
-    uint8_t* sw2Ptr,
-        ///< [OUT]
-        ///< SW2 received from the SIM
-
-    uint8_t* responsePtr,
-        ///< [OUT]
-        ///< SIM response.
-
-    size_t* responseNumElementsPtr
-        ///< [INOUT]
+    le_sim_Command_t command,               ///< [IN] The SIM command
+    const char*      fileIdentifierPtr,     ///< [IN] File identifier
+    uint8_t          p1,                    ///< [IN] Parameter P1 passed to the SIM
+    uint8_t          p2,                    ///< [IN] Parameter P2 passed to the SIM
+    uint8_t          p3,                    ///< [IN] Parameter P3 passed to the SIM
+    const uint8_t*   dataPtr,               ///< [IN] Data command
+    size_t           dataNumElements,       ///< [IN] Size of data command
+    const char*      pathPtr,               ///< [IN] Path of the elementary file
+    uint8_t*         sw1Ptr,                ///< [OUT] SW1 received from the SIM
+    uint8_t*         sw2Ptr,                ///< [OUT] SW2 received from the SIM
+    uint8_t*         responsePtr,           ///< [OUT] SIM response
+    size_t*          responseNumElementsPtr ///< [IN/OUT] Size of response
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to reset UIM.
+ *
+ * @return
+ *      - LE_OK          On success.
+ *      - LE_FAULT       On failure.
+ *      - LE_UNSUPPORTED The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_Reset
+(
+    void
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to write the FPLMN list.
+ *
+ * @return
+ *      - LE_OK            On success.
+ *      - LE_FAULT         If FPLMN list is not able to write into device.
+ *      - LE_BAD_PARAMETER A parameter is invalid.
+ *      - LE_UNSUPPORTED   The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_WriteFPLMNList
+(
+    le_dls_List_t *FPLMNListPtr   ///< [IN] FPLMN list.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the number of FPLMN operators present in the list.
+ *
+ * @return
+ *      - LE_OK            On success.
+ *      - LE_FAULT         On failure.
+ *      - LE_BAD_PARAMETER A parameter is invalid.
+ *      - LE_UNSUPPORTED   The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_CountFPLMNOperators
+(
+    uint32_t*  nbItemPtr     ///< [OUT] number of FPLMN operator found if success.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to read the FPLMN list.
+ *
+ * @return
+ *      - LE_OK            On success.
+ *      - LE_NOT_FOUND     If no FPLMN network is available.
+ *      - LE_BAD_PARAMETER A parameter is invalid.
+ *      - LE_UNSUPPORTED   The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_ReadFPLMNOperators
+(
+    pa_sim_FPLMNOperator_t* FPLMNOperatorPtr,   ///< [OUT] FPLMN operators.
+    uint32_t* FPLMNOperatorCountPtr             ///< [IN/OUT] FPLMN operator count.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieve the last SIM Toolkit status.
+ *
+ * @return
+ *      - LE_OK             On success.
+ *      - LE_BAD_PARAMETER  A parameter is invalid.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_GetLastStkStatus
+(
+    pa_sim_StkEvent_t*  stkStatus  ///< [OUT] last SIM Toolkit event status
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Powers up or down the current SIM card.
+ *
+ * @return
+ *      - LE_OK           On success
+ *      - LE_FAULT        For unexpected error
+ *      - LE_UNSUPPORTED  The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_sim_SetPower
+(
+    le_onoff_t power     ///< [IN] The power state.
+);
 
 #endif // LEGATO_PASIM_INCLUDE_GUARD

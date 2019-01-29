@@ -2,7 +2,7 @@
 /**
  * @file file.cpp  Implementation of generic file system access functions.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -37,7 +37,7 @@ bool DirectoryExists
     struct stat statBuffer;
 
     return (   (stat(path.c_str(), &statBuffer) == 0)
-            && S_ISDIR(statBuffer.st_mode)  );
+               && S_ISDIR(statBuffer.st_mode)  );
 }
 
 
@@ -57,7 +57,7 @@ bool FileExists
     struct stat statBuffer;
 
     return (   (stat(path.c_str(), &statBuffer) == 0)
-            && S_ISREG(statBuffer.st_mode)  );
+               && S_ISREG(statBuffer.st_mode)  );
 }
 
 
@@ -93,8 +93,9 @@ bool AnythingExists
 
     int err = errno;
 
-    throw mk::Exception_t("stat() failed (" + std::string(strerror(err)) + ") for path '"
-                               + path + "'.");
+    throw mk::Exception_t(
+        mk::format(LE_I18N("stat() failed (%s) for path '%s'."), std::string(strerror(err)), path)
+    );
 }
 
 
@@ -116,23 +117,21 @@ std::string FindFile
 )
 //--------------------------------------------------------------------------------------------------
 {
-    std::string actualPath = envVars::DoSubstitution(path);
-
-    if (path::IsAbsolute(actualPath))
+    if (path::IsAbsolute(path))
     {
-        if (FileExists(actualPath) == false)
+        if (FileExists(path) == false)
         {
             return "";
         }
 
-        return actualPath;
+        return path;
     }
 
     for (const auto& searchPath : searchPaths)
     {
         if (DirectoryExists(searchPath))
         {
-            std::string newPath = path::Combine(searchPath, actualPath);
+            std::string newPath = path::Combine(searchPath, path);
 
             if (FileExists(newPath))
             {
@@ -163,23 +162,21 @@ std::string FindDirectory
 )
 //--------------------------------------------------------------------------------------------------
 {
-    std::string actualPath = envVars::DoSubstitution(path);
-
-    if (path::IsAbsolute(actualPath))
+    if (path::IsAbsolute(path))
     {
-        if (DirectoryExists(actualPath) == false)
+        if (DirectoryExists(path) == false)
         {
             return "";
         }
 
-        return actualPath;
+        return path;
     }
 
     for (const auto& searchPath : searchPaths)
     {
         if (DirectoryExists(searchPath))
         {
-            std::string newPath = path::Combine(searchPath, actualPath);
+            std::string newPath = path::Combine(searchPath, path);
 
             if (DirectoryExists(newPath))
             {
@@ -208,6 +205,11 @@ std::list<std::string> ListFiles
     char* pathArrayPtr[] = { const_cast<char*>(path.c_str()), NULL };
     FTS* ftsPtr = fts_open(pathArrayPtr, FTS_PHYSICAL, NULL);
 
+    if (ftsPtr == NULL)
+    {
+        return files;
+    }
+
     FTSENT* entPtr;
     while ((entPtr = fts_read(ftsPtr)) != NULL)
     {
@@ -226,6 +228,8 @@ std::list<std::string> ListFiles
                 break;
         }
     }
+
+    fts_close(ftsPtr);
 
     return files;
 }
@@ -259,7 +263,7 @@ std::string FindComponent
     // that contains a file called "Component.cdef".
     else
     {
-        for (auto searchPath: searchPathList)
+        for (auto const &searchPath: searchPathList)
         {
             std::string path = searchPath + "/" + name;
 
@@ -311,13 +315,9 @@ void MakeDir
         {
             int err = errno;
 
-            std::string msg = "Failed to create directory '";
-            msg += path;
-            msg += "' (";
-            msg += strerror(err);
-            msg += ")";
-
-            throw mk::Exception_t(msg);
+            throw mk::Exception_t(
+                mk::format(LE_I18N("Failed to create directory '%s' (%s)"), path, strerror(err))
+            );
         }
     }
 }
@@ -345,7 +345,7 @@ void DeleteDir
 
     if (path == "")
     {
-        throw mk::Exception_t("Attempt to delete using an empty path.");
+        throw mk::Exception_t(LE_I18N("Attempt to delete using an empty path."));
     }
 
     // Get the status of whatever exists at that path.
@@ -358,22 +358,25 @@ void DeleteDir
             int result = system(commandLine.c_str());
             if (result != EXIT_SUCCESS)
             {
-                std::stringstream buffer;
-                buffer << "Failed to execute command '" << commandLine << "'"
-                       << " result: " << result;
-                throw mk::Exception_t(buffer.str());
+                throw mk::Exception_t(
+                    mk::format(LE_I18N("Failed to execute command '%s' result: %d"),
+                               commandLine, result)
+                );
             }
         }
         else
         {
-            throw mk::Exception_t("Object at path '" + path + "' is not a directory."
-                                       " Aborting deletion.");
+            throw mk::Exception_t(
+                mk::format(LE_I18N("Object at path '%s' is not a directory. Aborting deletion."),
+                           path)
+            );
         }
     }
     else if (errno != ENOENT)
     {
-        throw mk::Exception_t("Failed to delete directory at '" + path + "'"
-                                   " (" + strerror(errno) + ").");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to delete directory at '%s' (%s)."), path, strerror(errno))
+        );
     }
 }
 
@@ -399,7 +402,7 @@ void DeleteFile
 
     if (path == "")
     {
-        throw mk::Exception_t("Attempt to delete using an empty path.");
+        throw mk::Exception_t(LE_I18N("Attempt to delete using an empty path."));
     }
 
     // Get the status of whatever exists at that path.
@@ -412,22 +415,24 @@ void DeleteFile
             int result = system(commandLine.c_str());
             if (result != EXIT_SUCCESS)
             {
-                std::stringstream buffer;
-                buffer << "Failed to execute command '" << commandLine << "'"
-                       << " result: " << result;
-                throw mk::Exception_t(buffer.str());
+                throw mk::Exception_t(
+                    mk::format(LE_I18N("Failed to execute command '%s' result: %d"),
+                               commandLine, result)
+                );
             }
         }
         else
         {
-            throw mk::Exception_t("Object at path '" + path + "' is not a file."
-                                       " Aborting deletion.");
+            throw mk::Exception_t(
+                mk::format(LE_I18N("Object at path '%s' is not a file. Aborting deletion."), path)
+            );
         }
     }
     else if (errno != ENOENT)
     {
-        throw mk::Exception_t("Failed to delete file at '" + path + "'"
-                                   " (" + strerror(errno) + ").");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to delete file at '%s' (%s)."), path, strerror(errno))
+        );
     }
 }
 

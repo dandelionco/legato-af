@@ -2,7 +2,7 @@
 /**
  * @file javaComponentMainGenerator.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -21,8 +21,7 @@ namespace code
 void GenerateJavaComponentMainFile
 (
     const model::Component_t* componentPtr,
-    const mk::BuildParams_t& buildParams,
-    bool isStandAlone   ///< true = fully resolve all interface name variables.
+    const mk::BuildParams_t& buildParams
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -37,8 +36,9 @@ void GenerateJavaComponentMainFile
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating component-specific IPC code for component '" <<
-                     compName << "' in '" << filePath << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating component-specific IPC code for component "
+                                  "'%s' in '%s'."), compName, filePath)
+                  << std::endl;
     }
 
     // Open the .java file for writing.
@@ -46,7 +46,9 @@ void GenerateJavaComponentMainFile
     std::ofstream outputFile(filePath, std::ofstream::trunc);
     if (!outputFile.is_open())
     {
-        throw mk::Exception_t("Failed to open file '" + filePath + "' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to open file '%s' for writing."), filePath)
+        );
     }
 
     std::string apiImports;
@@ -82,7 +84,8 @@ void GenerateJavaComponentMainFile
         std::string className = clientApi->internalName + "Client";
         std::string varName = "instance" + clientApi->internalName;
 
-        apiImports += "import io.legato.api.implementation." + className + ";\n";
+        apiImports += "import io.legato.api.implementation." + className + ";\n" +
+                "import io.legato.api." + clientApi->internalName + ";\n";
         clientInits += "        " + className + " " + varName + " = new " + className + "();\n";
 
         instanceNames += "    public static String " + clientApi->internalName + "ServiceInstanceName;\n";
@@ -93,8 +96,8 @@ void GenerateJavaComponentMainFile
                                                 clientApi->internalName + "ServiceInstanceName);\n";
         }
 
-        clientInits += "        component.set" + clientApi->internalName +
-                       "(instance" + clientApi->internalName + ");\n";
+        clientInits += "        component.registerService(" + clientApi->internalName + ".class, " +
+                       "instance" + clientApi->internalName + ");\n";
     }
 
     if (instanceNames.empty() == false)
@@ -140,7 +143,7 @@ void GenerateJavaComponentMainFile
                   "{\n"
                << instanceNames
                << serverVars
-               << "    public static Component CreateComponent(Logger logger) throws Exception\n"
+               << "    public static Component createComponent(Logger logger) throws Exception\n"
                   "    {\n"
                   "        // Construct component.\n"
                   "        " << compName << " component = new " << compName << "();\n"

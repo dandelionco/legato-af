@@ -13,12 +13,18 @@ processes:
     }
 
     faultAction: restart
+     #if ${LEGATO_SERVICES_WDOG_DISABLE} = 1
+        watchdogTimeout: never
+    #else
+        maxWatchdogTimeout: 120000
+    #endif
 }
 
 extern:
 {
     secStore.secStoreDaemon.le_secStore
     secStore.secStoreDaemon.secStoreAdmin
+    secStore.secStoreDaemon.secStoreGlobal
 }
 
 
@@ -26,5 +32,6 @@ bindings:
 {
     secStore.secStoreDaemon.le_appInfo -> <root>.le_appInfo
     secStore.secStoreDaemon.le_update -> <root>.le_update
+    secStore.watchdogChain.le_wdog -> <root>.le_wdog
 }
 

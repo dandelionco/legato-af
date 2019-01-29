@@ -25,7 +25,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -33,7 +33,7 @@
 /**
  * @file parser.h   Includes all the parser header files.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -50,18 +50,6 @@ namespace parser
 #include "mdefParser.h"
 #include "sdefParser.h"
 #include "apiParser.h"
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Pulls whitespace and comment tokens and throws them away (although, they still get added to
- * the file's token list).
- */
-//--------------------------------------------------------------------------------------------------
-void SkipWhitespaceAndComments
-(
-    Lexer_t& lexer
-);
 
 
 //--------------------------------------------------------------------------------------------------
@@ -105,6 +93,25 @@ parseTree::TokenList_t* ParseSimpleNamedItem
  */
 //--------------------------------------------------------------------------------------------------
 parseTree::TokenList_t* ParseTokenListSection
+(
+    Lexer_t& lexer,
+    parseTree::Token_t* sectionNameTokenPtr,///< The token containing the section name.
+    parseTree::Token_t::Type_t tokenType    ///< Type of content token to expect.
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Parse a section which is a simple section or containing a list of tokens of the same type inside
+ * curly braces.
+ *
+ * This includes only "preBuilt:". Simple section support for "preBuilt:" will be deprecated
+ * and is supported now for backward compatibility.
+ *
+ * @return a pointer to the parse tree object created for this section.
+ */
+//--------------------------------------------------------------------------------------------------
+parseTree::TokenList_t* ParseSimpleOrTokenListSection
 (
     Lexer_t& lexer,
     parseTree::Token_t* sectionNameTokenPtr,///< The token containing the section name.
@@ -217,6 +224,17 @@ parseTree::CompoundItemList_t* ParseBundlesSubsection
     Lexer_t& lexer
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Parse a subsection inside a "requires:" section.
+ *
+ * @return Pointer to the subsection.
+ */
+//--------------------------------------------------------------------------------------------------
+parseTree::CompoundItemList_t* ParseRequiredModule
+(
+    Lexer_t& lexer
+);
 
 //--------------------------------------------------------------------------------------------------
 /**

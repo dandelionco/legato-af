@@ -2,7 +2,7 @@
 /**
  * @file component.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -22,7 +22,6 @@ namespace model
  **/
 //--------------------------------------------------------------------------------------------------
 std::map<std::string, Component_t*> Component_t::ComponentMap;
-
 
 
 //--------------------------------------------------------------------------------------------------
@@ -80,11 +79,78 @@ Component_t* Component_t::CreateComponent
     }
     else
     {
-        throw mk::Exception_t("Internal error: Attempt to create duplicate Component object"
-                                   " for '" + canonicalPath + "' (" + filePtr->path + ").");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Internal error: Attempt to create duplicate Component "
+                               "object for '%s' (%s)."),
+                       canonicalPath, filePtr->path)
+        );
     }
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Build a list of bundled files that are of the same type.
+ **/
+//--------------------------------------------------------------------------------------------------
+void Component_t::GetBundledFilesOfType
+(
+    BundleAccess_t access,             ///< Are we searching the source or dest paths?
+    const std::string& fileType,       ///< What kind of file are we looking for?
+    std::list<std::string>& fileList   ///< Add the found files to this list.
+)
+//--------------------------------------------------------------------------------------------------
+{
+    for (const auto& bundledDir : bundledDirs)
+    {
+        const auto& dirPath = bundledDir->GetBundledPath(access);
+        auto bundledFiles = file::ListFiles(dirPath);
+
+        for (const auto& file : bundledFiles)
+        {
+            if (path::GetFileNameExtension(file) == fileType)
+            {
+                fileList.push_back(file);
+            }
+        }
+    }
+
+    for (const auto& bundledFile : bundledFiles)
+    {
+        const auto& filePath = bundledFile->GetBundledPath(access);
+        auto extension = path::GetFileNameExtension(filePath);
+
+        if (extension == fileType)
+        {
+            fileList.push_back(filePath);
+        }
+    }
+}
+
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Throw error message about incompatible source or build methods.
+ */
+//--------------------------------------------------------------------------------------------------
+void Component_t::ThrowIncompatibleLanguageException
+(
+    const parseTree::CompoundItem_t* conflictSectionPtr
+) const
+//--------------------------------------------------------------------------------------------------
+{
+    if (HasExternalBuild())
+    {
+        conflictSectionPtr->ThrowException(LE_I18N("A component with an external build step cannot"
+                                                   " have source files."));
+    }
+    else
+    {
+        conflictSectionPtr->ThrowException(LE_I18N("A component can only use one source file"
+                                                   " language."));
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 /**

@@ -1,20 +1,26 @@
 #--------------------------------------------------------------------------------------------------
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #--------------------------------------------------------------------------------------------------
 
 # Build the on-target test app.
-mkapp(SubpoolFlux.adef)
+mkapp(subpoolFlux.adef)
 
-mkapp(ThreadFlux.adef)
+mkapp(threadFlux.adef)
 
-mkapp(TimerFlux.adef
-      -i ${LEGATO_ROOT}/framework/c/src/
+mkapp(timerFlux.adef
+      -i ${LEGATO_ROOT}/framework/liblegato
+      -i ${LEGATO_ROOT}/framework/liblegato/linux/
+      )
+
+mkapp(mutexFlux.adef
+      -i ${LEGATO_ROOT}/framework/liblegato
+      -i ${LEGATO_ROOT}/framework/liblegato/linux/
+      )
+
+mkapp(semaphoreFlux.adef
+      -i ${LEGATO_ROOT}/framework/liblegato
+      -i ${LEGATO_ROOT}/framework/liblegato/linux/
     )
 
-mkapp(MutexFlux.adef
-      -i ${LEGATO_ROOT}/framework/c/src/
-    )
-
-mkapp(SemaphoreFlux.adef
-      -i ${LEGATO_ROOT}/framework/c/src/
-    )
+# This is a C test
+add_dependencies(tests_c subpoolFlux threadFlux timerFlux mutexFlux semaphoreFlux)

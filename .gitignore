@@ -3,26 +3,30 @@
 /toolchains
 /bin
 
+# Configuration
+.config
+.config.mk
+
 /Documentation*
 /releases
 /version
 /sources.md5
 /delivery
 /platformAdaptor
-/proprietary
+*proprietary
 doxygen.*.log
 doxygen.*.err
 _build_*
-system.sdef
+/system.sdef
 binaries
+/framework/tools/ifgen/cache
+server.pem
 
 # Update pack files
 *.update
 
 # Binary app files
-*.localhost.app
-*.virt.app
-*.wp85.app
+*.*.app
 
 # Vim
 *.swp
@@ -61,5 +65,6 @@ docManagement
 # 3rd Party content
 3rdParty/*
 
-#dandelion custom apps copied here by yocto
-apps/dandelionApps
+# Apps
+apps/platformServices/airVantageConnector/
+apps/leTP

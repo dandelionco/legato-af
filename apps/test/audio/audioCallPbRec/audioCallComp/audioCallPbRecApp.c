@@ -16,7 +16,7 @@
  * file recording.
  * When the call is disconnected, the recorded audio is played on local interface (Speaker).
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -322,7 +322,8 @@ static void DisconnectAllAudio
         MediaHandlerRef = NULL;
     }
 
-    close(AudioFileFd);
+    // Closing AudioFileFd is unnecessary since the messaging infrastructure underneath
+    // le_audio_xxx APIs that use it would close it.
 }
 
 //--------------------------------------------------------------------------------------------------

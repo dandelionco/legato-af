@@ -13,6 +13,18 @@
  * unsolicited responses).
  * This service can be subscribed to by several apps simultaneously.
  *
+ * @section le_atClient_binding IPC interfaces binding
+ *
+ * All the functions of this API are provided by the @b atService.
+ *
+ * Here's a code sample binding to the AT commands server:
+ * @verbatim
+   bindings:
+   {
+      atClientTest.atClientTestComp.le_atClient -> atService.le_atClient
+   }
+   @endverbatim
+ *
  * @section atClient_binding Device Binding
  *
  * le_atClient_Start() must be called to bind a specific device with the ATClient.
@@ -98,7 +110,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -108,7 +120,7 @@
  *
  * Legato @ref c_atClient include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -197,7 +209,7 @@ FUNCTION le_result_t SetCommand
  *      - LE_FAULT when function failed
  *      - LE_OK when function succeed
  *
- * @note If the AT Command reference is invalid, a fatal error occurs,
+ * @note If the AT Command reference or set intermediate response is invalid, a fatal error occurs,
  *       the function won't return.
  */
 //--------------------------------------------------------------------------------------------------
@@ -217,7 +229,7 @@ FUNCTION le_result_t SetIntermediateResponse
  *      - LE_FAULT when function failed
  *      - LE_OK when function succeed
  *
- * @note If the AT Command reference is invalid, a fatal error occurs,
+ * @note If the AT Command reference or set response is invalid, a fatal error occurs,
  *       the function won't return.
  */
 //--------------------------------------------------------------------------------------------------

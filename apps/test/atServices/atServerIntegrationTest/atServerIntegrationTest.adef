@@ -1,3 +1,6 @@
+// This test MUST run unsandboxed as it requires access to /dev/tty* devices.
+// All /dev/tty* cannot be imported inside the sandbox.
+sandboxed: false
 executables:
 {
     atServerTest = ( atServerTestComp )
@@ -9,25 +12,13 @@ processes:
     {
         LE_LOG_LEVEL = DEBUG
     }
-
-    run:
-    {
-        ( atServerTest )
-    }
-}
-
-requires:
-{
-    device:
-    {
-        [rw]    /dev/ttyAT    /dev/ttyAT
-    }
 }
 
 start: manual
 
 bindings:
 {
-    atServerTest.atServerTestComp.le_atServer -> atServer.le_atServer
+    atServerTest.atServerTestComp.le_atServer -> atService.le_atServer
+    atServerTest.atServerTestComp.le_mcc -> modemService.le_mcc
 }
 

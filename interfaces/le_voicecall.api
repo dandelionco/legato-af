@@ -35,7 +35,7 @@
  * Application must use le_voicecall_Delete() to release @ref le_voicecall_CallRef_t voice call
  *  reference object when it is no more used.
  *
- * If le_voicecall_End() failed a @ref LE_VOICECALL_EVENT_END_FAILED event will be sent.
+ * If le_voicecall_End() failed a @ref LE_VOICECALL_EVENT_CALL_END_FAILED event will be sent.
  *
  * If a voice call is already started when le_voicecall_Start() is called(), a
  * new voice call will not be established. Instead, @ref LE_VOICECALL_EVENT_RESOURCE_BUSY event
@@ -64,15 +64,15 @@
  * Application can answer the call by using le_voicecall_Answer() or reject the call by using
  *  le_voicecall_End() passing the call reference @ref le_voicecall_CallRef_t.
  *
- * If le_voicecall_End() failed a @ref LE_VOICECALL_EVENT_END_FAILED event will be sent. If
- *  le_voicecall_Answer() failed a @ref LE_VOICECALL_EVENT_ANSWER_FAILED event will be sent.
+ * If le_voicecall_End() failed a @ref LE_VOICECALL_EVENT_CALL_END_FAILED event will be sent. If
+ *  le_voicecall_Answer() failed a @ref LE_VOICECALL_EVENT_CALL_ANSWER_FAILED event will be sent.
  *
  * Application have to use le_voicecall_Delete() to release @ref le_voicecall_CallRef_t voice call
  *  reference object when it is no more used.
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -82,7 +82,7 @@
  *
  * Legato @ref c_le_voicecall include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -142,7 +142,7 @@ HANDLER StateHandler
 (
     Call reference IN,                                  ///< Event voice call object reference.
     string identifier[le_mdmDefs.PHONE_NUM_MAX_LEN] IN, ///< Identifier of the remote party
-                                                        ///  associated with the call.
+                                                        ///< associated with the call.
     Event event IN                                      ///< Voice call event.
 );
 
@@ -171,7 +171,7 @@ EVENT State
 FUNCTION Call Start
 (
     string DestinationID[le_mdmDefs.PHONE_NUM_MAX_LEN] IN ///< Destination identifier for the voice
-                                                          ///  call establishment.
+                                                          ///< call establishment.
 );
 
 

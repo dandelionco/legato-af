@@ -1,13 +1,21 @@
 //--------------------------------------------------------------------------------------------------
 // Sample system definition that includes essential modem and positioning services.
 //
-// Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+// Copyright (C) Sierra Wireless Inc.
 //--------------------------------------------------------------------------------------------------
+
+#include "$LEGATO_ROOT/legatoTargetConfig.sinc"
+
+#include "$LEGATO_ROOT/apps/platformServices/defaultAirVantage.sinc"
+#include "$LEGATO_ROOT/apps/platformServices/defaultAtCommands.sinc"
+#if ${LEGATO_EXTRA_SINC} = ""
+#else
+    #include "$LEGATO_EXTRA_SINC"
+#endif
 
 apps:
 {
     // Platform services.
-    $LEGATO_ROOT/apps/platformServices/airVantage/avcService
     $LEGATO_ROOT/apps/platformServices/audioService
     $LEGATO_ROOT/apps/platformServices/cellNetService
     $LEGATO_ROOT/apps/platformServices/dataConnectionService
@@ -19,22 +27,31 @@ apps:
     $LEGATO_ROOT/apps/platformServices/smsInboxService
     $LEGATO_ROOT/apps/platformServices/voiceCallService
     $LEGATO_ROOT/apps/platformServices/gpioService
+    $LEGATO_ROOT/apps/platformServices/atService
+    $LEGATO_ROOT/apps/platformServices/spiService
+    $LEGATO_ROOT/apps/platformServices/portService
 
     // Command-line tools.
     $LEGATO_ROOT/apps/tools/tools
-
-    // Dandelion Custom Applications
-    $LEGATO_ROOT/apps/dandelionApps/cellularMonitor/cellularMonitor
-    //$LEGATO_ROOT/apps/dandelionApps/wifiController/wifiController
-    //$LEGATO_ROOT/apps/dandelionApps/heatPumpManager/heatPumpManager
 }
+
+#if ${LEGATO_FEATURE_SPISVC} = ""
+#else
+kernelModules:
+{
+    $LEGATO_ROOT/drivers/spisvc/spisvc.mdef
+}
+#endif
 
 commands:
 {
-    cm = tools:/bin/cm
+    cm = tools:/scripts/cm
     fwupdate = tools:/bin/fwupdate
     secstore = tools:/bin/secstore
     pmtool = tools:/bin/pmtool
+    gnss = tools:/bin/gnss
+    uartMode = tools:/bin/uartMode
+    kmod = tools:/bin/kmod
 }
 
 bindings:
@@ -44,6 +61,7 @@ bindings:
 
 interfaceSearch:
 {
-    interfaces/modemServices
-    interfaces/positioning
+    $LEGATO_ROOT/interfaces/modemServices
+    $LEGATO_ROOT/interfaces/positioning
+    $LEGATO_ROOT/interfaces/atServices
 }

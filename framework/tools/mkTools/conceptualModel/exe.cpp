@@ -2,7 +2,7 @@
 /**
  * @file exe.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -34,6 +34,7 @@ Exe_t::Exe_t
     hasCppCode(false),
     hasCOrCppCode(false),
     hasJavaCode(false),
+    hasPythonCode(false),
     hasIncompatibleLanguageCode(false)
 //--------------------------------------------------------------------------------------------------
 {
@@ -70,7 +71,9 @@ void Exe_t::AddComponentInstance
 
     hasJavaCode |= componentInstancePtr->componentPtr->HasJavaCode();
 
-    hasIncompatibleLanguageCode |= hasCOrCppCode && hasJavaCode;
+    hasPythonCode |= componentInstancePtr->componentPtr->HasPythonCode();
+
+    hasIncompatibleLanguageCode |= (hasCOrCppCode + hasJavaCode + hasPythonCode) > 1;
 }
 
 
@@ -98,9 +101,14 @@ const
         objectName = "src/" + name + "/io/legato/generated/exe/" + name + "/Main.class";
         sourceName = "src/" + name + "/io/legato/generated/exe/" + name + "/Main.java";
     }
+    else if (hasPythonCode)
+    {
+        objectName = "src/" + name + "_main.py";
+        sourceName = "src/" + name + "_main.py";
+    }
     else
     {
-        throw mk::Exception_t("Unexpected language for main executable.");
+        throw mk::Exception_t(LE_I18N("Unexpected language for main executable."));
     }
 
     ObjectFile_t mainObjectFile(objectName, sourceName);

@@ -1,7 +1,7 @@
 /**
  * This module implements the unit tests for eCall API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -16,7 +16,6 @@
 #include "pa_ecall.h"
 #include "pa_ecall_simu.h"
 #include "mdmCfgEntries.h"
-#include "args.h"
 
 
 //--------------------------------------------------------------------------------------------------
@@ -87,12 +86,12 @@ le_msg_SessionEventHandlerRef_t le_msg_AddServiceCloseHandler
  * @note The process exits on failures
  */
 //--------------------------------------------------------------------------------------------------
-void le_pm_StayAwake
+le_result_t le_pm_StayAwake
 (
     le_pm_WakeupSourceRef_t w
 )
 {
-    return;
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -102,11 +101,11 @@ void le_pm_StayAwake
  * @note The process exits on failure
  */
 //--------------------------------------------------------------------------------------------------
-void le_pm_Relax(
+le_result_t le_pm_Relax(
     le_pm_WakeupSourceRef_t w
 )
 {
-    return;
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -154,9 +153,46 @@ le_msg_SessionEventHandlerRef_t le_msgSimu_AddServiceCloseHandler
 // Test functions.
 //--------------------------------------------------------------------------------------------------
 
-#define NB_CLIENT 2
+//--------------------------------------------------------------------------------------------------
+/**
+ * Define the maximum number of fake client apps.
+ */
+//--------------------------------------------------------------------------------------------------
+#define NB_CLIENT       2
 
-// Task context
+//--------------------------------------------------------------------------------------------------
+/**
+ * Define a short semaphore timeout in seconds.
+ */
+//--------------------------------------------------------------------------------------------------
+#define SHORT_TIMEOUT   1
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Define a long semaphore timeout in seconds.
+ */
+//--------------------------------------------------------------------------------------------------
+#define LONG_TIMEOUT    5
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Minimum value of ERA GLONASS Call Cleardown Fallback Timer (CCFT) expressed in minutes
+ */
+//--------------------------------------------------------------------------------------------------
+#define ERA_GLONASS_CCFT_MIN              1
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum value of ERA GLONASS Call Cleardown Fallback Timer (CCFT) expressed in minutes
+ */
+//--------------------------------------------------------------------------------------------------
+#define ERA_GLONASS_CCFT_MAX             720
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Task context structure.
+ */
+//--------------------------------------------------------------------------------------------------
 typedef struct
 {
     uint32_t                         appId;
@@ -167,19 +203,51 @@ typedef struct
 
 } AppContext_t;
 
-// VIN: ASDAJNPR1VABCDEFG
+//--------------------------------------------------------------------------------------------------
+/**
+ * Imported MSD (VIN: ASDAJNPR1VABCDEFG).
+ */
+//--------------------------------------------------------------------------------------------------
 static uint8_t              ImportedMsd[] ={0x01, 0x4C, 0x07, 0x80, 0xA6, 0x4D, 0x29, 0x25,
                                             0x97, 0x60, 0x17, 0x0A, 0x2C, 0xC3, 0x4E, 0x3D,
                                             0x05, 0x1B, 0x18, 0x48, 0x61, 0xEB, 0xA0, 0xC8,
                                             0xFF, 0x73, 0x7E, 0x64, 0x20, 0xD1, 0x04, 0x01,
                                             0x3F, 0x81, 0x00};
-static AppContext_t         AppCtx[NB_CLIENT];
-static le_sem_Ref_t         ThreadSemaphore;
-static le_sem_Ref_t         InitSemaphore;
-static le_ecall_State_t     CurrentEcallState;
-static le_ecall_CallRef_t   CurrentEcallRef = NULL;
-static le_clk_Time_t        TimeToWait = { 4, 0 };
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Context of the 2 fake client apps.
+ */
+//--------------------------------------------------------------------------------------------------
+static AppContext_t         AppCtx[NB_CLIENT];
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Semaphore to synchronize the 2 fake client apps with the main thread (unitary test core).
+ */
+//--------------------------------------------------------------------------------------------------
+static le_sem_Ref_t         ThreadSemaphore;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Semaphore to synchronize unitary test initialization.
+ */
+//--------------------------------------------------------------------------------------------------
+static le_sem_Ref_t         InitSemaphore;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Curent eCall state.
+ */
+//--------------------------------------------------------------------------------------------------
+static le_ecall_State_t     CurrentEcallState;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Current eCall reference.
+ */
+//--------------------------------------------------------------------------------------------------
+static le_ecall_CallRef_t   CurrentEcallRef = NULL;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -226,12 +294,14 @@ static void MyECallEventHandler
         }
         case LE_ECALL_STATE_WAITING_PSAP_START_IND:
         {
-            LE_INFO("Check MyECallEventHandler passed, state is LE_ECALL_STATE_WAITING_PSAP_START_IND.");
+            LE_INFO("Check MyECallEventHandler passed, state is \
+                                     LE_ECALL_STATE_WAITING_PSAP_START_IND.");
             break;
         }
         case LE_ECALL_STATE_PSAP_START_IND_RECEIVED:
         {
-            LE_INFO("Check MyECallEventHandler passed, state is LE_ECALL_STATE_PSAP_START_IND_RECEIVED.");
+            LE_INFO("Check MyECallEventHandler passed, state is \
+                                     LE_ECALL_STATE_PSAP_START_IND_RECEIVED.");
             LE_INFO("Send MSD...");
             LE_ASSERT(le_ecall_SendMsd(eCallRef) == LE_OK);
             break;
@@ -263,12 +333,14 @@ static void MyECallEventHandler
         }
         case LE_ECALL_STATE_ALACK_RECEIVED_POSITIVE:
         {
-            LE_INFO("Check MyECallEventHandler passed, state is LE_ECALL_STATE_ALACK_RECEIVED_POSITIVE.");
+            LE_INFO("Check MyECallEventHandler passed, state is \
+                                                      LE_ECALL_STATE_ALACK_RECEIVED_POSITIVE.");
             break;
         }
         case LE_ECALL_STATE_ALACK_RECEIVED_CLEAR_DOWN:
         {
-            LE_INFO("Check MyECallEventHandler passed, state is LE_ECALL_STATE_ALACK_RECEIVED_CLEAR_DOWN.");
+            LE_INFO("Check MyECallEventHandler passed, state is \
+                                                      LE_ECALL_STATE_ALACK_RECEIVED_CLEAR_DOWN.");
             break;
         }
         case LE_ECALL_STATE_STOPPED:
@@ -293,7 +365,8 @@ static void MyECallEventHandler
         }
         case LE_ECALL_STATE_END_OF_REDIAL_PERIOD:
         {
-            LE_INFO("Check MyECallEventHandler passed, state is LE_ECALL_STATE_END_OF_REDIAL_PERIOD.");
+            LE_INFO("Check MyECallEventHandler passed, state is \
+                                                 LE_ECALL_STATE_END_OF_REDIAL_PERIOD.");
             break;
         }
         case LE_ECALL_STATE_UNKNOWN:
@@ -319,11 +392,12 @@ static void SynchTest
     void
 )
 {
-    int i=0;
+    int             i = 0;
+    le_clk_Time_t   timeToWait = { LONG_TIMEOUT, 0 };
 
     for (;i<NB_CLIENT;i++)
     {
-        LE_ASSERT(le_sem_WaitWithTimeOut(ThreadSemaphore, TimeToWait) == LE_OK);
+        LE_ASSERT(le_sem_WaitWithTimeOut(ThreadSemaphore, timeToWait) == LE_OK);
     }
 }
 
@@ -368,7 +442,6 @@ static void* AppHandler
     // Subscribe to eCall state handler
     LE_ASSERT((appCtxPtr->ecallHandler = le_ecall_AddStateChangeHandler(MyECallEventHandler,
                                                                         ctxPtr)) != NULL);
-
     // Semaphore is used to synchronize the task execution with the core test
     le_sem_Post(ThreadSemaphore);
 
@@ -506,7 +579,8 @@ void Testle_ecall_RemoveHandlers
     void
 )
 {
-    int i;
+    int             i;
+    le_clk_Time_t   timeToWait = { SHORT_TIMEOUT, 0 };
 
     // Remove handlers: add le_ecall_RemoveStateChangeHandler to the eventLoop of tasks
     for (i=0; i<NB_CLIENT; i++)
@@ -524,7 +598,7 @@ void Testle_ecall_RemoveHandlers
     pa_ecallSimu_ReportEcallState(LE_ECALL_STATE_STARTED);
 
     // Wait for the semaphore timeout to check that handlers are not called
-    LE_ASSERT( le_sem_WaitWithTimeOut(ThreadSemaphore, TimeToWait) == LE_TIMEOUT );
+    LE_ASSERT( le_sem_WaitWithTimeOut(ThreadSemaphore, timeToWait) == LE_TIMEOUT );
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -538,7 +612,7 @@ static void Testle_ecall_OperationMode
     void
 )
 {
-    le_result_t         res = LE_FAULT;
+    le_result_t         res;
     le_ecall_OpMode_t   mode = LE_ECALL_NORMAL_MODE;
 
     LE_ASSERT((res=le_ecall_ForceOnlyMode()) == LE_OK);
@@ -568,7 +642,7 @@ static void Testle_ecall_ConfigSettings
     char                 psap[LE_MDMDEFS_PHONE_NUM_MAX_BYTES];
     le_ecall_MsdTxMode_t mode = LE_ECALL_TX_MODE_PULL;
     uint16_t             deregTime = 0;
-    le_ecall_SystemStandard_t systemStandard = LE_ECALL_ERA_GLONASS;
+    le_ecall_SystemStandard_t systemStandard;
     le_ecall_MsdVehicleType_t vehicleType    = LE_ECALL_MSD_VEHICLE_BUS_M2;
     uint32_t             msdVersion = 1;
 
@@ -592,6 +666,10 @@ static void Testle_ecall_ConfigSettings
     LE_ASSERT((LE_OK == le_ecall_GetSystemStandard(&systemStandard)));
     LE_ASSERT(LE_ECALL_ERA_GLONASS == systemStandard);
 
+    LE_ASSERT_OK(le_ecall_SetNadDeregistrationTime(200));
+    LE_ASSERT_OK(le_ecall_GetNadDeregistrationTime(&deregTime));
+    LE_ASSERT(deregTime == 200);
+
     LE_ASSERT((LE_OK == le_ecall_SetMsdVersion(msdVersion)));
     msdVersion = 42;
     LE_ASSERT((LE_OK == le_ecall_GetMsdVersion(&msdVersion)));
@@ -602,12 +680,28 @@ static void Testle_ecall_ConfigSettings
     LE_ASSERT((LE_OK == le_ecall_GetVehicleType(&vehicleType)));
     LE_ASSERT(( LE_ECALL_MSD_VEHICLE_BUS_M2 == vehicleType ));
 
-    char VinSet[LE_ECALL_VIN_MAX_BYTES] = "12345678901234567";
-    char VinGet[LE_ECALL_VIN_MAX_BYTES] = { '\0' };
-    LE_ASSERT((LE_OK == le_ecall_SetVIN(VinSet)));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVE12345678AH87KH90"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRiVE12345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37IRFVE12345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BoFVE12345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VFO7BRFVE12345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVE12345q78"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVE12Q45678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("iIoOqQFVE12345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVE02345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVEu2345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVEU2345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVEz2345678"));
+    LE_ASSERT(LE_FAULT == le_ecall_SetVIN("VF37BRFVEZ2345678"));
 
-    LE_ASSERT((LE_OK == le_ecall_GetVIN(&VinGet[0], LE_ECALL_VIN_MAX_LEN)));
-    LE_ASSERT(( 0 == strncmp(&VinSet[0], &VinGet[0], LE_ECALL_VIN_MAX_LEN )));
+    LE_ASSERT(LE_OK == le_ecall_SetVIN("VF37BRFVE12345678"));
+
+    char vin[LE_ECALL_VIN_MAX_BYTES];
+    LE_ASSERT(LE_BAD_PARAMETER == le_ecall_GetVIN(NULL, 0));
+    LE_ASSERT(LE_BAD_PARAMETER == le_ecall_GetVIN(vin, LE_ECALL_VIN_MAX_LEN));
+    LE_ASSERT(LE_OK == le_ecall_GetVIN(vin, LE_ECALL_VIN_MAX_BYTES));
+    LE_ASSERT( 0 == strcmp("VF37BRFVE12345678", vin));
 
     le_ecall_PropulsionTypeBitMask_t propulsionType = LE_ECALL_PROPULSION_TYPE_ELECTRIC;
 
@@ -615,6 +709,11 @@ static void Testle_ecall_ConfigSettings
     propulsionType = LE_ECALL_PROPULSION_TYPE_GASOLINE;
     LE_ASSERT((LE_OK == le_ecall_GetPropulsionType(&propulsionType)));
     LE_ASSERT( LE_ECALL_PROPULSION_TYPE_ELECTRIC == propulsionType );
+
+    propulsionType = LE_ECALL_PROPULSION_TYPE_OTHER;
+    LE_ASSERT((LE_OK == le_ecall_SetPropulsionType(propulsionType)));
+    LE_ASSERT((LE_OK == le_ecall_GetPropulsionType(&propulsionType)));
+    LE_ASSERT( LE_ECALL_PROPULSION_TYPE_OTHER == propulsionType );
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -632,42 +731,101 @@ static void Testle_ecall_EraGlonassSettings
     uint16_t                            duration = 0;
     le_ecall_CallRef_t                   testECallRef = 0x00;
 
-    LE_ASSERT((testECallRef=le_ecall_Create()) != NULL);
+    LE_ASSERT(NULL != (testECallRef=le_ecall_Create()));
 
-    LE_ASSERT(le_ecall_SetEraGlonassManualDialAttempts(7) == LE_OK);
-    LE_ASSERT(le_ecall_GetEraGlonassManualDialAttempts(&attempts) == LE_OK);
+    LE_ASSERT_OK(le_ecall_GetEraGlonassFallbackTime(&duration));
+    LE_ASSERT(duration <= ERA_GLONASS_CCFT_MAX);
+    LE_ASSERT(duration >= ERA_GLONASS_CCFT_MIN);
+
+    duration = 0;
+    LE_ASSERT(LE_FAULT == le_ecall_SetEraGlonassFallbackTime(ERA_GLONASS_CCFT_MAX+1));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassFallbackTime(&duration));
+    LE_ASSERT(duration <= ERA_GLONASS_CCFT_MAX);
+
+    duration = 0;
+    LE_ASSERT(LE_FAULT == le_ecall_SetEraGlonassFallbackTime(ERA_GLONASS_CCFT_MIN-1));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassFallbackTime(&duration));
+    LE_ASSERT(duration >= ERA_GLONASS_CCFT_MIN);
+
+    duration = 0;
+    LE_ASSERT_OK(le_ecall_SetEraGlonassFallbackTime(ERA_GLONASS_CCFT_MIN));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassFallbackTime(&duration));
+    LE_ASSERT(duration == ERA_GLONASS_CCFT_MIN);
+
+    duration = 0;
+    LE_ASSERT_OK(le_ecall_SetEraGlonassFallbackTime(ERA_GLONASS_CCFT_MAX));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassFallbackTime(&duration));
+    LE_ASSERT(duration == ERA_GLONASS_CCFT_MAX);
+
+    duration = 0;
+    LE_ASSERT_OK(le_ecall_SetEraGlonassFallbackTime(20));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassFallbackTime(&duration));
+    LE_ASSERT(duration == 20);
+
+    LE_ASSERT_OK(le_ecall_GetEraGlonassAutoAnswerTime(&duration));
+    LE_ASSERT(duration >= 20);
+
+    duration = 0;
+    LE_ASSERT_OK(le_ecall_SetEraGlonassAutoAnswerTime(10));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassAutoAnswerTime(&duration));
+    LE_ASSERT(duration == 10);
+
+    duration = 0;
+    LE_ASSERT_OK(le_ecall_SetEraGlonassAutoAnswerTime(30));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassAutoAnswerTime(&duration));
+    LE_ASSERT(30 == duration);
+
+    duration = 0;
+    LE_ASSERT_OK(le_ecall_SetEraGlonassMSDMaxTransmissionTime(60));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassMSDMaxTransmissionTime(&duration));
+    LE_ASSERT(60 == duration);
+
+    LE_ASSERT_OK(le_ecall_SetEraGlonassManualDialAttempts(7));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassManualDialAttempts(&attempts));
     LE_ASSERT(attempts == 7);
 
-    LE_ASSERT(le_ecall_SetEraGlonassAutoDialAttempts(9) == LE_OK);
-    LE_ASSERT(le_ecall_GetEraGlonassAutoDialAttempts(&attempts) == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetEraGlonassAutoDialAttempts(9));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassAutoDialAttempts(&attempts));
     LE_ASSERT(attempts == 9);
 
-    LE_ASSERT(le_ecall_SetEraGlonassDialDuration(240) == LE_OK);
-    LE_ASSERT(le_ecall_GetEraGlonassDialDuration(&duration) == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetEraGlonassDialDuration(240));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassDialDuration(&duration));
     LE_ASSERT(duration == 240);
 
+    LE_ASSERT_OK(le_ecall_SetEraGlonassPostTestRegistrationTime(0));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassPostTestRegistrationTime(&duration));
+    LE_ASSERT(0 == duration);
+
+    LE_ASSERT_OK(le_ecall_SetEraGlonassPostTestRegistrationTime(500));
+    LE_ASSERT_OK(le_ecall_GetEraGlonassPostTestRegistrationTime(&duration));
+    LE_ASSERT(500 == duration);
+
     /* Crash Severity configuration */
-    LE_ASSERT(le_ecall_SetMsdEraGlonassCrashSeverity(testECallRef, 0) == LE_OK);
-    LE_ASSERT(le_ecall_ResetMsdEraGlonassCrashSeverity(testECallRef) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdEraGlonassCrashSeverity(testECallRef, 99) == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCrashSeverity(testECallRef, 0));
+    LE_ASSERT_OK(le_ecall_ResetMsdEraGlonassCrashSeverity(testECallRef));
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCrashSeverity(testECallRef, 99));
 
     /* DataDiagnosticResult configuration */
-    LE_ASSERT(le_ecall_SetMsdEraGlonassDiagnosticResult(testECallRef, 0x3FFFFFFFFFF) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdEraGlonassDiagnosticResult(testECallRef, 0) == LE_OK);
-    LE_ASSERT(le_ecall_ResetMsdEraGlonassDiagnosticResult(testECallRef) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdEraGlonassDiagnosticResult(testECallRef,
-              LE_ECALL_DIAG_RESULT_PRESENT_MIC_CONNECTION_FAILURE)
-              == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassDiagnosticResult(testECallRef, 0x3FFFFFFFFFF));
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassDiagnosticResult(testECallRef, 0));
+    LE_ASSERT_OK(le_ecall_ResetMsdEraGlonassDiagnosticResult(testECallRef));
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassDiagnosticResult(testECallRef,
+              LE_ECALL_DIAG_RESULT_PRESENT_MIC_CONNECTION_FAILURE));
 
     /* CrashInfo configuration */
-    LE_ASSERT(le_ecall_SetMsdEraGlonassCrashInfo(testECallRef, 0xFFFF) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdEraGlonassCrashInfo(testECallRef, 0) == LE_OK);
-    LE_ASSERT(le_ecall_ResetMsdEraGlonassCrashInfo(testECallRef) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdEraGlonassCrashInfo(testECallRef,
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCrashInfo(testECallRef, 0xFFFF));
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCrashInfo(testECallRef, 0));
+    LE_ASSERT_OK(le_ecall_ResetMsdEraGlonassCrashInfo(testECallRef));
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCrashInfo(testECallRef,
               LE_ECALL_CRASH_INFO_PRESENT_CRASH_FRONT_OR_SIDE
-              | LE_ECALL_CRASH_INFO_CRASH_FRONT_OR_SIDE)
-              == LE_OK);
+              | LE_ECALL_CRASH_INFO_CRASH_FRONT_OR_SIDE));
 
+    /* Coordinate system type configuration */
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCoordinateSystemType(testECallRef,
+                                             LE_ECALL_MSD_COORDINATE_SYSTEM_TYPE_PZ90));
+    LE_ASSERT_OK(le_ecall_ResetMsdEraGlonassCoordinateSystemType(testECallRef));
+    LE_ASSERT_OK(le_ecall_SetMsdEraGlonassCoordinateSystemType(testECallRef,
+                                             LE_ECALL_MSD_COORDINATE_SYSTEM_TYPE_WGS84));
     le_ecall_Delete(testECallRef);
 }
 
@@ -696,7 +854,8 @@ static void Testle_ecall_LoadMsd
 
     // Check LE_DUPLICATE on le_ecall_SetMsdPosition and le_ecall_SetMsdPassengersCount
     LE_ASSERT(le_ecall_ImportMsd(testECallRef, ImportedMsd, sizeof(ImportedMsd)) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdPosition(testECallRef, true, +48070380, -11310000, 45) == LE_DUPLICATE);
+    LE_ASSERT(le_ecall_SetMsdPosition(testECallRef, true, +48070380, -11310000, 45) ==
+                                                                                  LE_DUPLICATE);
     LE_ASSERT(le_ecall_SetMsdPositionN1(testECallRef, 511, 511) == LE_DUPLICATE);
     LE_ASSERT(le_ecall_SetMsdPositionN2(testECallRef, -512, -512) == LE_DUPLICATE);
 
@@ -712,6 +871,9 @@ static void Testle_ecall_LoadMsd
               LE_ECALL_CRASH_INFO_PRESENT_CRASH_FRONT_OR_SIDE
               | LE_ECALL_CRASH_INFO_CRASH_FRONT_OR_SIDE)
               == LE_DUPLICATE);
+    LE_ASSERT(le_ecall_ResetMsdEraGlonassCoordinateSystemType(testECallRef) == LE_DUPLICATE);
+    LE_ASSERT(le_ecall_SetMsdEraGlonassCoordinateSystemType(testECallRef,
+                                LE_ECALL_MSD_COORDINATE_SYSTEM_TYPE_WGS84) == LE_DUPLICATE);
 
     le_ecall_Delete(testECallRef);
 }
@@ -727,30 +889,35 @@ static void Testle_ecall_StartManual
     void
 )
 {
-    le_ecall_CallRef_t  testECallRef = 0x00;
-    le_ecall_State_t    state = LE_ECALL_STATE_UNKNOWN;
+    le_ecall_CallRef_t testECallRef = 0x00;
+    le_ecall_State_t state;
+    int nbLoop=0;
 
     LE_INFO("Start Testle_ecall_StartManual");
 
-    LE_ASSERT(le_ecall_SetPsapNumber("0102030405") == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetPsapNumber("0102030405"));
 
-    LE_ASSERT(le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH));
 
-    LE_ASSERT((testECallRef=le_ecall_Create()) != NULL);
+    while (nbLoop < 2)
+    {
+        testECallRef = le_ecall_Create();
+        LE_ASSERT(NULL != testECallRef);
 
-    LE_ASSERT(le_ecall_ImportMsd(testECallRef, ImportedMsd, sizeof(ImportedMsd)) == LE_OK);
+        LE_ASSERT_OK(le_ecall_ImportMsd(testECallRef, ImportedMsd, sizeof(ImportedMsd)));
 
-    LE_ASSERT(le_ecall_StartManual(testECallRef) == LE_OK);
+        LE_ASSERT_OK(le_ecall_StartManual(testECallRef));
 
-    LE_ASSERT(le_ecall_StartTest(testECallRef) == LE_BUSY);
-    LE_ASSERT(le_ecall_StartAutomatic(testECallRef) == LE_BUSY);
+        LE_ASSERT(LE_BUSY == le_ecall_StartTest(testECallRef));
+        LE_ASSERT(LE_BUSY == le_ecall_StartAutomatic(testECallRef));
 
-    LE_ASSERT(le_ecall_End(testECallRef) == LE_OK);
+        LE_ASSERT_OK(le_ecall_End(testECallRef));
 
-    state=le_ecall_GetState(testECallRef);
-    LE_ASSERT(((state>=LE_ECALL_STATE_STARTED) && (state<=LE_ECALL_STATE_FAILED)));
-
-    le_ecall_Delete(testECallRef);
+        state = le_ecall_GetState(testECallRef);
+        LE_ASSERT(((state >= LE_ECALL_STATE_STARTED) && (state <= LE_ECALL_STATE_FAILED)));
+        le_ecall_Delete(testECallRef);
+        nbLoop++;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -764,30 +931,38 @@ static void Testle_ecall_StartTest
     void
 )
 {
-    le_ecall_CallRef_t                 testECallRef = 0x00;
-    le_ecall_State_t                   state = LE_ECALL_STATE_UNKNOWN;
+    le_ecall_CallRef_t testECallRef = 0x00;
+    le_ecall_State_t state;
+    int nbLoop=0;
 
-    LE_ASSERT(le_ecall_SetPsapNumber("0102030405") == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetPsapNumber("0102030405"));
 
-    LE_ASSERT(le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) == LE_OK);
+    LE_ASSERT_OK(le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH));
 
-    LE_ASSERT((testECallRef=le_ecall_Create()) != NULL);
+    while (nbLoop < 2)
+    {
+        testECallRef = le_ecall_Create();
+        LE_ASSERT(NULL != testECallRef);
 
-    LE_ASSERT(le_ecall_SetMsdPosition(testECallRef, true, +48898064, +2218092, 0) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdPositionN1(testECallRef, 511, 511) == LE_OK);
-    LE_ASSERT(le_ecall_SetMsdPositionN2(testECallRef, -512, -512) == LE_OK);
+        LE_ASSERT_OK(le_ecall_SetMsdPosition(testECallRef, true, +48898064, +2218092, 0));
+        LE_ASSERT_OK(le_ecall_SetMsdPositionN1(testECallRef, 511, 511));
+        LE_ASSERT_OK(le_ecall_SetMsdPositionN2(testECallRef, -512, -512));
 
-    LE_ASSERT(le_ecall_SetMsdPassengersCount(testECallRef, 3) == LE_OK);
+        LE_ASSERT_OK(le_ecall_SetMsdPassengersCount(testECallRef, 3));
 
-    LE_ASSERT(le_ecall_StartTest(testECallRef) == LE_OK);
+        LE_ASSERT_OK(le_ecall_StartTest(testECallRef));
 
-    LE_ASSERT(le_ecall_StartManual(testECallRef) == LE_BUSY);
-    LE_ASSERT(le_ecall_StartAutomatic(testECallRef) == LE_BUSY);
+        LE_ASSERT(LE_BUSY == le_ecall_StartManual(testECallRef));
+        LE_ASSERT(LE_BUSY == le_ecall_StartAutomatic(testECallRef));
 
-    state=le_ecall_GetState(testECallRef);
-    LE_ASSERT(((state>=LE_ECALL_STATE_STARTED) && (state<=LE_ECALL_STATE_FAILED)));
+        LE_ASSERT_OK(le_ecall_End(testECallRef));
 
-    le_ecall_Delete(testECallRef);
+        state = le_ecall_GetState(testECallRef);
+
+        LE_ASSERT(((state>=LE_ECALL_STATE_STARTED) && (state<=LE_ECALL_STATE_FAILED)));
+        le_ecall_Delete(testECallRef);
+        nbLoop++;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -837,6 +1012,7 @@ COMPONENT_INIT
     InitSemaphore = le_sem_Create("InitSem",0);
     le_thread_Start(le_thread_Create("UnitTestInit", UnitTestInit, NULL));
     le_sem_Wait(InitSemaphore);
+    le_sem_Delete(InitSemaphore);
 
     LE_INFO("======== Start UnitTest of eCall API ========");
 
@@ -861,5 +1037,4 @@ COMPONENT_INIT
 
     exit(0);
 }
-
 

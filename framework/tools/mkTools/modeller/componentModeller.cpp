@@ -2,7 +2,7 @@
 /**
  * @file componentModeller.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -32,7 +32,7 @@ static std::string FindSourceFile
 )
 //--------------------------------------------------------------------------------------------------
 {
-    auto filePath = path::Unquote(envVars::DoSubstitution(tokenPtr->text));
+    auto filePath = path::Unquote(DoSubstitution(tokenPtr));
 
     // If the environment variable substitution resulted in an empty string, then just
     // skip this file.
@@ -49,13 +49,40 @@ static std::string FindSourceFile
 
         if (fullFilePath.empty())
         {
-            tokenPtr->ThrowException("Couldn't find source file '" + filePath + "'.");
+            tokenPtr->ThrowException(
+                mk::format(LE_I18N("Couldn't find source file '%s'"), filePath)
+            );
         }
     }
 
     return path::MakeAbsolute(fullFilePath);
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Adds the commands from a given "externalBuild:" section to a given Component_t object.
+ */
+//--------------------------------------------------------------------------------------------------
+static void AddExternalBuild
+(
+    model::Component_t* componentPtr,
+    parseTree::CompoundItem_t* sectionPtr ///< The parse tree object for the "externalBuild:"
+                                          ///  section.
+)
+{
+    auto tokenListPtr = static_cast<parseTree::TokenList_t*>(sectionPtr);
+
+    for (auto contentPtr: tokenListPtr->Contents())
+    {
+        componentPtr->externalBuildCommands.push_back(path::Unquote(DoSubstitution(contentPtr)));
+    }
+
+    if (componentPtr->HasIncompatibleLanguageCode())
+    {
+        componentPtr->ThrowIncompatibleLanguageException(sectionPtr);
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -98,16 +125,17 @@ static void AddSources
             }
             else
             {
-                contentPtr->ThrowException("Unrecognized file name extension on source code file '"
-                                           + filePath + "'.");
+                contentPtr->ThrowException(
+                    mk::format(LE_I18N("Unrecognized file name extension on source code file"
+                                       " '%s'."), filePath)
+                );
             }
         }
     }
 
     if (componentPtr->HasIncompatibleLanguageCode())
     {
-        sectionPtr->ThrowException("C/C++ source code file can't be part of a component that also "
-                                   "has Java sources.");
+        componentPtr->ThrowIncompatibleLanguageException(sectionPtr);
     }
 }
 
@@ -137,10 +165,102 @@ static void AddJavaPackage
 
     if (componentPtr->HasIncompatibleLanguageCode())
     {
-        sectionPtr->ThrowException("Incompatible language insert detected.");
+        componentPtr->ThrowIncompatibleLanguageException(sectionPtr);
     }
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Adds the source files from a given "pythonPackage:" section to a given Component_t object.
+ */
+//--------------------------------------------------------------------------------------------------
+static void AddPythonPackage
+(
+    model::Component_t* componentPtr,
+    parseTree::CompoundItem_t* sectionPtr,
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    auto tokenListPtr = static_cast<parseTree::TokenList_t*>(sectionPtr);
+
+    for (auto contentPtr: tokenListPtr->Contents())
+    {
+        std::string packagePath = contentPtr->text;
+        auto packagePtr = new model::PythonPackage_t(contentPtr->text, componentPtr->dir);
+
+        componentPtr->pythonPackages.push_back(packagePtr);
+    }
+
+    if (componentPtr->HasIncompatibleLanguageCode())
+    {
+        componentPtr->ThrowIncompatibleLanguageException(sectionPtr);
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Adds the python files corresponding to all client APIs.
+ */
+//--------------------------------------------------------------------------------------------------
+static void AddPythonClientFiles
+(
+    model::Component_t* componentPtr
+)
+//--------------------------------------------------------------------------------------------------
+{
+    // Bundle all the api C extensions and wrappers
+    for (auto ifPtr : componentPtr->clientApis)
+    {
+        model::InterfacePythonFiles_t pythonFiles;
+        ifPtr->GetInterfaceFiles(pythonFiles);
+
+        model::Permissions_t soPerms(1, 0, 1);
+
+        auto soDestPath = path::Combine("lib/", pythonFiles.cExtensionBinaryFile);
+        auto soSrcPath = "$builddir/" + path::Combine(ifPtr->apiFilePtr->codeGenDir,
+                pythonFiles.cExtensionBinaryFile);
+        auto soFile = new model::FileSystemObject_t(soSrcPath, soDestPath, soPerms);
+
+        componentPtr->bundledFiles.insert(
+                std::shared_ptr<model::FileSystemObject_t>(soFile));
+        model::Permissions_t wrapperPerms(soPerms);
+
+        auto wrapperDestPath =  path::Combine("lib/", pythonFiles.wrapperSourceFile);
+        auto wrapperSrcPath = "$builddir/"
+            + path::Combine(ifPtr->apiFilePtr->codeGenDir,
+                    pythonFiles.wrapperSourceFile);
+        auto wrapperFile = new model::FileSystemObject_t(wrapperSrcPath,
+                wrapperDestPath,
+                wrapperPerms);
+
+        componentPtr->bundledFiles.insert(
+                std::shared_ptr<model::FileSystemObject_t>(wrapperFile));
+    }
+    for (auto pyPkgPtr : componentPtr->pythonPackages)
+    {
+        model::Permissions_t pyPerms(1, 0, 1);
+
+        auto pyDestPath =  "bin/"
+            + path::Combine(componentPtr->name, pyPkgPtr->packageName);
+        auto pySrcPath = pyPkgPtr->packagePath;
+        auto pyFile = new model::FileSystemObject_t(pySrcPath, pyDestPath, pyPerms);
+
+        if (path::IsPythonSource(pyPkgPtr->packagePath))
+        {
+            // It's just a single-file module.
+            componentPtr->bundledFiles.insert(
+                    std::shared_ptr<model::FileSystemObject_t>(pyFile));
+        }
+        else
+        {
+            componentPtr->bundledDirs.insert(
+                    std::shared_ptr<model::FileSystemObject_t>(pyFile));
+        }
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -159,7 +279,7 @@ static void AddCFlags
     // The section contains a list of FILE_PATH tokens.
     for (auto contentPtr: tokenListPtr->Contents())
     {
-        componentPtr->cFlags.push_back(envVars::DoSubstitution(contentPtr->text));
+        componentPtr->cFlags.push_back(DoSubstitution(contentPtr));
     }
 }
 
@@ -181,7 +301,7 @@ static void AddCxxFlags
     // The section contains a list of FILE_PATH tokens.
     for (auto contentPtr: tokenListPtr->Contents())
     {
-        componentPtr->cxxFlags.push_back(envVars::DoSubstitution(contentPtr->text));
+        componentPtr->cxxFlags.push_back(DoSubstitution(contentPtr));
     }
 }
 
@@ -203,7 +323,7 @@ static void AddLdFlags
     // The section contains a list of FILE_PATH tokens.
     for (auto contentPtr: tokenListPtr->Contents())
     {
-        componentPtr->ldFlags.push_back(envVars::DoSubstitution(contentPtr->text));
+        componentPtr->ldFlags.push_back(DoSubstitution(contentPtr));
     }
 }
 
@@ -244,21 +364,10 @@ static void AddBundledItems
                                                             bundledFilePtr->srcPath);
                 }
 
-                // Make sure that the source path exists and is a file.
-                if (file::FileExists(bundledFilePtr->srcPath))
-                {
-                    componentPtr->bundledFiles.push_back(bundledFilePtr);
-                }
-                else if (file::AnythingExists(bundledFilePtr->srcPath))
-                {
-                    bundledFileTokenListPtr->ThrowException("Not a regular file: '"
-                                                            + bundledFilePtr->srcPath + "'");
-                }
-                else
-                {
-                    bundledFileTokenListPtr->ThrowException("File not found: '"
-                                                            + bundledFilePtr->srcPath + "'");
-                }
+                // Always add files -- will be checked when bundled as it could be generated by an
+                // externalBuild command.
+                componentPtr->bundledFiles.insert(
+                    std::shared_ptr<model::FileSystemObject_t>(bundledFilePtr));
             }
         }
         else if (subsectionPtr->Name() == "dir")
@@ -280,24 +389,32 @@ static void AddBundledItems
                 // Make sure that the source path exists and is a directory.
                 if (file::DirectoryExists(bundledDirPtr->srcPath))
                 {
-                    componentPtr->bundledDirs.push_back(bundledDirPtr);
+                    componentPtr->bundledDirs.insert(
+                        std::shared_ptr<model::FileSystemObject_t>(bundledDirPtr));
                 }
                 else if (file::AnythingExists(bundledDirPtr->srcPath))
                 {
-                    bundledDirTokenListPtr->ThrowException("Not a directory: '"
-                                                           + bundledDirPtr->srcPath + "'");
+                    bundledDirTokenListPtr->ThrowException(
+                        mk::format(LE_I18N("Not a directory: '%s'."), bundledDirPtr->srcPath)
+                    );
                 }
                 else
                 {
-                    bundledDirTokenListPtr->ThrowException("Directory not found: '"
-                                                           + bundledDirPtr->srcPath + "'");
+                    bundledDirTokenListPtr->ThrowException(
+                        mk::format(LE_I18N("Directory not found: '%s'.\n"
+                                           "note: If bundling build output from externalBuild"
+                                           " command, use file: section instead"),
+                                   bundledDirPtr->srcPath)
+                    );
                 }
             }
         }
         else
         {
-            subsectionPtr->ThrowException("Internal error: Unexpected content item: "
-                                          + subsectionPtr->TypeName()   );
+            subsectionPtr->ThrowException(
+                mk::format(LE_I18N("Internal error: Unexpected content item: %s."),
+                           subsectionPtr->TypeName())
+            );
         }
     }
 }
@@ -347,21 +464,23 @@ static void GetProvidedApi
     if (contentList[0]->type == parseTree::Token_t::NAME)
     {
         internalName = contentList[0]->text;
-        apiFilePath = file::FindFile(envVars::DoSubstitution(contentList[1]->text),
-                                     buildParams.interfaceDirs);
+        apiFilePath = file::FindFile(DoSubstitution(contentList[1]), buildParams.interfaceDirs);
         if (apiFilePath == "")
         {
-            contentList[1]->ThrowException("Couldn't find file '" + contentList[1]->text + "'.");
+            contentList[1]->ThrowException(
+                mk::format(LE_I18N("Couldn't find file '%s'."), contentList[1]->text)
+            );
         }
     }
     // If the first content item is not a NAME, then it must be the file path.
     else
     {
-        apiFilePath = file::FindFile(envVars::DoSubstitution(contentList[0]->text),
-                                     buildParams.interfaceDirs);
+        apiFilePath = file::FindFile(DoSubstitution(contentList[0]), buildParams.interfaceDirs);
         if (apiFilePath == "")
         {
-            contentList[0]->ThrowException("Couldn't find file '" + contentList[0]->text + "'.");
+            contentList[0]->ThrowException(
+                mk::format(LE_I18N("Couldn't find file '%s'."), contentList[0]->text)
+            );
         }
     }
 
@@ -437,8 +556,9 @@ static void AddProvidedItems
         }
         else
         {
-            memberPtr->ThrowException("Internal error: Unexpected provided item: "
-                                      + subsectionName   );
+            memberPtr->ThrowException(
+                mk::format(LE_I18N("Internal error: Unexpected provided item: %s."), subsectionName)
+            );
         }
     }
 }
@@ -466,22 +586,23 @@ static void GetRequiredApi
     if (contentList[0]->type == parseTree::Token_t::NAME)
     {
         internalName = contentList[0]->text;
-        apiFilePath = file::FindFile(envVars::DoSubstitution(contentList[1]->text),
-                                     buildParams.interfaceDirs);
+        apiFilePath = file::FindFile(DoSubstitution(contentList[1]), buildParams.interfaceDirs);
         if (apiFilePath == "")
         {
-            contentList[1]->ThrowException("Couldn't find file '" + contentList[1]->text + "'.");
+            contentList[1]->ThrowException(
+                mk::format(LE_I18N("Couldn't find file '%s'."), contentList[1]->text)
+            );
         }
     }
     // If the first content item is not a NAME, then it must be the file path.
     else
     {
-        apiFilePath = file::FindFile(envVars::DoSubstitution(contentList[0]->text),
-                                     buildParams.interfaceDirs);
+        auto substString = DoSubstitution(contentList[0]);
+        apiFilePath = file::FindFile(substString, buildParams.interfaceDirs);
         if (apiFilePath == "")
         {
-            contentList[0]->ThrowException("Couldn't find file '"
-                                           + envVars::DoSubstitution(contentList[0]->text) + "'.");
+            contentList[0]->ThrowException(mk::format(LE_I18N("Couldn't find file '%s.'"),
+                                                      substString));
         }
     }
 
@@ -510,8 +631,8 @@ static void GetRequiredApi
     }
     if (typesOnly && manualStart)
     {
-        itemPtr->ThrowException("Can't use [types-only] with [manual-start] or [optional]"
-                                " for the same interface.");
+        itemPtr->ThrowException(LE_I18N("Can't use [types-only] with [manual-start] or [optional]"
+                                  " for the same interface."));
     }
 
     // Get a pointer to the .api file object.
@@ -559,7 +680,7 @@ static void AddRequiredLib
 )
 //--------------------------------------------------------------------------------------------------
 {
-    auto lib = envVars::DoSubstitution(tokenPtr->text);
+    auto lib = DoSubstitution(tokenPtr);
     // Skip if environment variable substitution resulted in an empty string.
     if (!lib.empty())
     {
@@ -568,6 +689,13 @@ static void AddRequiredLib
         // so this has to be linked with the executable at the last linking stage.
         if (path::HasSuffix(lib, ".a"))
         {
+            // Assume relative paths are build outputs, and should be searched in generated
+            // library search path
+            if (lib.find('/') == std::string::npos)
+            {
+                lib = "-l" + path::GetLibShortName(lib);
+            }
+
             componentPtr->staticLibs.insert(lib);
         }
         // If it's not a .a file,
@@ -589,10 +717,10 @@ static void AddRequiredLib
 
                     // Add a -L ldflag for the directory that the library is in.
                     componentPtr->ldFlags.push_back("-L" + path::GetContainingDir(libPath));
-
-                    // Compute the short name for this library.
-                    lib = path::GetLibShortName(lib);
                 }
+
+                // Compute the short name for this library.
+                lib = path::GetLibShortName(lib);
             }
 
             // Add a -l option to the component's LDFLAGS.
@@ -615,6 +743,8 @@ static void AddRequiredItems
 )
 //--------------------------------------------------------------------------------------------------
 {
+    std::list<const parseTree::CompoundItem_t*> reqKernelModulesSections;
+
     // "requires:" section is comprised of subsections,
     for (auto memberPtr : static_cast<const parseTree::ComplexSection_t*>(sectionPtr)->Contents())
     {
@@ -637,7 +767,8 @@ static void AddRequiredItems
             {
                 auto fileSpecPtr = parseTree::ToTokenListPtr(itemPtr);
 
-                componentPtr->requiredFiles.push_back(GetRequiredFileOrDir(fileSpecPtr));
+                componentPtr->requiredFiles.insert(
+                    std::shared_ptr<model::FileSystemObject_t>(GetRequiredFileOrDir(fileSpecPtr)));
             }
         }
         else if (subsectionName == "dir")
@@ -647,7 +778,8 @@ static void AddRequiredItems
             {
                 auto dirSpecPtr = parseTree::ToTokenListPtr(itemPtr);
 
-                componentPtr->requiredDirs.push_back(GetRequiredFileOrDir(dirSpecPtr));
+                componentPtr->requiredDirs.insert(
+                    std::shared_ptr<model::FileSystemObject_t>(GetRequiredFileOrDir(dirSpecPtr)));
             }
         }
         else if (subsectionName == "device")
@@ -658,7 +790,8 @@ static void AddRequiredItems
             {
                 auto deviceSpecPtr = parseTree::ToTokenListPtr(itemPtr);
 
-                componentPtr->requiredDevices.push_back(GetRequiredDevice(deviceSpecPtr));
+                componentPtr->requiredDevices.insert(
+                    std::shared_ptr<model::FileSystemObject_t>(GetRequiredDevice(deviceSpecPtr)));
             }
         }
         else if (subsectionName == "component")
@@ -685,124 +818,19 @@ static void AddRequiredItems
                 AddRequiredLib(componentPtr, itemPtr, buildParams);
             }
         }
+        else if (subsectionName == "kernelModules")
+        {
+            reqKernelModulesSections.push_back(memberPtr);
+        }
         else
         {
-            memberPtr->ThrowException("Internal error: Unexpected required item: " + subsectionName);
+            memberPtr->ThrowException(
+                mk::format(LE_I18N("Internal error: Unexpected required item: %s."), subsectionName)
+            );
         }
     }
-}
 
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Pull an asset setting or a variable field from the token stream.
- **/
-//--------------------------------------------------------------------------------------------------
-static void AddAssetDataFields
-(
-    model::AssetField_t::ActionType_t actionType,
-    model::Asset_t* modelAssetPtr,
-    parseTree::CompoundItemList_t* sectionPtr
-)
-//--------------------------------------------------------------------------------------------------
-{
-    for (auto subItemPtr : sectionPtr->Contents())
-    {
-        auto tokenListPtr = static_cast<parseTree::TokenList_t*>(subItemPtr);
-        auto& contents = tokenListPtr->Contents();
-
-        // Get the name, type, (setting or variable,) and data type from the token stream.
-        auto fieldPtr = new model::AssetField_t(actionType,
-                                                tokenListPtr->firstTokenPtr->text,
-                                                contents[0]->text);
-
-        // If there is a default value, add that as well.
-        if (contents.size() == 2)
-        {
-            fieldPtr->SetDefaultValue(contents[1]->text);
-        }
-
-        modelAssetPtr->fields.push_back(fieldPtr);
-    }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Pull an asset command field from the token stream.
- **/
-//--------------------------------------------------------------------------------------------------
-static void AddAssetCommand
-(
-    model::Asset_t* modelAssetPtr,
-    parseTree::CompoundItemList_t* sectionPtr
-)
-//--------------------------------------------------------------------------------------------------
-{
-    for (auto subItemPtr : sectionPtr->Contents())
-    {
-        auto tokenListPtr = static_cast<parseTree::TokenList_t*>(subItemPtr);
-        auto fieldPtr = new model::AssetField_t(model::AssetField_t::TYPE_COMMAND,
-                                                "",
-                                                tokenListPtr->firstTokenPtr->text);
-
-        modelAssetPtr->fields.push_back(fieldPtr);
-    }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Add user defined assets to the component model.
- **/
-//--------------------------------------------------------------------------------------------------
-static void AddUserAssets
-(
-    model::Component_t* componentPtr,
-    const parseTree::CompoundItem_t* sectionPtr,
-    const mk::BuildParams_t& buildParams
-)
-//--------------------------------------------------------------------------------------------------
-{
-    auto assetSectionPtr = static_cast<const parseTree::ComplexSection_t*>(sectionPtr);
-
-    for (auto subsectionPtr : assetSectionPtr->Contents())
-    {
-        auto parsedAssetPtr = static_cast<const parseTree::Asset_t*>(subsectionPtr);
-        auto modelAssetPtr = new model::Asset_t();
-
-        modelAssetPtr->SetName(parsedAssetPtr->Name());
-
-        for (auto assetSubsectionPtr : parsedAssetPtr->Contents())
-        {
-            const auto& assetSubsectionName = assetSubsectionPtr->firstTokenPtr->text;
-
-            if (assetSubsectionName == "settings")
-            {
-                AddAssetDataFields(model::AssetField_t::TYPE_SETTING,
-                                   modelAssetPtr,
-                                   static_cast<parseTree::CompoundItemList_t*>(assetSubsectionPtr));
-            }
-            else if (assetSubsectionName == "variables")
-            {
-                AddAssetDataFields(model::AssetField_t::TYPE_VARIABLE,
-                                   modelAssetPtr,
-                                   static_cast<parseTree::CompoundItemList_t*>(assetSubsectionPtr));
-            }
-            else if (assetSubsectionName == "commands")
-            {
-                AddAssetCommand(modelAssetPtr,
-                                static_cast<parseTree::CompoundItemList_t*>(assetSubsectionPtr));
-            }
-            else
-            {
-                assetSubsectionPtr->ThrowException("Unexpected asset subsection, '" +
-                                                   assetSubsectionName + "'.");
-            }
-        }
-
-        componentPtr->assets.push_back(modelAssetPtr);
-    }
+    AddRequiredKernelModules(componentPtr->requiredModules, reqKernelModulesSections, buildParams);
 }
 
 
@@ -817,53 +845,52 @@ static void PrintSummary
 )
 //--------------------------------------------------------------------------------------------------
 {
-    std::cout << "== '" << componentPtr->name << "' component summary ==" << std::endl;
+    std::cout << mk::format(LE_I18N("== '%s' component summary =="), componentPtr->name)
+              << std::endl;
 
-    if (componentPtr->lib != "")
+    if (!componentPtr->cObjectFiles.empty())
     {
-        std::cout << "  Component library: '" << componentPtr->lib << "'" << std::endl;
+        std::cout << LE_I18N("  C sources:") << std::endl;
 
-        if (!componentPtr->cObjectFiles.empty())
+        for (auto objFilePtr : componentPtr->cObjectFiles)
         {
-            std::cout << "  C sources:" << std::endl;
-
-            for (auto objFilePtr : componentPtr->cObjectFiles)
-            {
-                std::cout << "    '" << objFilePtr->sourceFilePath << "'" << std::endl;
-            }
+            std::cout << mk::format(LE_I18N("    '%s'"), objFilePtr->sourceFilePath)
+                      << std::endl;
         }
+    }
 
-        if (!componentPtr->cxxObjectFiles.empty())
+    if (!componentPtr->cxxObjectFiles.empty())
+    {
+        std::cout << LE_I18N("  C++ sources:") << std::endl;
+
+        for (auto objFilePtr : componentPtr->cxxObjectFiles)
         {
-            std::cout << "  C++ sources:" << std::endl;
-
-            for (auto objFilePtr : componentPtr->cxxObjectFiles)
-            {
-                std::cout << "    '" << objFilePtr->sourceFilePath << "'" << std::endl;
-            }
+            std::cout << mk::format(LE_I18N("    '%s'"), objFilePtr->sourceFilePath)
+                      << std::endl;
         }
     }
 
     if (!componentPtr->subComponents.empty())
     {
-        std::cout << "  Depends on components:" << std::endl;
+        std::cout << LE_I18N("  Depends on components:") << std::endl;
 
         for (auto subComponentPtr : componentPtr->subComponents)
         {
-            std::cout << "    '" << subComponentPtr->name << "'" << std::endl;
+            std::cout << mk::format(LE_I18N("    '%s'"), subComponentPtr->name) << std::endl;
         }
     }
 
     if (!componentPtr->bundledFiles.empty())
     {
-        std::cout << "  Includes files from the build host:" << std::endl;
+        std::cout << LE_I18N("  Includes files from the build host:") << std::endl;
 
         for (auto itemPtr : componentPtr->bundledFiles)
         {
-            std::cout << "    '" << itemPtr->srcPath << "':" << std::endl;
-            std::cout << "      appearing inside app as: '" << itemPtr->destPath
-                                                           << "'" << std::endl;
-            std::cout << "      permissions:";
+            std::cout << mk::format(LE_I18N("    '%s':"), itemPtr->srcPath) << std::endl;
+            std::cout << mk::format(LE_I18N("      appearing inside app as: '%s'"),
+                                    itemPtr->destPath)
+                      << std::endl;
+            std::cout << LE_I18N("      permissions:");
             PrintPermissions(itemPtr->permissions);
             std::cout << std::endl;
         }
@@ -871,14 +898,15 @@ static void PrintSummary
 
     if (!componentPtr->bundledDirs.empty())
     {
-        std::cout << "  Includes directories from the build host:" << std::endl;
+        std::cout << LE_I18N("  Includes directories from the build host:") << std::endl;
 
         for (auto itemPtr : componentPtr->bundledDirs)
         {
-            std::cout << "    '" << itemPtr->srcPath << "':" << std::endl;
-            std::cout << "      appearing inside app as: '" << itemPtr->destPath
-                                                           << "'" << std::endl;
-            std::cout << "      permissions:";
+            std::cout << mk::format(LE_I18N("    '%s':"), itemPtr->srcPath) << std::endl;
+            std::cout << mk::format(LE_I18N("      appearing inside app as: '%s'"),
+                                    itemPtr->destPath)
+                      << std::endl;
+            std::cout << LE_I18N("      permissions:");
             PrintPermissions(itemPtr->permissions);
             std::cout << std::endl;
         }
@@ -886,56 +914,61 @@ static void PrintSummary
 
     if (!componentPtr->requiredFiles.empty())
     {
-        std::cout << "  Imports files from the target host:" << std::endl;
+        std::cout << LE_I18N("  Imports files from the target host:") << std::endl;
 
         for (auto itemPtr : componentPtr->requiredFiles)
         {
-            std::cout << "    '" << itemPtr->srcPath << "':" << std::endl;
-            std::cout << "      appearing inside app as: '" << itemPtr->destPath
-                                                           << "'" << std::endl;
+            std::cout << mk::format(LE_I18N("    '%s':"), itemPtr->srcPath) << std::endl;
+            std::cout << mk::format(LE_I18N("      appearing inside app as: '%s'"),
+                                    itemPtr->destPath)
+                      << std::endl;
         }
     }
 
     if (!componentPtr->requiredDirs.empty())
     {
-        std::cout << "  Imports directories from the target host:" << std::endl;
+        std::cout << LE_I18N("  Imports directories from the target host:") << std::endl;
 
         for (auto itemPtr : componentPtr->requiredDirs)
         {
-            std::cout << "    '" << itemPtr->srcPath << "':" << std::endl;
-            std::cout << "      appearing inside app as: '" << itemPtr->destPath
-                                                           << "'" << std::endl;
+            std::cout << mk::format(LE_I18N("    '%s':"), itemPtr->srcPath) << std::endl;
+            std::cout << mk::format(LE_I18N("      appearing inside app as: '%s'"),
+                                    itemPtr->destPath)
+                      << std::endl;
         }
     }
 
     if (!componentPtr->typesOnlyApis.empty())
     {
-        std::cout << "  Type definitions imported from:" << std::endl;
+        std::cout << LE_I18N("  Type definitions imported from:") << std::endl;
 
         for (auto itemPtr : componentPtr->typesOnlyApis)
         {
-            std::cout << "    '" << itemPtr->apiFilePtr->path << "'" << std::endl;
-            std::cout << "      With identifier prefix: '" << itemPtr->internalName << "':"
+            std::cout << mk::format(LE_I18N("    '%s'"), itemPtr->apiFilePtr->path) << std::endl;
+            std::cout << mk::format(LE_I18N("      With identifier prefix: '%s':"),
+                                    itemPtr->internalName)
                       << std::endl;
         }
     }
 
     if (!componentPtr->clientApis.empty())
     {
-        std::cout << "  IPC API client-side interfaces:" << std::endl;
+        std::cout << LE_I18N("  IPC API client-side interfaces:") << std::endl;
 
         for (auto itemPtr : componentPtr->clientApis)
         {
-            std::cout << "    '" << itemPtr->internalName << "':" << std::endl;
-            std::cout << "      API defined in: '" << itemPtr->apiFilePtr->path << "'" << std::endl;
+            std::cout << mk::format(LE_I18N("    '%s':"), itemPtr->internalName) << std::endl;
+            std::cout << mk::format(LE_I18N("      API defined in: '%s'"),
+                                    itemPtr->apiFilePtr->path)
+                      << std::endl;
             if (itemPtr->manualStart)
             {
-                std::cout << "      Automatic service connection at start-up suppressed."
+                std::cout << LE_I18N("      Automatic service connection at start-up suppressed.")
                           << std::endl;
             }
             if (itemPtr->optional)
             {
-                std::cout << "      Binding this to a service is optional."
+                std::cout << LE_I18N("      Binding this to a service is optional.")
                           << std::endl;
             }
         }
@@ -943,65 +976,71 @@ static void PrintSummary
 
     if (!componentPtr->serverApis.empty())
     {
-        std::cout << "  IPC API server-side interfaces:" << std::endl;
+        std::cout << LE_I18N("  IPC API server-side interfaces:") << std::endl;
 
         for (auto itemPtr : componentPtr->serverApis)
         {
-            std::cout << "    '" << itemPtr->internalName << "':" << std::endl;
-            std::cout << "      API defined in: '" << itemPtr->apiFilePtr->path << "'" << std::endl;
+            std::cout << mk::format(LE_I18N("    '%s':"), itemPtr->internalName) << std::endl;
+            std::cout << mk::format(LE_I18N("      API defined in: '%s'"), itemPtr->internalName)
+                      << std::endl;
             if (itemPtr->async)
             {
-                std::cout << "      Asynchronous server-side processing mode selected."
+                std::cout << LE_I18N("      Asynchronous server-side processing mode selected.")
                           << std::endl;
             }
             if (itemPtr->manualStart)
             {
-                std::cout << "      Automatic service advertisement at start-up suppressed."
+                std::cout << LE_I18N("      Automatic service advertisement at start-up"
+                                     " suppressed.")
                           << std::endl;
             }
         }
     }
+}
 
-    if (!componentPtr->assets.empty())
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Remove API from given set if the API is already present in client or server required APIs.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void SanitizeApiSet
+(
+    model::Component_t* componentPtr,
+    std::set<const model::ApiFile_t*>& apiSet
+)
+//--------------------------------------------------------------------------------------------------
+{
+    auto iter = apiSet.begin();
+    auto current = iter;
+    while(iter != apiSet.end())
     {
-        std::cout << "  AirVantage Cloud Interface:" << std::endl;
-
-        for (const auto asset : componentPtr->assets)
+        // Save the current iterator, then increment it.
+        current = iter++;
+        bool forceRemove = false;
+        for (auto comp : componentPtr->clientApis)
         {
-            std::cout << "    '" << asset->GetName() << "'" << std::endl;
-
-            for (auto field : asset->fields)
+            if (comp->internalName == (*current)->defaultPrefix)
             {
-                auto& dataType = field->GetDataType();
-                auto& name = field->GetName();
-
-                std::cout << "      ";
-
-                switch (field->GetActionType())
-                {
-                    case model::AssetField_t::TYPE_SETTING:
-                        std::cout << "setting ";
-                        break;
-
-                    case model::AssetField_t::TYPE_VARIABLE:
-                        std::cout << "variable ";
-                        break;
-
-                    case model::AssetField_t::TYPE_COMMAND:
-                        std::cout << "command ";
-                        break;
-
-                    case model::AssetField_t::TYPE_UNSET:
-                        throw mk::Exception_t("Internal error: Unset AssetField_t action type.");
-                }
-
-                if (!dataType.empty())
-                {
-                    std::cout << dataType << " ";
-                }
-
-                std::cout << name << std::endl;
+                forceRemove = true;
+                break;
             }
+        }
+        if (!forceRemove)
+        {
+            for (auto comp : componentPtr->serverApis)
+            {
+                if (comp->internalName == (*current)->defaultPrefix && !comp->async)
+                {
+                    forceRemove = true;
+                    break;
+                }
+            }
+        }
+        if (forceRemove)
+        {
+            apiSet.erase(current);
         }
     }
 }
@@ -1028,10 +1067,6 @@ model::Component_t* GetComponent
         return componentPtr;
     }
 
-    // Save the old CURDIR environment variable value and set it to the dir containing this file.
-    auto oldDir = envVars::Get("CURDIR");
-    envVars::Set("CURDIR", componentDir);
-
     // Parse the .cdef file.
     auto cdefFilePath = path::Combine(componentDir, "Component.cdef");
     auto cdefFilePtr = parser::cdef::Parse(cdefFilePath, buildParams.beVerbose);
@@ -1043,8 +1078,10 @@ model::Component_t* GetComponent
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Modelling component: '" << componentPtr->name << "'" << std::endl
-                  << "  found at: '" << componentPtr->dir << "'" << std::endl;
+        std::cout << mk::format(LE_I18N("Modelling component: '%s'\n"
+                                  "  found at: '%s'"),
+                                  componentPtr->name, componentPtr->dir)
+                  << std::endl;
     }
 
     // Iterate over the .cdef file's list of sections.
@@ -1052,13 +1089,21 @@ model::Component_t* GetComponent
     {
         const std::string& sectionName = sectionPtr->firstTokenPtr->text;
 
-        if (sectionName == "sources")
+        if (sectionName == "externalBuild")
+        {
+            AddExternalBuild(componentPtr, sectionPtr);
+        }
+        else if (sectionName == "sources")
         {
             AddSources(componentPtr, sectionPtr, buildParams);
         }
         else if (sectionName == "javaPackage")
         {
             AddJavaPackage(componentPtr, sectionPtr, buildParams);
+        }
+        else if (sectionName == "pythonPackage")
+        {
+            AddPythonPackage(componentPtr, sectionPtr, buildParams);
         }
         else if (sectionName == "cflags")
         {
@@ -1084,15 +1129,19 @@ model::Component_t* GetComponent
         {
             AddRequiredItems(componentPtr, sectionPtr, buildParams);
         }
-        else if (sectionName == "assets")
-        {
-            AddUserAssets(componentPtr, sectionPtr, buildParams);
-        }
         else
         {
-            sectionPtr->ThrowException("Internal error: Unrecognized section '" + sectionName
-                                       + "'.");
+            sectionPtr->ThrowException(
+                mk::format(LE_I18N("Internal error: Unrecognized section '%s'."), sectionName)
+            );
         }
+    }
+
+    // In case of Java code generation, remove client/server use types API
+    // which are already required to avoid duplicate classes
+    if (componentPtr->HasJavaCode()) {
+        SanitizeApiSet(componentPtr, componentPtr->clientUsetypesApis);
+        SanitizeApiSet(componentPtr, componentPtr->serverUsetypesApis);
     }
 
     // Build a path to the Legato library dir and the Legato lib so that we can add it as a
@@ -1101,40 +1150,14 @@ model::Component_t* GetComponent
                                                  "build/" + buildParams.target + "/framework/lib/");
     auto liblegatoPath = path::Combine(baseLibPath, "liblegato.so");
 
-    // If the library output directory has not been specified, then put each component's library
-    // file under its own working directory.
-    std::string baseComponentPath;
-
-    if (buildParams.libOutputDir.empty())
-    {
-        baseComponentPath = path::Combine(path::Combine(buildParams.workingDir,
-                                                        componentPtr->workingDir),
-                                          "obj");
-    }
-    // Otherwise, put the component library directly into the library output directory.
-    else
-    {
-        baseComponentPath = buildParams.libOutputDir;
-    }
-
     // If there are C sources or C++ sources, a library will be built for this component.
     if (componentPtr->HasCOrCppCode())
     {
-        componentPtr->lib = path::Combine(baseComponentPath,
-                                          "libComponent_" + componentPtr->name + ".so");
-
-        // It will have an init function that will need to be executed (unless it is built
-        // "stand-alone").
-        componentPtr->initFuncName = "_" + componentPtr->name + "_COMPONENT_INIT";
-
         // Changes to liblegato should trigger re-linking of the component library.
         componentPtr->implicitDependencies.insert(liblegatoPath);
     }
     else if (componentPtr->HasJavaCode())
     {
-        componentPtr->lib = path::Combine(baseComponentPath,
-                                          "libComponent_" + componentPtr->name + ".jar");
-
         // Changes to liblegato should trigger re-linking of the component library.
         auto legatoJarPath = path::Combine(baseLibPath, "legato.jar");
         auto liblegatoJniPath = path::Combine(baseLibPath, "liblegatoJni.so");
@@ -1144,13 +1167,16 @@ model::Component_t* GetComponent
         componentPtr->implicitDependencies.insert(liblegatoJniPath);
     }
 
+    if (componentPtr->HasPythonCode())
+    {
+        // Add the python wrapper of each APIs
+        AddPythonClientFiles(componentPtr);
+    }
+
     if (buildParams.beVerbose)
     {
         PrintSummary(componentPtr);
     }
-
-    // Restore the previous contents of the CURDIR environment variable.
-    envVars::Set("CURDIR", oldDir);
 
     return componentPtr;
 }
@@ -1176,7 +1202,7 @@ model::Component_t* GetComponent
 //--------------------------------------------------------------------------------------------------
 {
     // Resolve the path to the component.
-    std::string componentPath = path::Unquote(envVars::DoSubstitution(tokenPtr->text));
+    std::string componentPath = path::Unquote(DoSubstitution(tokenPtr));
 
     // Skip if environment variable substitution resulted in an empty string.
     if (componentPath.empty())
@@ -1187,11 +1213,13 @@ model::Component_t* GetComponent
     auto resolvedPath = file::FindComponent(componentPath, preSearchDirs);
     if (resolvedPath.empty())
     {
-        resolvedPath = file::FindComponent(componentPath, buildParams.sourceDirs);
+        resolvedPath = file::FindComponent(componentPath, buildParams.componentDirs);
     }
     if (resolvedPath.empty())
     {
-        tokenPtr->ThrowException("Couldn't find component '" + componentPath + "'.");
+        tokenPtr->ThrowException(
+            mk::format(LE_I18N("Couldn't find component '%s'."), componentPath)
+        );
     }
 
     // Get the component object.

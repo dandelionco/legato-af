@@ -34,7 +34,6 @@ static parseTree::ProvidedApi_t* ParseProvidedApi
 
     // Assume there's only a file path.
     parseTree::Token_t* apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-    SkipWhitespaceAndComments(lexer);
 
     // If there's an '=' following it, then attempt to convert it into an alias (NAME)
     // and pull out the '=' and the actual API file path.
@@ -43,9 +42,7 @@ static parseTree::ProvidedApi_t* ParseProvidedApi
         lexer.ConvertToName(apiFilePathPtr);
         aliasPtr = apiFilePathPtr;
         (void)lexer.Pull(parseTree::Token_t::EQUALS);
-        SkipWhitespaceAndComments(lexer);
         apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-        SkipWhitespaceAndComments(lexer);
     }
 
     // Create a new Provided API item.
@@ -63,7 +60,6 @@ static parseTree::ProvidedApi_t* ParseProvidedApi
     while (lexer.IsMatch(parseTree::Token_t::SERVER_IPC_OPTION))
     {
         apiPtr->AddContent(lexer.Pull(parseTree::Token_t::SERVER_IPC_OPTION));
-        SkipWhitespaceAndComments(lexer);
     }
 
     return apiPtr;
@@ -93,8 +89,10 @@ static parseTree::CompoundItemList_t* ParseProvidesSubsection
     }
     else
     {
-        lexer.ThrowException("Unexpected subsection name '" + subsectionName
-                             + "' in 'provides' section.");
+        lexer.ThrowException(
+            mk::format(LE_I18N("Unexpected subsection name '%s' in 'provides' section."),
+                       subsectionName)
+        );
         return NULL;
     }
 }
@@ -117,7 +115,6 @@ static parseTree::RequiredApi_t* ParseRequiredApi
 
     // Assume there's only a file path.
     parseTree::Token_t* apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-    SkipWhitespaceAndComments(lexer);
 
     // If there's an '=' following it, then attempt to convert it into an alias (NAME)
     // and pull out the '=' and the actual API file path.
@@ -126,9 +123,7 @@ static parseTree::RequiredApi_t* ParseRequiredApi
         lexer.ConvertToName(apiFilePathPtr);
         aliasPtr = apiFilePathPtr;
         (void)lexer.Pull(parseTree::Token_t::EQUALS);
-        SkipWhitespaceAndComments(lexer);
         apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-        SkipWhitespaceAndComments(lexer);
     }
 
     // Create parse tree node for this.
@@ -146,7 +141,6 @@ static parseTree::RequiredApi_t* ParseRequiredApi
     while (lexer.IsMatch(parseTree::Token_t::CLIENT_IPC_OPTION))
     {
         apiPtr->AddContent(lexer.Pull(parseTree::Token_t::CLIENT_IPC_OPTION));
-        SkipWhitespaceAndComments(lexer);
     }
 
     return apiPtr;
@@ -191,197 +185,18 @@ static parseTree::CompoundItem_t* ParseRequiresSubsection
     {
         return ParseTokenListSection(lexer, sectionNameTokenPtr, parseTree::Token_t::FILE_PATH);
     }
+    else if (subsectionName == "kernelModules")
+    {
+        return ParseComplexSection(lexer, sectionNameTokenPtr, ParseRequiredModule);
+    }
     else
     {
-        lexer.ThrowException("Unexpected subsection name '" + subsectionName
-                             + "' in 'requires' section.");
+        lexer.ThrowException(
+            mk::format(LE_I18N("Unexpected subsection name '%s' in 'requires' section."),
+                       subsectionName)
+        );
         return NULL;
     }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Make sure that the supplied type name is one of our supported types.
- */
-//--------------------------------------------------------------------------------------------------
-static void ValidateAssetDataTypeName
-(
-    Lexer_t& lexer,
-    const std::string& typeName  ///< Name of the type in question.
-)
-//--------------------------------------------------------------------------------------------------
-{
-    if (   (typeName != "bool")
-        && (typeName != "int")
-        && (typeName != "float")
-        && (typeName != "string"))
-    {
-        lexer.ThrowException("Unknown type name, '" + typeName + ",' on asset field.");
-    }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Extract the default value from the token stream.  While doing this, make sure that the type of
- * token makes sense for the data type of the field.
- *
- * @return The extracted token.
- */
-//--------------------------------------------------------------------------------------------------
-static parseTree::Token_t* MatchDefaultValue
-(
-    Lexer_t& lexer,
-    const std::string& typeName  ///< The data type of the asset field.
-)
-//--------------------------------------------------------------------------------------------------
-{
-    parseTree::Token_t* defaultValueTokenPtr = NULL;
-
-    if (typeName == "bool")
-    {
-        defaultValueTokenPtr = lexer.Pull(parseTree::Token_t::BOOLEAN);
-    }
-    else if (typeName == "int")
-    {
-        defaultValueTokenPtr = lexer.Pull(parseTree::Token_t::SIGNED_INTEGER);
-    }
-    else if (typeName == "float")
-    {
-        defaultValueTokenPtr = lexer.Pull(parseTree::Token_t::FLOAT);
-    }
-    else if (typeName == "string")
-    {
-        defaultValueTokenPtr = lexer.Pull(parseTree::Token_t::STRING);
-    }
-    else
-    {
-        lexer.ThrowException("Unknown type name, '" + typeName + ",' on asset field.");
-    }
-
-    return defaultValueTokenPtr;
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Parse an asset setting or variable.  Which one that is being parsed is passed as the AssetType_t
- * template parameter.
- *
- * @return Pointer to the subsection.
- */
-//--------------------------------------------------------------------------------------------------
-template <typename AssetType_t>
-static parseTree::CompoundItem_t* ParseAssetField
-(
-    Lexer_t& lexer
-)
-//--------------------------------------------------------------------------------------------------
-{
-    parseTree::Token_t* dataTypeNamePtr = lexer.Pull(parseTree::Token_t::NAME);
-    ValidateAssetDataTypeName(lexer, dataTypeNamePtr->text);
-    SkipWhitespaceAndComments(lexer);
-
-    parseTree::Token_t* fieldNamePtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-    SkipWhitespaceAndComments(lexer);
-
-    auto assetPtr = new AssetType_t(dataTypeNamePtr);
-    assetPtr->AddContent(fieldNamePtr);
-
-    if (lexer.IsMatch(parseTree::Token_t::EQUALS))
-    {
-        (void)lexer.Pull(parseTree::Token_t::EQUALS);
-        SkipWhitespaceAndComments(lexer);
-
-        parseTree::Token_t* defaultValuePtr = MatchDefaultValue(lexer, dataTypeNamePtr->text);
-        assetPtr->AddContent(defaultValuePtr);
-    }
-
-    return assetPtr;
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Parse an asset commands subsection.
- *
- * @return Pointer to the subsection.
- */
-//--------------------------------------------------------------------------------------------------
-static parseTree::CompoundItem_t* ParseAssetCommandsSubsection
-(
-    Lexer_t& lexer
-)
-//--------------------------------------------------------------------------------------------------
-{
-    parseTree::Token_t* fieldNamePtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-    SkipWhitespaceAndComments(lexer);
-
-    return new parseTree::AssetCommand_t(fieldNamePtr);
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Parse an asset and its subsections.
- *
- * @return Pointer to the subsection.
- */
-//--------------------------------------------------------------------------------------------------
-static parseTree::CompoundItem_t* ParseAssetFieldTypeSubsection
-(
-    Lexer_t& lexer
-)
-//--------------------------------------------------------------------------------------------------
-{
-    auto sectionNameTokenPtr = lexer.Pull(parseTree::Token_t::NAME);
-
-    const std::string& subsectionName = sectionNameTokenPtr->text;
-
-    if (subsectionName == "settings")
-    {
-        return ParseComplexSection(lexer,
-                                   sectionNameTokenPtr,
-                                   ParseAssetField<parseTree::AssetSetting_t>);
-    }
-    else if (subsectionName == "variables")
-    {
-        return ParseComplexSection(lexer,
-                                   sectionNameTokenPtr,
-                                   ParseAssetField<parseTree::AssetVariable_t>);
-    }
-    else if (subsectionName == "commands")
-    {
-        return ParseComplexSection(lexer, sectionNameTokenPtr, ParseAssetCommandsSubsection);
-    }
-    else
-    {
-        lexer.ThrowException("Unexpected subsection name '" + subsectionName
-                             + "' in 'assets' section.");
-        return NULL;
-    }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Parse an assets section.
- *
- * @return Pointer to the subsection.
- */
-//--------------------------------------------------------------------------------------------------
-static parseTree::CompoundItem_t* ParseAssetsSubsection
-(
-    Lexer_t& lexer
-)
-//--------------------------------------------------------------------------------------------------
-{
-    auto assetNameTokenPtr = lexer.Pull(parseTree::Token_t::NAME);
-
-    return ParseNamedComplexSection(lexer,
-                                    new parseTree::Asset_t(assetNameTokenPtr),
-                                    ParseAssetFieldTypeSubsection);
 }
 
 
@@ -409,6 +224,10 @@ static parseTree::CompoundItem_t* ParseSection
     {
         return ParseTokenListSection(lexer, sectionNameTokenPtr, parseTree::Token_t::ARG);
     }
+    else if (sectionName == "externalBuild")
+    {
+        return ParseTokenListSection(lexer, sectionNameTokenPtr, parseTree::Token_t::FILE_PATH);
+    }
     else if (sectionName == "sources")
     {
         return ParseTokenListSection(lexer, sectionNameTokenPtr, parseTree::Token_t::FILE_PATH);
@@ -416,6 +235,10 @@ static parseTree::CompoundItem_t* ParseSection
     else if (sectionName == "javaPackage")
     {
         return ParseTokenListSection(lexer, sectionNameTokenPtr, parseTree::Token_t::DOTTED_NAME);
+    }
+    else if (sectionName == "pythonPackage")
+    {
+        return ParseTokenListSection(lexer, sectionNameTokenPtr, parseTree::Token_t::FILE_PATH);
     }
     else if (sectionName == "bundles")
     {
@@ -429,13 +252,11 @@ static parseTree::CompoundItem_t* ParseSection
     {
         return ParseComplexSection(lexer, sectionNameTokenPtr, ParseRequiresSubsection);
     }
-    else if (sectionName == "assets")
-    {
-        return ParseComplexSection(lexer, sectionNameTokenPtr, ParseAssetsSubsection);
-    }
     else
     {
-        lexer.ThrowException("Unrecognized section name '" + sectionName + "'.");
+        lexer.ThrowException(
+            mk::format(LE_I18N("Unrecognized section name '%s'."), sectionName)
+        );
         return NULL;
     }
 }

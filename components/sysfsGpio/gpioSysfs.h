@@ -3,7 +3,7 @@
  * Definitions of the generic functions for manipulating the Sysfs GPIO
  * interface presented by the Linux kernel
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -445,7 +445,6 @@ struct gpioSysfs_Gpio {
     const char* gpioName;                         ///< GPIO Signal Name
     bool inUse;                                   ///< Is the GPIO currently used?
     gpioSysfs_ChangeCallbackFunc_t handlerPtr;    ///< Change callback handler, if registered
-    int monitorFd;                                ///< The FD of the file bing monitored
     void *callbackContextPtr;                     ///< Client context to be passed back
     le_fdMonitor_Ref_t fdMonitor;                 ///< fdMonitor Object associated to this GPIO
     le_msg_SessionRef_t currentSession;           ///< Current valid IPC session for this pin

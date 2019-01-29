@@ -2,7 +2,7 @@
 /**
  * @file path.h   File system path handling functions.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -231,6 +231,20 @@ bool IsCSource
  */
 //--------------------------------------------------------------------------------------------------
 bool IsCxxSource
+(
+    const std::string& path
+);
+
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Figures out whether or not a given string is a Python source code file path.
+ *
+ * @return true if this is a Python source code file path.
+ */
+//--------------------------------------------------------------------------------------------------
+bool IsPythonSource
 (
     const std::string& path
 );

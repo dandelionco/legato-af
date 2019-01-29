@@ -25,7 +25,7 @@
  * 5) check temperature INFO traces value.
  *
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -613,7 +613,13 @@ COMPONENT_INIT
 
     if (le_arg_NumArgs() == 1)
     {
-        testNumberInt = atoi(le_arg_GetArg(0));
+        const char* testNumberIntPtr = le_arg_GetArg(0);
+        if (NULL == testNumberIntPtr)
+        {
+            LE_ERROR("testNumberIntPtr is NULL");
+            exit(EXIT_FAILURE);
+        }
+        testNumberInt = atoi(testNumberIntPtr);
         LE_DEBUG("Test Sequence. %d", testNumberInt);
 
         LE_INFO("======== Start temperature (%d) test sequence ========", testNumberInt);

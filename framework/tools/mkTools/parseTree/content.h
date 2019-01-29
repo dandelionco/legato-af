@@ -2,7 +2,7 @@
 /**
  * @file content.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -10,7 +10,7 @@
 #define LEGATO_MKTOOLS_PARSE_TREE_CONTENT_H_INCLUDE_GUARD
 
 
-struct DefFile_t;
+struct DefFileFragment_t;
 
 
 //--------------------------------------------------------------------------------------------------
@@ -44,15 +44,11 @@ struct Content_t
         POOL,           ///< Pool (TokenList_t), "poolName = 123"
         APP,            ///< Named item in .sdef 'apps:' section (CompoundItemList_t),
                         ///  "appPath", "appPath { }" or "appPath { overrides }".
-        MODULE,         ///< Named item in .sdef 'kernelModules:' section (CompoundItemList_t),
-        ASSET,          ///< AirVantage asset definition (Asset_t).
-        ASSET_SETTING,  ///< AirVantage writable value (AssetSetting_t).
-        ASSET_VARIABLE, ///< AirVantage readable value (AssetVariable_t).
-        ASSET_COMMAND   ///< AirVantage executable value (AssetCommand_t).
+        MODULE          ///< Named item in .sdef 'kernelModules:' section (CompoundItemList_t),
     };
 
     Type_t type;        ///< The type of content item.
-    DefFile_t* filePtr; ///< The file it was found in.
+    DefFileFragment_t* filePtr; ///< The file it was found in.
 
     std::string TypeName() const { return TypeName(type); }
     static std::string TypeName(Content_t::Type_t type);
@@ -62,7 +58,7 @@ struct Content_t
 protected:
 
     /// Constructor
-    Content_t(Type_t contentType, DefFile_t* defFilePtr): type(contentType), filePtr(defFilePtr) {}
+    Content_t(Type_t contentType, DefFileFragment_t* defFilePtr): type(contentType), filePtr(defFilePtr) {}
 };
 
 

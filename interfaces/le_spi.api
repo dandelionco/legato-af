@@ -3,7 +3,7 @@
  * @page c_spi SPI
  *
  * @ref le_spi_interface.h "API Reference" <br>
- * @ref howToSPI "How To Setup SPI" <br>
+ * @subpage howToSPI "How To Setup SPI" <br>
  * @ref yoctoOutofTreeKernelModule
  *
  * <HR>
@@ -73,7 +73,24 @@
  * le_spi_Close(spiHandle);
  * @endcode
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * @section spi_kernel_dep Kernel module dependency
+ *
+ * SPI Service has a build time dependency on the spisvc.ko kernel module for the subset of
+ * targets on which the feature is currently supported (currently, WP76, WP77, WP75, WP85).
+ * That means, spiService.adef file and default.sdef file both include kernelModules section
+ * that lists spisvc.mdef as a dependency.
+ * @note If the users is building their own configuration, extra attention has to be paid to
+ * preserve this logic, i.e. retain the build-time dependency and avoid duplicated inclusion of
+ * the spisvc.mdef (which may cause build errors).
+ *
+ * @section spi_scripts Automatic installation/removal of the kernel modules
+ *
+ * SPI service is started manually, i.e. it is not running by default. When the user starts
+ * spiService, the install.sh scripts takes care of loading both "spidev" and "spisvc" kernel
+ * modules.
+ * Conversely, when spiService is stopped, the remove.sh script uloads both kernel modules.
+ *
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -83,7 +100,7 @@
  *
  * Legato @ref c_le_spi include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -123,9 +140,9 @@ REFERENCE DeviceHandle;
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t Open
 (
-    string deviceName [128] IN,  ///< Handle for the SPI master to  open
-    DeviceHandle handle OUT      ///<  Handle for passing to related functions in order to
-                                ///  access the SPI device
+    string deviceName [128] IN,  ///< Handle for the SPI master to open
+    DeviceHandle handle OUT      ///< Handle for passing to related functions in order to
+                                 ///< access the SPI device
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -146,7 +163,7 @@ FUNCTION Close
 /**
  * Configures an SPI device's data sample settings. The required values should be
  * included in your target's datasheet. Most common @c Mode values are
- * @c 0 and @c 3. 
+ * @c 0 and @c 3.
  *
  * These are the SPI Mode options:
  * |   Mode  |   Clock Polarity   |  Clock Phase   |   Clock Edge   |
@@ -164,10 +181,10 @@ FUNCTION Close
 FUNCTION Configure
 (
     DeviceHandle handle IN,  ///< Handle for the SPI master to configure
-    int mode IN,  ///< Choose mode options for the bus per above table
+    int32 mode IN,  ///< Choose mode options for the bus per above table
     uint8 bits IN,  ///< bits per word, typically 8 bits per word
     uint32 speed IN,  ///< max speed (Hz), this is slave dependant
-    int msb IN    ///< set as 0 for MSB as first bit or 1 for LSB as first bit
+    int32 msb IN    ///< set as 0 for MSB as first bit or 1 for LSB as first bit
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -183,7 +200,7 @@ FUNCTION le_result_t WriteReadHD
     DeviceHandle handle IN,  ///< Handle for the SPI master to perform the write-read on
     uint8 writeData [MAX_WRITE_SIZE] IN, ///< TX command/address being sent to slave with size
     uint8 readData  [MAX_READ_SIZE] OUT ///< RX response from slave with number of bytes reserved
-                                       /// on master
+                                        ///< on master
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -212,7 +229,7 @@ FUNCTION le_result_t ReadHD
 (
     DeviceHandle handle IN,  ///< Handle for the SPI master to perform the read from
     uint8 readData [MAX_READ_SIZE] OUT  ///< RX response from slave with number of bytes reserved
-                                        ///  on master
+                                        ///<  on master
 );
 
 //--------------------------------------------------------------------------------------------------

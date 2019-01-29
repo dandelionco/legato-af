@@ -29,7 +29,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -37,7 +37,7 @@
  *
  * Legato @ref c_pa_ecall include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PAECALL_INCLUDE_GUARD
@@ -104,8 +104,8 @@ typedef void (*pa_ecall_EventHandlerFunc_t)
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_ecall_Init
 (
-    pa_ecall_SysStd_t sysStd ///< [IN] Choosen system (PA_ECALL_PAN_EUROPEAN or PA_ECALL_ERA_GLONASS)
-);
+    pa_ecall_SysStd_t sysStd ///< [IN] Choosen system (PA_ECALL_PAN_EUROPEAN or
+);                           ///<      PA_ECALL_ERA_GLONASS)
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -144,7 +144,7 @@ LE_SHARED le_result_t pa_ecall_GetOperationMode
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_event_HandlerRef_t pa_ecall_AddEventHandler
 (
-    pa_ecall_EventHandlerFunc_t   handlerFuncPtr ///< [IN] The event handler function.
+    pa_ecall_EventHandlerFunc_t   handlerFuncPtr ///< [IN] The event handler function
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -161,11 +161,13 @@ LE_SHARED void pa_ecall_RemoveEventHandler
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function must be called to set the Public Safely Answering Point number.
+ * Set the Public Safely Answering Point telephone number.
  *
- * @return LE_FAULT  The function failed.
- * @return LE_OVERFLOW  psap number is too long.
- * @return LE_OK     The function succeed.
+ * @note Important! This function doesn't modify the U/SIM content.
+ *
+ * @return LE_OK           The function succeed.
+ * @return LE_FAULT        The function failed.
+ * @return LE_UNSUPPORTED  Not supported on this platform.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_ecall_SetPsapNumber
@@ -175,17 +177,20 @@ LE_SHARED le_result_t pa_ecall_SetPsapNumber
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function must be called to get the Public Safely Answering Point number.
+ * Get the Public Safely Answering Point telephone number.
  *
- * @return LE_FAULT     The function failed.
- * @return LE_OVERFLOW  Retrieved PSAP number is too long for the out parameter.
- * @return LE_OK        The function succeed.
+ * @return LE_OK           The function succeed.
+ * @return LE_FAULT        The function failed.
+ * @return LE_OVERFLOW     Retrieved PSAP number is too long for the out parameter.
+ * @return LE_UNSUPPORTED  Not supported on this platform.
+ *
+ * @note Important! This function doesn't read the U/SIM content.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_ecall_GetPsapNumber
 (
     char*    psapPtr, ///< [OUT] Public Safely Answering Point number
-    size_t   len      ///< [IN] The length of SMSC string.
+    size_t   len      ///< [IN] The length of SMSC string
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -266,7 +271,7 @@ LE_SHARED le_result_t pa_ecall_End
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_ecall_SetNadDeregistrationTime
 (
-    uint16_t    deregTime  ///< [IN] the 'NAD Deregistration Time' value in minutes.
+    uint16_t    deregTime  ///< [IN] the 'NAD Deregistration Time' value in minutes
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -280,7 +285,128 @@ LE_SHARED le_result_t pa_ecall_SetNadDeregistrationTime
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_ecall_GetNadDeregistrationTime
 (
-    uint16_t*    deregTimePtr  ///< [OUT] the 'NAD Deregistration Time' value in minutes.
+    uint16_t*    deregTimePtr  ///< [OUT] the 'NAD Deregistration Time' value in minutes
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_CCFT' value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_SetEraGlonassFallbackTime
+(
+    uint16_t    duration  ///< [IN] the ECALL_CCFT time value (in minutes)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_CCFT' value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_GetEraGlonassFallbackTime
+(
+    uint16_t*    durationPtr  ///< [OUT] the ECALL_CCFT time value (in minutes)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_AUTO_ANSWER_TIME' time value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_SetEraGlonassAutoAnswerTime
+(
+    uint16_t autoAnswerTime  ///< [IN] The ECALL_AUTO_ANSWER_TIME time value in minutes
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_AUTO_ANSWER_TIME' time value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_GetEraGlonassAutoAnswerTime
+(
+    uint16_t* autoAnswerTimePtr  ///< [OUT] The ECALL_AUTO_ANSWER_TIME time value in minutes
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_MSD_MAX_TRANSMISSION_TIME' time. It is a time period for MSD transmission.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_SetEraGlonassMSDMaxTransmissionTime
+(
+    uint16_t msdMaxTransTime ///< [IN] ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_MSD_MAX_TRANSMISSION_TIME' time. It is a time period for MSD transmission.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_GetEraGlonassMSDMaxTransmissionTime
+(
+    uint16_t* msdMaxTransTimePtr ///< [OUT] ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_POST_TEST_REGISTRATION_TIME' time value in seconds.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_SetEraGlonassPostTestRegistrationTime
+(
+    uint16_t postTestRegTime  ///< [IN] ECALL_POST_TEST_REGISTRATION_TIME time value (in seconds)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_POST_TEST_REGISTRATION_TIME' time value in seconds.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_GetEraGlonassPostTestRegistrationTime
+(
+    uint16_t* postTestRegTimePtr  ///< [OUT] ECALL_POST_TEST_REGISTRATION_TIME time value
+                                  ///< (in seconds)
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -295,6 +421,20 @@ LE_SHARED le_result_t pa_ecall_SendMsd
 (
     uint8_t  *msdPtr,   ///< [IN] Encoded Msd
     size_t    msdSize   ///< [IN] msd buffer size
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Update current system standard
+ *
+ * @return
+ *  - LE_OK    on success
+ *  - LE_FAULT on failure
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ecall_UpdateSystemStandard
+(
+    pa_ecall_SysStd_t sysStandard  ///< [IN] The system standard
 );
 
 #endif // LEGATO_PAECALL_INCLUDE_GUARD

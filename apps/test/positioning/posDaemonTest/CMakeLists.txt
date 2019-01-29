@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 find_package(CUnit REQUIRED)
@@ -45,8 +45,12 @@ mkexe(  ${APP_TARGET}
             -i ${LEGATO_ROOT}/components
     )
 
+add_dependencies(${APP_TARGET} cunit)
+
 if(NOT ${LEGATO_TARGET} STREQUAL "localhost")
     add_test(${APP_TARGET} ${EXECUTABLE_OUTPUT_PATH}/${APP_TARGET})
     set_tests_properties(${APP_TARGET} PROPERTIES TIMEOUT 0)
 endif()
 
+# This is a C test
+add_dependencies(tests_c ${APP_TARGET})

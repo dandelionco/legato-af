@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_ecall.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -266,6 +266,159 @@ le_result_t pa_ecall_GetNadDeregistrationTime
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Set the 'ECALL_CCFT' value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_SetEraGlonassFallbackTime
+(
+    uint16_t    duration  ///< [IN] the ECALL_CCFT time value (in minutes)
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_CCFT' value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_GetEraGlonassFallbackTime
+(
+    uint16_t*    durationPtr  ///< [OUT] the ECALL_CCFT time value (in minutes).
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_AUTO_ANSWER_TIME' time value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_SetEraGlonassAutoAnswerTime
+(
+    uint16_t autoAnswerTime  ///< [IN] The ECALL_AUTO_ANSWER_TIME time value in minutes.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_AUTO_ANSWER_TIME' time value in minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_GetEraGlonassAutoAnswerTime
+(
+    uint16_t* autoAnswerTimePtr  ///< [OUT] The ECALL_AUTO_ANSWER_TIME time value in minutes.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_MSD_MAX_TRANSMISSION_TIME' time. It is a time period for MSD transmission.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_SetEraGlonassMSDMaxTransmissionTime
+(
+    uint16_t msdMaxTransTime ///< [IN] ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_MSD_MAX_TRANSMISSION_TIME' time. It is a time period for MSD transmission.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_GetEraGlonassMSDMaxTransmissionTime
+(
+    uint16_t* msdMaxTransTimePtr ///< [OUT] ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the 'ECALL_POST_TEST_REGISTRATION_TIME' time value in seconds.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_SetEraGlonassPostTestRegistrationTime
+(
+    uint16_t postTestRegTime  ///< [IN] ECALL_POST_TEST_REGISTRATION_TIME time value (in seconds).
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the 'ECALL_POST_TEST_REGISTRATION_TIME' time value in seconds.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_GetEraGlonassPostTestRegistrationTime
+(
+    uint16_t* postTestRegTimePtr  ///< [OUT] ECALL_POST_TEST_REGISTRATION_TIME time value
+                                  ///< (in seconds).
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function must be called to send the Minimum Set of Data for the eCall.
  *
  * @return LE_FAULT  The function failed.
@@ -276,6 +429,24 @@ le_result_t pa_ecall_SendMsd
 (
     uint8_t  *msdPtr,   ///< [IN] Encoded Msd
     size_t    msdSize   ///< [IN] msd buffer size
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Update current system standard
+ *
+ * @return
+ *  - LE_OK    on success
+ *  - LE_FAULT on failure
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_ecall_UpdateSystemStandard
+(
+    pa_ecall_SysStd_t sysStandard  ///< [IN] The system standard
 )
 {
     LE_ERROR("Unsupported function called");

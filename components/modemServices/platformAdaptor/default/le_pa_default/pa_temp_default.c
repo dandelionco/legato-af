@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_temp.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -183,3 +183,21 @@ le_event_HandlerRef_t* pa_temp_AddTempEventHandler
     return NULL;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reset the temperature sensor handle.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed.
+ *      - LE_UNSUPPORTED   The function does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_temp_ResetHandle
+(
+    const char*         sensorPtr  ///< [IN] Name of the temperature sensor.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}

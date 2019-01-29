@@ -1,23 +1,40 @@
 #
 # Init file for the C language package
 #
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
 
+import codeGenHelpers
 
-import commandLib
-import codeTypes
+def AddLangArgumentGroup(parser):
+    parser.add_argument('--async-server',
+                        dest="async",
+                        action='store_true',
+                        default=False,
+                        help='generate asynchronous-style server functions')
 
-import interfaceParser
+# Custom filters needed for C templates
+Filters = { 'DecorateName':        codeGenHelpers.DecorateName,
+            'EscapeString':        codeGenHelpers.EscapeString,
+            'FormatHeaderComment': codeGenHelpers.FormatHeaderComment,
+            'FormatDirection':     codeGenHelpers.FormatDirection,
+            'FormatType':          codeGenHelpers.FormatType,
+            'FormatParameterName': codeGenHelpers.FormatParameterName,
+            'FormatParameterPtr':  codeGenHelpers.FormatParameterPtr,
+            'FormatParameter':     codeGenHelpers.FormatParameter,
+            'GetParameterCount':   codeGenHelpers.GetParameterCount,
+            'GetParameterCountPtr': codeGenHelpers.GetParameterCountPtr,
+            'PackFunction':        codeGenHelpers.GetPackFunction,
+            'UnpackFunction':      codeGenHelpers.GetUnpackFunction,
+            'CAPIParameters':      codeGenHelpers.IterCAPIParameters }
 
-#
-# Return the language specific implementation of the command library.
-# Also do any language specific initialization.
-#
-def GetCommandLib():
-    # Specify the codeTypes library for the interface parser to use.
-    interfaceParser.SetCodeTypeLibrary(codeTypes)
 
-    # Return the C specific command library
-    return commandLib
+Tests = { 'SizeParameter':         codeGenHelpers.IsSizeParameter }
 
+Globals = { 'Labeler':             codeGenHelpers.Labeler }
+
+GeneratedFiles = { 'interface' : '%s_interface.h',
+                   'local' : '%s_messages.h',
+                   'client' : '%s_client.c',
+                   'server-interface' : '%s_server.h',
+                   'server' : '%s_server.c' }

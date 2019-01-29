@@ -48,9 +48,34 @@
  * If corruption in the secure storage is detected, a restore is performed and the target device is
  * rebooted.
  *
+ * @section c_secStoreGlobal Global Secure Storage
+ *
+ * This same API also provides access to a global area that can be shared across the system.
+ * This interface is called @c secStoreGlobal.
+ *
+ * Here's a code sample binding to this service:
+ * @verbatim
+   bindings:
+   {
+      clientExe.clientComponent.secStoreGlobal -> secStore.secStoreGlobal
+   }
+   @endverbatim
+ *
+ * And the following code should be used to use the API from your .cdef file:
+ * @verbatim
+   requires:
+   {
+     api:
+
+     {
+       secStoreGlobal = le_secStore.api
+    }
+   }
+   @endverbatim
+ *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -60,7 +85,7 @@
  *
  * Legato @ref c_secStore API
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -85,6 +110,7 @@ DEFINE MAX_ITEM_SIZE = 8192;
 /**
  * Writes an item to secure storage. If the item already exists, it'll be overwritten with
  * the new value. If the item doesn't already exist, it'll be created.
+ * If the item name is not valid or the buffer is NULL, this function will kill the calling client.
  *
  * @return
  *      LE_OK if successful.
@@ -103,6 +129,7 @@ FUNCTION le_result_t Write
 //--------------------------------------------------------------------------------------------------
 /**
  * Reads an item from secure storage.
+ * If the item name is not valid or the buffer is NULL, this function will kill the calling client.
  *
  * @return
  *      LE_OK if successful.
@@ -123,6 +150,7 @@ FUNCTION le_result_t Read
 //--------------------------------------------------------------------------------------------------
 /**
  * Deletes an item from secure storage.
+ * If the item name is not valid, this function will kill the calling client.
  *
  * @return
  *      LE_OK if successful.

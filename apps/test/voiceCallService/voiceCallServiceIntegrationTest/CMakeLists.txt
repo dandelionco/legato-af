@@ -1,7 +1,7 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
-# Use of this work is subject to license.
+#
 #*******************************************************************************
 
 
@@ -12,3 +12,6 @@ mkapp( voiceCallTest.adef
        -i ${LEGATO_ROOT}/interfaces/voiceCallService
        -i ${LEGATO_ROOT}/interfaces/audio
 )
+
+# This is a C test
+add_dependencies(tests_c voiceCallTest)

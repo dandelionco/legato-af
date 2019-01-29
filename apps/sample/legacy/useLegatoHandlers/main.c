@@ -10,8 +10,32 @@ static void SmsRxHandler
 )
 {
     char textBuffer[1024];
+    le_result_t res;
 
-    le_sms_GetSenderTel(msg, textBuffer, sizeof(textBuffer));
+    res = le_sms_GetSenderTel(msg, textBuffer, sizeof(textBuffer));
+
+    switch (res)
+    {
+        case LE_OK:
+            LE_INFO("The function succeeded");
+            break;
+
+        case LE_NOT_FOUND:
+            LE_EMERG("Invalid reference (%p) provided!", msg);
+            break;
+
+        case LE_NOT_PERMITTED:
+            LE_ERROR("The message is not a received message");
+            break;
+
+        case LE_FAULT:
+            LE_EMERG("textBuffer is NULL!");
+            break;
+
+        default:
+            LE_EMERG("The textBuffer length exceed the maximum length");
+            break;
+    }
 
     switch (le_sms_GetFormat(msg))
     {
@@ -25,12 +49,20 @@ static void SmsRxHandler
             printf("%s\n", textBuffer);
             break;
 
+        case LE_SMS_FORMAT_UCS2:
+            printf("Received unicode SMS from %s.\n", textBuffer);
+            break;
+
         case LE_SMS_FORMAT_BINARY:
             printf("Received SMS in binary format from %s.\n", textBuffer);
             break;
 
         case LE_SMS_FORMAT_UNKNOWN:
             printf("Received SMS in unknown format from %s.\n", textBuffer);
+            break;
+
+        default:
+            LE_FATAL("Received SMS in unhandled format from %s.\n", textBuffer);
             break;
     }
 
@@ -71,5 +103,8 @@ int main(int argc, char** argv)
             LE_FATAL("poll() failed with errno %m.");
         }
     }
+
+    // We can never actually get here due to while (true) loop above with no breaks, but SONAR.
+    return 0;
 }
 

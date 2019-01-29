@@ -4,16 +4,17 @@
 
 
 #include "legato.h"
-#include "server.h"
+#include "example_server.h"
 #include "le_print.h"
 
+#define BUFFERSIZE 1000
 
 // Need this so we can queue functions to the new thread.
 // This will only be used from the main thread.
 static le_thread_Ref_t NewThreadRef;
 
 
-void allParameters
+void example_allParameters
 (
     common_EnumExample_t a,
     uint32_t* bPtr,
@@ -28,6 +29,18 @@ void allParameters
     size_t moreNumElements
 )
 {
+    if (bPtr == NULL)
+    {
+        LE_KILL_CLIENT("bPtr is NULL.");
+        return;
+    }
+
+    if (outputPtr == NULL)
+    {
+        LE_KILL_CLIENT("outputPtr is NULL.");
+        return;
+    }
+
     int i;
 
     // If a special value is passed down, return right away without assigning to any of the output
@@ -57,20 +70,40 @@ void allParameters
     le_utf8_Copy(more, "more info", moreNumElements, NULL);
 }
 
-void FileTest
+void example_FileTest
 (
     int dataFile,
     int* dataOutPtr
 )
 {
+    if (dataOutPtr == NULL)
+    {
+        LE_KILL_CLIENT("dataOutPtr is NULL.");
+        return;
+    }
+
     // Read and print out whatever is read from the client fd
-    char buffer[1000];
+    char buffer[BUFFERSIZE];
     ssize_t numRead;
 
     numRead = read(dataFile, buffer, sizeof(buffer));
-    buffer[numRead] = '\0';
-    LE_PRINT_VALUE("%zd", numRead);
-    LE_PRINT_VALUE("%s", buffer);
+    if (-1 == numRead)
+    {
+        LE_INFO("Read error %s", strerror(errno));
+    }
+    else
+    {
+        if (BUFFERSIZE == numRead)
+        {
+            buffer[numRead-1] = '\0';
+        }
+        else
+        {
+            buffer[numRead] = '\0';
+        }
+        LE_PRINT_VALUE("%zd", numRead);
+        LE_PRINT_VALUE("%s", buffer);
+    }
 
     // Open a known file to return back to the client
     *dataOutPtr = open("/usr/include/stdio.h", O_RDONLY);
@@ -78,20 +111,33 @@ void FileTest
 
     // Read a bit from the file, to make sure it is okay
     numRead = read(*dataOutPtr, buffer, sizeof(buffer));
-    buffer[numRead] = '\0';
-    LE_PRINT_VALUE("%zd", numRead);
-    LE_PRINT_VALUE("%s", buffer);
-
+    if (-1 == numRead)
+    {
+        LE_INFO("Read error %s", strerror(errno));
+    }
+    else
+    {
+        if (BUFFERSIZE == numRead)
+        {
+            buffer[numRead-1] = '\0';
+        }
+        else
+        {
+            buffer[numRead] = '\0';
+        }
+        LE_PRINT_VALUE("%zd", numRead);
+        LE_PRINT_VALUE("%s", buffer);
+    }
 }
 
 
 // Storage for the handler ref
-static TestAHandlerFunc_t HandlerRef = NULL;
+static example_TestAHandlerFunc_t HandlerRef = NULL;
 static void* ContextPtr = NULL;
 
-TestAHandlerRef_t AddTestAHandler
+example_TestAHandlerRef_t example_AddTestAHandler
 (
-    TestAHandlerFunc_t handlerRef,
+    example_TestAHandlerFunc_t handlerRef,
     void* contextPtr
 )
 {
@@ -100,17 +146,17 @@ TestAHandlerRef_t AddTestAHandler
 
     // Note: this is just for testing, and is easier than actually creating an event and using
     //       the event loop to call the handler.
-    return (TestAHandlerRef_t)10;
+    return (example_TestAHandlerRef_t)10;
 }
 
-void RemoveTestAHandler
+void example_RemoveTestAHandler
 (
-    TestAHandlerRef_t addHandlerRef
+    example_TestAHandlerRef_t addHandlerRef
 )
 {
     LE_PRINT_VALUE("%p", addHandlerRef);
 
-    if ( addHandlerRef == (TestAHandlerRef_t)10 )
+    if ( addHandlerRef == (example_TestAHandlerRef_t)10 )
     {
         HandlerRef = NULL;
         ContextPtr = NULL;
@@ -121,7 +167,7 @@ void RemoveTestAHandler
     }
 }
 
-void TriggerTestA
+void example_TriggerTestA
 (
     void
 )
@@ -140,19 +186,19 @@ void TriggerTestA
 // Add these two functions to satisfy the compiler, but don't need to do
 // anything with them, since they are just used to verify bug fixes in
 // the handler specification.
-BugTestHandlerRef_t AddBugTestHandler
+example_BugTestHandlerRef_t example_AddBugTestHandler
 (
     const char* newPathPtr,
-    BugTestHandlerFunc_t handlerPtr,
+    example_BugTestHandlerFunc_t handlerPtr,
     void* contextPtr
 )
 {
     return NULL;
 }
 
-void RemoveBugTestHandler
+void example_RemoveBugTestHandler
 (
-    BugTestHandlerRef_t addHandlerRef
+    example_BugTestHandlerRef_t addHandlerRef
 )
 {
 }
@@ -163,15 +209,15 @@ void RemoveBugTestHandler
  */
 
 // Storage for the handler ref
-static CallbackTestHandlerFunc_t CallbackTestHandlerRef = NULL;
+static example_CallbackTestHandlerFunc_t CallbackTestHandlerRef = NULL;
 static void* CallbackTestContextPtr = NULL;
 
-int32_t TestCallback
+int32_t example_TestCallback
 (
     uint32_t someParm,
     const uint8_t* dataArrayPtr,
     size_t dataArrayNumElements,
-    CallbackTestHandlerFunc_t handlerPtr,
+    example_CallbackTestHandlerFunc_t handlerPtr,
     void* contextPtr
 )
 {
@@ -208,10 +254,13 @@ static void CallbackTestHandlerQueued
       NUM_ARRAY_MEMBERS(array),
       fdToClient,
       contextPtr);
+
+     // Close the fd
+     close(fdToClient);
 }
 
 
-void TriggerCallbackTest
+void example_TriggerCallbackTest
 (
     uint32_t data
 )
@@ -256,7 +305,7 @@ void* NewThread
 
 COMPONENT_INIT
 {
-    AdvertiseService();
+    example_AdvertiseService();
 
     // Start the second thread
     NewThreadRef = le_thread_Create("New thread", NewThread, NULL);

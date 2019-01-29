@@ -106,6 +106,13 @@
  * A sample code can be seen in the following page:
  * - @subpage c_mrcRadioConfigurationPreferences
  *
+ * @section le_mrc_NetworkRejectHandler Report Network Reject Indication
+ *
+ * The application can register a handler function to report network reject with MNC/MCC code and
+ * the Radio Access Technology using le_mrc_AddNetworkRejectHandler() API.
+ *
+ * le_mrc_RemoveNetworkRejectHandler() API uninstalls the handler function.
+ *
  * @section le_mrc_capabilities Radio Capabilities
  *
  * le_mrc_GetBandCapabilities() let you get the 2G/3G band capabilities by retrieving a bit mask
@@ -121,7 +128,8 @@
  * - @subpage c_mrcBandCapabilities
  *
  * @section le_mrc_rat Radio Access Technology (RAT)
- * le_mrc_GetRadioAccessTechInUse() API retrieves the current active Radio Access Technology.
+ * le_mrc_GetRadioAccessTechInUse() API retrieves the current active Radio Access Technology (RAT).
+ * @note  The API returns the RAT only if the device is registered on the network.
  *
  * The application can register a handler function to retrieve the Radio Access Technology each time
  * the RAT changes.
@@ -136,7 +144,8 @@
  * The Radio Access Technology preferences can be:
  * - CDMA (CDMA2000-1X + CDMA2000-HRPD)
  * - GSM
- * - UMTS (UMTS + TD-SCDMA)
+ * - UMTS (UMTS)
+ * - TDSCDMA (TD-SCDMA)
  * - LTE
  *
  * @note LE_MRC_BITMASK_RAT_ALL value can be used to select the RAT in automatic mode.
@@ -163,18 +172,39 @@
  *  @c le_mrc_ManualSelectionHandlerFunc_t handler function.
  *
  * When the network registration fails, the platform specific network registration error code can
- * be known by using le_mrc_GetPlatformSpecificRegistrationErrorCode() (refer to your platform
- * documentation for further details).
+ * be known by using le_mrc_GetPlatformSpecificRegistrationErrorCode() API.
+ * Please refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * registration error code description.
  *
  * A sample code can be seen in the following page:
  * - @subpage c_mrcNetworkRegistration
+ *
+ * @section le_mrc_service Packet services state
+ *
+ * le_mrc_GetPacketSwitchedState() API retrieves the current Packet Switched state
+ * @ref le_mrc_NetRegState_t.
+ *
+ * The Packet Switched services state can be:
+ * - NONE
+ * - HOME
+ * - ROAMING
+ *
+ * The application can register a handler function to retrieve the Packet
+ * Switched state each time the service state changes.
+ *
+ * le_mrc_AddPacketSwitchedChangeHandler() API installs a Packet Switched state handler.
+ *
+ * le_mrc_RemovePacketSwitchedChangeHandler() API uninstalls the handler function.
+ *
+ * A sample code can be seen in the following page:
+ * - @subpage c_mrcGetService
  *
  * @section le_mrc_signal Signal Quality
  *
  * le_mrc_GetSignalQual() retrieves the received signal strength details.
  *
- * You must call le_mrc_MeasureSignalMetrics() to measure the signal metrics of the serving cell (aka
- * the 'serving' cell). It returns a reference of le_mrc_MetricsRef_t type.
+ * You must call le_mrc_MeasureSignalMetrics() to measure the signal metrics of the serving cell
+ * (aka the 'serving' cell). It returns a reference of le_mrc_MetricsRef_t type.
  *
  * When the signal metrics are no longer needed, you must call le_mrc_DeleteSignalMetrics() to free
  * all allocated ressources associated with the Metrics object.
@@ -184,7 +214,7 @@
  * le_mrc_GetGsmSignalMetrics() the signal strength in dBm and the bit error rate measured on GSM
  * network.
  *
- * le_mrc_GetUmtsSignalMetrics() returns the signal metrics measured on UMTS network.
+ * le_mrc_GetUmtsSignalMetrics() returns the signal metrics measured on UMTS or TD-SCDMA networks.
  *
  * le_mrc_GetLteSignalMetrics() returns the signal metrics measured on LTE network.
  *
@@ -196,13 +226,18 @@
  * le_mrc_AddSignalStrengthChangeHandler() API installs a signal strength change handler.
  * The RAT, the lower-range and the upper-range thresholds must be passed as input parameters. These
  * parameters are updated each time the function is called, the previous thresholds are replaced by
- * the new ones if the function is called with the same RAT.
+ * the new ones if the function is called with the same RAT. The event is notified when we cross the
+ * range limits in both direction.
  *
- * @warning The threshold values must be in the allowed platform range.
- *
- * The event is notified when we cross the range limits in both direction.
+ * @warning A fatal error will be thrown if the RAT is not valid and the
+ *  le_mrc_AddSignalStrengthChangeHandler function won't return.
  *
  * le_mrc_RemoveSignalStrengthChangeHandler() API uninstalls the handler function.
+ *
+ * le_mrc_SetSignalStrengthIndThresholds() API changes or sets new thresholds.
+ *
+ * le_mrc_SetSignalStrengthIndDelta() API sets a signal strength indication delta value for a
+ * specific RAT. The event is notified when the delta range is crossed in both direction.
  *
  * A sample code can be seen in the following page:
  * - @subpage c_mrcQuality
@@ -251,6 +286,79 @@
  * A sample code can be seen in the following page:
  * - @subpage c_mrcNetworkScan
  *
+ * @section le_mrc_PcinetworkScan PCI Network Scan
+ *
+ * Call le_mrc_PerformPciNetworkScan() to fill a list of all neighboring cells.
+ * The Pci scan is used to get the according MCC/MNC for each neightboring cells ID. Not that a cell
+ * may contain more than one MCC/MNC when sevral plmn sharing the same cell.
+ * You can go through all Scan Information by calling le_mrc_GetFirstPciScanInfo() and
+ * le_mrc_GetNextPciScanInfo(). Note that each cell info contains a list of mcc/mnc, you can go
+ * through all mcc/mnc Information for each cell by calling le_mrc_GetFirstPlmnInfo()
+ * and le_mrc_GetNextPlmnInfo(), this two APIs return a reference to PlmnInformation, then use
+ * le_mrc_GetPciScanMccMnc() by giving this reference as parameter to get the Mcc/Mnc of the Plmn.
+ * Call le_mrc_PerformPciNetworkScanAsync()to start a pci scan asynchronously. The
+ * function is not blocking. The scan list reference will be returned with the handler function
+ * response (@c le_mrc_PciNetworkScanHandlerFunc_t).
+ *
+ *
+ * For Pci Network Scan Information, you can call:
+ *
+ *  - le_mrc_GetPciScanCellId() to get the id of each cell.
+ *  - le_mrc_GetPciScanMccMnc() to get the Mcc/Mnc of each plmn on each cell.
+ *  - le_mrc_DeletePciNetworkScan() should be called when you do not need the list anymore.
+ *
+ * This code sample shows how to use the PCI scan API and display the apropriate values
+ * @code
+void DisplayPciScanInfo
+(
+    void
+)
+{
+    uint16_t celId = O;
+    char mcc[LE_MRC_MCC_BYTES] = {0};
+    char mnc[LE_MRC_MNC_BYTES] = {0};
+    le_mrc_PciScanInformationListRef_t scanInfoListRef = NULL;
+    le_mrc_PciScanInformationRef_t     scanInfoRef = NULL;
+    le_mrc_PlmnInformationRef_t        plmnInfoRef = NULL;
+
+    scanInfoListRef = le_mrc_PerformPciNetworkScan(LE_MRC_BITMASK_RAT_LTE);
+    LE_ASSERT(scanInfoListRef != NULL);
+
+    // Get the information (cell, Mcc,Mnc) of the first cell.
+    scanInfoRef = le_mrc_GetFirstCellularNetworkScan(scanInfoListRef);
+
+    celId = le_mrc_GetPciScanCellId (scanInfoRef);
+
+    // Get the first plmn information of the first cell.
+    PlmnInfoRef = le_mrc_GetFirstPlmnInfo(scanInfoRef);
+    le_mrc_GetPciScanMccMnc(PlmnInfoRef, mcc, LE_MRC_MCC_BYTES, mnc, LE_MRC_MCC_BYTES);
+    LE_INFO("Cell id is %"PRIu16", Mcc is %s, Mnc is %s !",celId, mcc, mnc");
+
+    // Get the next plmn information of the first cell.
+    while ((PlmnInfoRef = le_mrc_GetNextPlmnInfo(scanInfoRef)) != NULL)
+    {
+        le_mrc_GetPciScanMccMnc(PlmnInfoRef, mcc, LE_MRC_MCC_BYTES, mnc, LE_MRC_MCC_BYTES);
+         LE_INFO("Cell id is %"PRIu16", Mcc is %s, Mnc is %s !",celId, mcc, mnc");
+    }
+
+    // Get the information (cell, Mcc,Mnc) of the next cells.
+    while ((scanInfoRef = le_mrc_GetNextCellularNetworkScan(scanInfoListRef)) != NULL)
+    {
+        celId = le_mrc_GetPciScanCellId (scanInfoRef);
+
+        PlmnInfoRef = le_mrc_GetFirstPlmnInfo(scanInfoRef);
+        le_mrc_GetPciScanMccMnc(PlmnInfoRef, mcc, LE_MRC_MCC_BYTES, mnc, LE_MRC_MCC_BYTES);
+        LE_INFO("Cell id is %"PRIu16", Mcc is %s, Mnc is %s !",celId, mcc, mnc");
+        while ((PlmnInfoRef = le_mrc_GetNextPlmnInfo(scanInfoRef)) != NULL)
+        {
+            le_mrc_GetPciScanMccMnc(PlmnInfoRef, mcc, LE_MRC_MCC_BYTES, mnc, LE_MRC_MCC_BYTES);
+            LE_INFO("Cell id is %"PRIu16", Mcc is %s, Mnc is %s !",celId, mcc, mnc");
+        }
+    }
+    le_mrc_DeletePciNetworkScan(scanInfoListRef);
+}
+ * @endcode
+ *
  * @section le_mrc_ngbr Neighboring Cells Information
  *
  * @warning The following functions do not apply to CDMA network.
@@ -267,10 +375,11 @@
  *   the single cell information retrieved with le_mrc_GetNeighborCellsInfo(). These two functions
  *   return a reference of le_mrc_CellInfoRef_t type.
  * - le_mrc_GetNeighborCellId() gets the identifier of the cell specified with the
- *   le_mrc_CellInfoRef_t parameter (can be called for any kind of RAT).
+ *   le_mrc_CellInfoRef_t parameter (can be called for any kind of RAT). UINT32_MAX value is
+ *   returned if the value is not available.
  * - le_mrc_GetNeighborCellLocAreaCode() gets the location area code of the cell specified with the
- *   le_mrc_CellInfoRef_t parameter (can be called for any kind of RAT). 0xFFFF value is returned
- *   if the value is not available.
+ *   le_mrc_CellInfoRef_t parameter (can be called for any kind of RAT). UINT16_MAX value is
+ *   returned if the value is not available.
  * - le_mrc_GetNeighborCellRxLevel() gets the signal strength (in dBm) of the cell specified with
  *   the le_mrc_CellInfoRef_t parameter (can be called for any kind of RAT).
  * - le_mrc_GetNeighborCellRat() gets the Radio Access Technology of the cell specified with
@@ -286,10 +395,44 @@
  * A sample code can be seen in the following page:
  * - @subpage c_mrcNeighborCells
  *
- *c_mrcNeighborCells
+ * @section le_mrc_jamming Jamming detection
+ *
+ * The jamming detection algorithm is based on power measurements and cell synchronization actions
+ * performed during a GSM network scan procedure.
+ * During this procedure some intermediate results are reported, that allows user to take some
+ * preventive actions if necessary.
+ * This result is reported as a jammed state probability. See @ref le_mrc_JammingStatus_t
+ * enumeration for probability description.
+ * Each time the jamming status changes during the scan procedure, it is reported to the user.
+ * See @ref le_mrc_JammingReport_t enumeration for details.
+ *
+ * The jamming status is reported:
+ * - In an unsolicited way, each time the protocol stack initiates a scan for PLMN selection or
+ * reselection.
+ * - On user demand, when a user PLMN scan is performed.
+ *
+ * Call le_mrc_StartJammingDetection() to launch jamming monitoring.
+ * By registering a handler by calling le_mrc_AddJammingDetectionEventHandler(), the notification
+ * on jamming detection can be sent to the registered application.
+ *
+ * For each jamming detection monitoring, the following APIs can be called:
+ * - le_mrc_StartJammingDetection() to start the jamming monitoring.
+ * - le_mrc_StopJammingDetection() to stop the jamming monitoring.
+ * - le_mrc_AddJammingDetectionEventHandler() to register an event handler.
+ * - le_mrc_RemoveJammingDetectionEventHandler() to remove an event handler.
+ *
+ * @section le_mrc_sar SAR backoff
+ * SAR (Specific Absorption Rate) is a measure of RF energy absorption by the human body.
+ * Users can dynamically select a pre-configured SAR backoff state so they can adjust the SAR
+ * depending on their needs.  To manage SAR backoff, these API should be used:
+ * - le_mrc_SetSarBackoffState() to set a new SAR backoff state.
+ * - le_mrc_GetSarBackoffState() to get the current SAR backoff state.
+ * This feature may be unsupported by some targets. Also, the number of supported states may vary
+ * depending on the target. Please refer to @ref platformConstraintsMdc for further details.
+ *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -363,6 +506,12 @@
  *
  */
 
+/**
+ * @page c_mrcGetService Sample code for Get the Current Packet Switched state
+ *
+ * @snippet "apps/test/modemServices/mrc/mrcIntegrationTest/mrcTest/le_mrcTest.c" Service State
+ *
+ */
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -370,7 +519,7 @@
  *
  * Legato @ref c_mrc include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -535,6 +684,27 @@ REFERENCE ScanInformationList;
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Reference type for PCI Scan Information Listing.
+ */
+//--------------------------------------------------------------------------------------------------
+REFERENCE PciScanInformationList;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reference type for PCI Scan Information .
+ */
+//--------------------------------------------------------------------------------------------------
+REFERENCE PciScanInformation;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reference type for PLMN Information .
+ */
+//--------------------------------------------------------------------------------------------------
+REFERENCE PlmnInformation;
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Reference type for referring to the Preferred Operator objects.
  */
 //--------------------------------------------------------------------------------------------------
@@ -583,7 +753,6 @@ ENUM NetRegState
     REG_UNKNOWN         ///< Unknown state.
 };
 
-
 //--------------------------------------------------------------------------------------------------
 /**
  * Radio Access Technology enum
@@ -593,11 +762,49 @@ ENUM Rat
 {
     RAT_UNKNOWN,     ///< Unknown
     RAT_GSM,         ///< GSM network
-    RAT_UMTS,        ///< UMTS network
+    RAT_UMTS,        ///< UMTS networks
+    RAT_TDSCDMA,     ///< TD-SCDMA networks
     RAT_LTE,         ///< LTE network
     RAT_CDMA         ///< CDMA network
 };
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Jamming detection report type enum
+ *
+ * @note If the reported status is the final status (end of the procedure), this shall be indicated
+ * within the status report.
+ * @note Other reports, called intermediate reports, gives only intermediate results issuing from
+ * the algorithm
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM JammingReport
+{
+    JAMMING_REPORT_FINAL,          ///< Final jamming status report
+    JAMMING_REPORT_INTERMEDIATE    ///< Intermediate jamming status report
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Jamming detection status type enum
+ *
+ * @note The final status can be only NULL or JAMMED.
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM JammingStatus
+{
+    JAMMING_STATUS_UNKNOWN, ///< Status is unknown
+    JAMMING_STATUS_NULL,    ///< No jamming suspicion; radio environment is considered normal
+    JAMMING_STATUS_LOW,     ///< Low probability that the device is jammed, but some radio
+                            ///< environment parameters are considered abnormal
+    JAMMING_STATUS_MEDIUM,  ///< Medium probability that the device is jammed; a lot of
+                            ///< interferences in the radio spectrum
+    JAMMING_STATUS_HIGH,    ///< High probability that the device is jammed; radio environment is
+                            ///< considered jammed, but there is still a possibility that the module
+                            ///< succeeds in synchronizing a cell
+    JAMMING_STATUS_JAMMED   ///< Module is jammed; cell synchronization impossible while sufficient
+                            ///< power level is detected on a large number of frequencies
+};
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -608,12 +815,12 @@ BITMASK RatBitMask
 {
     BITMASK_RAT_GSM,    ///< GSM RAT Bit Mask
     BITMASK_RAT_UMTS,   ///< UMTS RAT Bit Mask
+    BITMASK_RAT_TDSCDMA,///< TD-SCDMA RAT Bit Mask
     BITMASK_RAT_LTE,    ///< LTE RAT Bit Mask
     BITMASK_RAT_CDMA,   ///< CDMA RAT Bit Mask
     BITMASK_RAT_ALL,    ///< To Set all RAT preference Bit Mask
     BITMASK_RAT_MAX
 };
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -663,6 +870,29 @@ EVENT RatChange
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Handler for Packet Switched service state changes.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER PacketSwitchedChangeHandler
+(
+    NetRegState state    ///< Parameter ready to receive the Packet Switched service state.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This event provides information on Packet Switched service changes.
+ *
+ * @note <b>multi-app safe</b>
+ */
+//--------------------------------------------------------------------------------------------------
+EVENT PacketSwitchedChange
+(
+    PacketSwitchedChangeHandler packetHandler
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Handler for Signal Strength value changes.
  *
  */
@@ -682,11 +912,51 @@ HANDLER SignalStrengthChangeHandler
 EVENT SignalStrengthChange
 (
     Rat     rat IN,                       ///< Radio Access Technology
-    int32   lowerRangeThreshold IN,       ///<  lower-range Signal strength threshold in dBm
-    int32   upperRangeThreshold IN,       ///<  upper-range Signal strength threshold in dBm
+    int32   lowerRangeThreshold IN,       ///< Lower-range Signal strength threshold in dBm
+    int32   upperRangeThreshold IN,       ///< Upper-range Signal strength threshold in dBm
     SignalStrengthChangeHandler handler
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function sets signal strength indication thresholds for a specific RAT.
+ *
+ * @return
+ *  - LE_OK             Function succeeded.
+ *  - LE_BAD_PARAMETER  Bad parameters
+ *  - LE_FAULT          Function failed.
+ *
+ * @note <b>NOT multi-app safe</b>
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetSignalStrengthIndThresholds
+(
+    Rat     rat IN,                       ///< Radio Access Technology
+    int32   lowerRangeThreshold IN,       ///< Lower-range Signal strength threshold in dBm
+    int32   upperRangeThreshold IN        ///< Upper-range Signal strength threshold in dBm
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function sets a signal strength indication delta for a specific RAT.
+ *
+ * @return
+ *  - LE_OK             Function succeeded.
+ *  - LE_BAD_PARAMETER  Bad parameters.
+ *  - LE_FAULT          Function failed.
+ *
+ * @note The signal delta is set in units of 0.1 dBm. For example, to set a delta of 10.6 dBm, the
+ *       delta value must be set to 106.
+ *
+ * @warning The signal delta resolution is platform dependent. Please refer to
+ *          @ref platformConstraintsModemRadiocontrol section for full details.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetSignalStrengthIndDelta
+(
+    Rat     rat IN,      ///< Radio Access Technology
+    uint16  delta IN     ///< Signal delta in units of 0.1 dBm
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -698,6 +968,19 @@ EVENT SignalStrengthChange
 HANDLER CellularNetworkScanHandler
 (
     ScanInformationList listRef IN    ///< Reference to the List object. Null pointer if the
+                                      ///< scan failed.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handler for PCI asynchronous network scan Sending result.
+ *  Returns the reference to the List object. Null pointer if the scan failed.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER PciNetworkScanHandler
+(
+    PciScanInformationList listRef IN    ///< Reference to the List object. Null pointer if the
                                       ///< scan failed.
 );
 
@@ -736,8 +1019,9 @@ FUNCTION le_result_t SetAutomaticRegisterMode
  *  - LE_FAULT  Function failed.
  *  - LE_OK     Function succeeded.
  *
- * @note If one code is too long (max LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits), it's a fatal error,
- *       the function won't return.
+ * @note If strings are not set, too long (bigger than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits), or too
+ *       short (less than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN-1 digits) it's a fatal error, the function
+ *       won't return.
  *
  * @note <b>NOT multi-app safe</b>
  */
@@ -753,8 +1037,9 @@ FUNCTION le_result_t SetManualRegisterMode
  * Set the manual selection register mode asynchronously. This function is not blocking,
  *  the response will be returned with a handler function.
  *
- * @note If one code is too long (max LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits), it's a fatal error,
- *       the function won't return.
+ * @note If strings are not set, too long (bigger than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits), or too
+ *       short (less than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN-1 digits) it's a fatal error, the function
+ *       won't return.
  *
  *@note <b>NOT multi-app safe</b>
  *
@@ -785,10 +1070,28 @@ FUNCTION le_result_t GetRegisterMode
     string mncPtr[MNC_LEN] OUT  ///< Mobile Network Code
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Packet Switched state.
+ *
+ * @return
+ *  - LE_FAULT  Function failed.
+ *  - LE_OK     Function succeeded.
+ *
+ * @note <b>multi-app safe</b>
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetPacketSwitchedState
+(
+    NetRegState state OUT ///< The current Packet switched state.
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
  * Get the platform specific network registration error code.
+ *
+ * Refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * registration error code description.
  *
  * @return the platform specific registration error code
  *
@@ -803,8 +1106,9 @@ FUNCTION int32 GetPlatformSpecificRegistrationErrorCode
  * Set the Radio Access Technology preferences by using a bit mask.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_FAULT           Function failed.
+ *  - LE_OK              Function succeeded.
+ *  - LE_UNSUPPORTED     Not supported by platform.
  *
  * @note <b>NOT multi-app safe</b>
  */
@@ -867,8 +1171,9 @@ FUNCTION le_result_t GetBandPreferences
  * Set the LTE Band preferences by using a bit mask.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_FAULT        Function failed.
+ *  - LE_OK           Function succeeded.
+ *  - LE_UNSUPPORTED  The platform doesn't support setting LTE Band preferences.
  *
  * @note <b>NOT multi-app safe</b>
  */
@@ -899,8 +1204,9 @@ FUNCTION le_result_t GetLteBandPreferences
  * Set the TD-SCDMA Band preferences by using a bit mask.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_OK           Function succeeded.
+ *  - LE_FAULT        Function failed.
+ *  - LE_UNSUPPORTED  The platform doesn't support setting TD-SCDMA Band preferences.
  *
  * @note <b>NOT multi-app safe</b>
  */
@@ -915,8 +1221,9 @@ FUNCTION le_result_t SetTdScdmaBandPreferences
  * Get the Bit mask for TD-SCDMA Band preferences.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_OK           Function succeeded.
+ *  - LE_FAULT        Function failed.
+ *  - LE_UNSUPPORTED  The platform doesn't support getting TD-SCDMA Band preferences.
  *
  * @note <b>multi-app safe</b>
  */
@@ -936,8 +1243,9 @@ FUNCTION le_result_t GetTdScdmaBandPreferences
  *  - LE_BAD_PARAMETER RAT mask is invalid.
  *  - LE_OK            Function succeeded.
  *
- * @note If one code is too long (max LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits) or not set,
- *       it's a fatal error and the function won't return.
+ * @note If strings are not set, too long (bigger than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits), or too
+ *       short (less than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN-1 digits) it's a fatal error, the function
+ *       won't return.
  *
  * @note <b>NOT multi-app safe</b>
  */
@@ -959,8 +1267,9 @@ FUNCTION le_result_t AddPreferredOperator
  *  - LE_FAULT          Function failed.
  *  - LE_OK             Function succeeded.
  *
- * @note If one code is too long (max LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits) or not set,
- *       it's a fatal error and the function won't return.
+ * @note If strings are not set, too long (bigger than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN digits), or too
+ *       short (less than LE_MRC_MCC_LEN/LE_MRC_MNC_LEN-1 digits) it's a fatal error, the function
+ *       won't return.
  *
  * @note <b>NOT multi-app safe</b>
  */
@@ -1151,6 +1460,20 @@ FUNCTION ScanInformationList PerformCellularNetworkScan
     RatBitMask ratMask ///< Radio Access Technology mask
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to perform a PCI network scan.
+ *
+ * @return Reference to the List object. Null pointer if the scan failed.
+ *
+ * @note <b>multi-app safe</b>
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION PciScanInformationList PerformPciNetworkScan
+(
+    RatBitMask ratMask ///< Radio Access Technology mask
+);
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1165,6 +1488,22 @@ FUNCTION PerformCellularNetworkScanAsync
 (
     RatBitMask ratMask IN,               ///< Radio Access Technology mask
     CellularNetworkScanHandler handler   ///< handler for sending result.
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to perform a cellular network scan asynchronously. This function
+ * is not blocking, the response will be returned with a handler function.
+ *
+ *@note <b>multi-app safe</b>
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION PerformPciNetworkScanAsync
+(
+    RatBitMask ratMask IN,               ///< Radio Access Technology mask
+    PciNetworkScanHandler handler        ///< handler for sending result.
 );
 
 
@@ -1207,6 +1546,116 @@ FUNCTION ScanInformation GetNextCellularNetworkScan
     ScanInformationList  scanInformationListRef ///< The list of scan information.
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the first Pci Scan Information object reference in the list of
+ * scan Information retrieved with le_mrc_PerformPciNetworkScan().
+ *
+ * @return NULL                         No scan information found.
+ * @return The Scan Information object reference.
+ *
+ * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
+ *       function won't return.
+ *
+ * @note <b>multi-app safe</b>
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION PciScanInformation GetFirstPciScanInfo
+(
+    PciScanInformationList  scanInformationListRef ///< The list of scan information.
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the next Scan Information object reference in the list of
+ * scan Information retrieved with le_mrc_PerformPciNetworkScan().
+ *
+ * @return NULL                         No scan information found.
+ * @return The Scan Information object reference.
+ *
+ * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
+ *       function won't return.
+ *
+ * @note <b>multi-app safe</b>
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION PciScanInformation GetNextPciScanInfo
+(
+    PciScanInformationList  scanInformationListRef ///< The list of scan information.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the first Plmn Information object reference in the list of
+ * Plmn on each cell.
+ *
+ * @return NULL                         No scan information found.
+ * @return le_mrc_PlmnInformationRef_t  The Plmn Information object reference.
+ *
+ * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
+ *       function won't return.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION PlmnInformation GetFirstPlmnInfo
+(
+    PciScanInformation    pciScanInformationRef ///< [IN] The reference to the cell information.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the next Plmn Information object reference in the list of
+ * Plmn on each cell.
+ *
+ * @return NULL                         No scan information found.
+ * @return le_mrc_PlmnInformationRef_t  The Plmn Information object reference.
+ *
+ * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
+ *       function won't return.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION PlmnInformation GetNextPlmnInfo
+(
+    PciScanInformation    plmnRef             ///< [IN] The reference to the cell information.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the cell id referenced by PciScanInformation which is
+ * returned by le_mrc_GetFirstPciScanInfo() and le_mrc_GetNextPciScanInfo().
+ *
+ * @return The Cell Identifier.
+ *
+ * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
+ *       function won't return.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION uint16 GetPciScanCellId
+(
+    PciScanInformation    pciScanInformationRef ///< [IN] The reference to the cell information.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to get the Mcc/Mnc of each PLMN referenced in the list of
+ * Plmn Information retrieved with le_mrc_GetFirstPlmnInfo() and le_mrc_GetNextPlmnInfo().
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_OVERFLOW if the MCC or MNC would not fit in buffer
+ *      - LE_FAULT for all other errors
+ *
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetPciScanMccMnc
+(
+    PlmnInformation    plmnRef ,                ///< [IN] The reference to the cell information.
+    string    mccPtr[MCC_LEN] OUT,             ///< Mobile Country Code
+    string    mncPtr[MNC_LEN] OUT              ///< Mobile Network Code
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1223,6 +1672,22 @@ FUNCTION ScanInformation GetNextCellularNetworkScan
 FUNCTION DeleteCellularNetworkScan
 (
     ScanInformationList  scanInformationListRef ///< The list of scan information.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to delete the list of the Pci Scan Information retrieved with
+ * le_mrc_PerformPciNetworkScan().
+ *
+ * @note
+ *      On failure, the process exits, so you don't have to worry about checking the returned
+ *      reference for validity.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION DeletePciNetworkScan
+(
+    PciScanInformationList  scanInformationListRef ///< The list of scan information.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -1398,12 +1863,14 @@ FUNCTION le_result_t GetCurrentNetworkMccMnc
 /**
  * This function must be called to get the current Radio Access Technology in use.
  *
- * @return LE_FAULT         Function failed to get the Radio Access Technology.
- * @return LE_BAD_PARAMETER A bad parameter was passed.
  * @return LE_OK            Function succeeded.
+ * @return LE_BAD_PARAMETER Invalid parameter.
+ * @return LE_FAULT         Function failed to get the Radio Access Technology.
  *
  * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
  *       function won't return.
+ *
+ * @note The API returns the RAT only if the device is registered on the network.
  *
  * @note <b>multi-app safe</b>
  */
@@ -1485,7 +1952,8 @@ FUNCTION CellInfo GetNextNeighborCellInfo
 /**
  * This function must be called to get the Cell Identifier.
  *
- * @return The Cell Identifier.
+ * @return The Cell Identifier. UINT32_MAX value is returned if the Cell Identifier is not
+ * available.
  *
  * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
  *       function won't return.
@@ -1502,7 +1970,8 @@ FUNCTION uint32 GetNeighborCellId
 /**
  * This function must be called to get the Location Area Code of a cell.
  *
- * @return The Location Area Code of a cell. 0xFFFF value is returned if the value is not available.
+ * @return The Location Area Code of a cell. UINT16_MAX value is returned if the value is not
+ * available.
  *
  * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
  *       function won't return.
@@ -1552,11 +2021,11 @@ FUNCTION Rat GetNeighborCellRat
 //--------------------------------------------------------------------------------------------------
 /**
  * This function must be called to get the Ec/Io; the received energy per chip divided by the power
- * density in the band measured in dBm on the primary CPICH channel of serving cell.
+ * density in the band measured in dBm on the primary CPICH channel of serving cell (negative value)
  *
  * @return
  *  - The Ec/Io of a cell given in dB with 1 decimal place. (only applicable for UMTS network).
- *  - 0xFFFFFFFF when the value isn't available.
+ *  - INT32_MAX when the value isn't available.
  *
  * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
  *       function won't return.
@@ -1685,7 +2154,7 @@ FUNCTION le_result_t GetGsmSignalMetrics
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function returns the signal metrics measured on UMTS network.
+ * This function returns the signal metrics measured on UMTS or TD-SCDMA networks.
  *
  * @return
  *      - LE_OK on success
@@ -1702,9 +2171,12 @@ FUNCTION le_result_t GetUmtsSignalMetrics
     Metrics  MetricsRef IN,  ///< Signal metrics reference.
     int32    ss         OUT, ///< Signal strength in dBm
     uint32   bler       OUT, ///< Block error rate
-    int32    ecio       OUT, ///< Ec/Io value  in dB with 1 decimal place (15 = 1.5 dB)
-    int32    rscp       OUT, ///< Measured RSCP in dBm (only applicable for TD-SCDMA network)
-    int32    sinr       OUT  ///< Measured SINR in dB (only applicable for TD-SCDMA network)
+    int32    ecio       OUT, ///< Ec/Io value in dB with 1 decimal place (-15 = -1.5 dB) (Negative
+                             ///< value)
+    int32    rscp       OUT, ///< Measured RSCP in dBm (negative value, value INT32_MAX means
+                             ///< that RSCP is not available)
+    int32    sinr       OUT  ///< Measured SINR in dB (only applicable for TD-SCDMA network, value
+                             ///< INT32_MAX means that the SINR is not available)
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -1714,7 +2186,7 @@ FUNCTION le_result_t GetUmtsSignalMetrics
  * @return
  *      - LE_OK on success
  *      - LE_FAULT on failure
- *      - sinrPtr and ioPtr return 0xFFFFFFFF when the value isn't available.
+ *      - sinrPtr and ioPtr return INT32_MAX when the value isn't available.
  *
  * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
  *       function won't return.
@@ -1739,7 +2211,7 @@ FUNCTION le_result_t GetLteSignalMetrics
  * @return
  *      - LE_OK on success
  *      - LE_FAULT on failure
- *      - rscpPtr and sinrPtr return 0xFFFFFFFF when the value isn't available.
+ *      - rscpPtr and sinrPtr return INT32_MAX when the value isn't available.
  *
  * @note If the caller is passing a bad pointer into this function, it's a fatal error, the
  *       function won't return.
@@ -1752,16 +2224,27 @@ FUNCTION le_result_t GetCdmaSignalMetrics
     Metrics MetricsRef IN,  ///< Signal metrics reference.
     int32   ss         OUT, ///< Signal strength in dBm
     uint32  er         OUT, ///< Frame/Packet error rate
-    int32   ecio       OUT, ///< ECIO value in dB with 1 decimal place (15 = 1.5 dB)
-    int32   sinr       OUT, ///< SINR level in dB with 1 decimal place, (only applicable for 1xEV-DO).
-    int32   io         OUT  ///< Received IO in dBm (only applicable for 1xEV-DO)
+    int32   ecio       OUT, ///< ECIO value in dB with 1 decimal place (-15 = -1.5 dB) (Negative
+                            ///< value)
+    int32   sinr       OUT, ///< SINR level in dB with 1 decimal place, (only applicable for
+                            ///< 1xEV-DO, value INT32_MAX means that the value is not available)
+    int32   io         OUT  ///< Received IO in dBm (only applicable for 1xEV-DO, value INT32_MAX
+                            ///< means that the value is not available)
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
  * This function must be called to get the serving Cell Identifier.
  *
- * @return The Cell Identifier. 0xFFFFFFFF value is returned if the value is not available.
+ * @return The Cell Identifier. UINT32_MAX value is returned if the value is not available.
+ *
+ * @note When the module is in UMTS network, the API returns the serving UTRAN Cell Identity (UC-Id)
+ * which is used to identify the cell uniquely.
+ * It is composed of the Controlling Radio Network Controller Identifier (CRNC-Id, 12 bits) and the
+ * Cell Identifier (C-Id, 16 bits). (3GPP 25.401, section 6.1.5)
+ * The Cell Identifier is coded in the lower 2 bytes of the 4 bytes UC-Id and the CRNC-Id is coded
+ * in the upper 2 bytes.
+ * Example: the API returns 7807609 -> 0x772279 (CRNC-Id = 0x77 , cell ID = 0x2279)
  *
  * @note <b>multi-app safe</b>
  */
@@ -1774,7 +2257,7 @@ FUNCTION uint32 GetServingCellId
 /**
  * This function must be called to get the Location Area Code of the serving cell.
  *
- * @return The Location Area Code. 0xFFFFFFFF value is returned if the value is not available.
+ * @return The Location Area Code. UINT32_MAX value is returned if the value is not available.
  *
  * @note <b>multi-app safe</b>
  */
@@ -1787,7 +2270,7 @@ FUNCTION uint32 GetServingCellLocAreaCode
 /**
  * This function must be called to get the Tracking Area Code of the serving cell (LTE only).
  *
- * @return The Tracking Area Code. 0xFFFF value is returned if the value is not available.
+ * @return The Tracking Area Code. UINT16_MAX value is returned if the value is not available.
  *
  * @note <b>multi-app safe</b>
  */
@@ -1801,8 +2284,9 @@ FUNCTION uint16 GetServingCellLteTracAreaCode
  * Get the Bit mask for 2G/3G Band capabilities.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     Unable to get the 2G/3G Band capabilities on this platform
  *
  * @note <b>multi-app safe</b>
  */
@@ -1817,8 +2301,9 @@ FUNCTION le_result_t GetBandCapabilities
  * Get the Bit mask for LTE Band capabilities.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     Unable to get the LTE Band capabilities on this platform
  *
  * @note <b>multi-app safe</b>
  */
@@ -1833,8 +2318,9 @@ FUNCTION le_result_t GetLteBandCapabilities
  * Get the Bit mask for TD-SCDMA Band capabilities.
  *
  * @return
- *  - LE_FAULT  Function failed.
- *  - LE_OK     Function succeeded.
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     Unable to get the TD-SCDMA Band Capabilities on this platform
  *
  * @note <b>multi-app safe</b>
  */
@@ -1844,3 +2330,118 @@ FUNCTION le_result_t GetTdScdmaBandCapabilities
     TdScdmaBandBitMask bandMaskPtr OUT ///< Bit mask for TD-SCDMA Band capabilities.
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handler to report network reject indication.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER NetworkRejectHandler
+(
+    string mcc[MCC_LEN] IN,   ///< Mobile Country Code
+    string mnc[MNC_LEN] IN,   ///< Mobile Network Code
+    Rat    rat IN             ///< Radio Access Technology.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Event to report network reject indication.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+EVENT NetworkReject
+(
+    NetworkRejectHandler handler
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handler for jamming detection event.
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER JammingDetectionHandler
+(
+    JammingReport   report      IN, ///< Report type.
+    JammingStatus   status      IN  ///< Jamming detection status.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This event provides information on jamming detection.
+ */
+//--------------------------------------------------------------------------------------------------
+EVENT JammingDetectionEvent
+(
+    JammingDetectionHandler handler
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Start the jamming detection monitoring.
+ *
+ * @warning The jamming detection feature might be limited by the platform.
+ *          Please refer to the platform documentation @ref platformConstraintsMdc.
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_DUPLICATE      The feature is already activated and an activation is requested.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t StartJammingDetection
+(
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Stop the jamming detection monitoring.
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed or the application did not start the jamming detection.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t StopJammingDetection
+(
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the SAR backoff state
+ *
+ * @warning The SAR backoff feature might be unsupported by some platforms.
+ *          Please refer to the platform documentation @ref platformConstraintsMdc.
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ *  - LE_OUT_OF_RANGE   The provided index is out of range.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetSarBackoffState
+(
+    uint8 state      IN  ///< New state to enable. By default, SAR is disabled (state = 0).
+                         ///< Refer to @ref platformConstraitsMdc for the number of maximum states.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the SAR backoff state
+ *
+ * @warning The SAR backoff feature might be unsupported by some platforms.
+ *          Please refer to the platform documentation @ref platformConstraintsMdc.
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetSarBackoffState
+(
+    uint8 state     OUT ///< Current state. By default, SAR is disabled (state = 0).
+                        ///< Refer to @ref platformConstraitsMdc for the number of maximum states.
+);

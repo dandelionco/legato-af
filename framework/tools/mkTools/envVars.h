@@ -4,9 +4,12 @@
  *
  * Environment variable helper functions used by various modules.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
+
+#ifndef LEGATO_ENVVARS_H_INCLUDE_GUARD
+#define LEGATO_ENVVARS_H_INCLUDE_GUARD
 
 namespace envVars
 {
@@ -64,7 +67,7 @@ void Set
 //----------------------------------------------------------------------------------------------
 void SetTargetSpecific
 (
-    const std::string& target  ///< Name of the target platform (e.g., "localhost" or "ar7").
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -79,20 +82,6 @@ void SetTargetSpecific
 bool IsReserved
 (
     const std::string& name  ///< Name of the variable.
-);
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Look for environment variables (specified as "$VAR_NAME" or "${VAR_NAME}") in a given string
- * and replace with environment variable contents.
- *
- * @return The converted string.
- **/
-//--------------------------------------------------------------------------------------------------
-std::string DoSubstitution
-(
-    const std::string& path
 );
 
 
@@ -124,3 +113,5 @@ bool MatchesSaved
 
 
 } // namespace envVars
+
+#endif // LEGATO_ENVVARS_H_INCLUDE_GUARD

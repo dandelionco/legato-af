@@ -2,7 +2,7 @@
 /**
  * @file configGenerator.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -10,7 +10,6 @@
 
 namespace config
 {
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -72,8 +71,9 @@ static void GenerateAppLimitsConfig
         // This is not supported for unsandboxed apps.
         if (appPtr->isSandboxed == false)
         {
-            std::cerr << "**** Warning: File system size limit being ignored for unsandboxed"
-                      << " application '" << appPtr->name << "'." << std::endl;
+            std::cerr << mk::format(LE_I18N("** WARNING: File system size limit being ignored for"
+                                            " unsandboxed application '%s'."), appPtr->name)
+                      << std::endl;
         }
         else
         {
@@ -111,7 +111,7 @@ static void GenerateGroupsConfig
     cfgStream << "  \"groups\"" << std::endl;
     cfgStream << "  {" << std::endl;
 
-    for (auto groupName : groupsList)
+    for (auto const &groupName : groupsList)
     {
         cfgStream << "    \"" << groupName << "\" \"\"" << std::endl;
     }
@@ -242,14 +242,14 @@ static void GenerateFileMappingConfig
         // External files...
         for (auto mappingPtr : componentPtr->requiredFiles)
         {
-            GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr);
+            GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr.get());
         }
     }
 
     // .adef
     for (auto mappingPtr : appPtr->requiredFiles)
     {
-        GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr);
+        GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr.get());
     }
 
     cfgStream << "    }" << std::endl << std::endl;
@@ -266,14 +266,14 @@ static void GenerateFileMappingConfig
     {
         for (auto mappingPtr : componentPtr->requiredDirs)
         {
-            GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr);
+            GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr.get());
         }
     }
 
     // .adef
     for (auto mappingPtr : appPtr->requiredDirs)
     {
-        GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr);
+        GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr.get());
     }
 
     cfgStream << "    }" << std::endl;
@@ -290,17 +290,52 @@ static void GenerateFileMappingConfig
     {
         for (auto mappingPtr : componentPtr->requiredDevices)
         {
-            GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr);
+            GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr.get());
         }
     }
 
     // .adef
     for (auto mappingPtr : appPtr->requiredDevices)
     {
-        GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr);
+        GenerateSingleFileMappingConfig(cfgStream, index++, mappingPtr.get());
     }
 
     cfgStream << "    }" << std::endl;
+
+    cfgStream << "    \"kernelModules\"" << std::endl;
+    cfgStream << "    {" << std::endl;
+
+    // For each parameter in required kernel modules list
+    int kmodnum = 1;
+    for (auto reqKMod : appPtr->requiredModules)
+    {
+        auto modulePtr = model::Module_t::GetModule(reqKMod);
+        if (modulePtr == NULL)
+        {
+            throw mk::Exception_t(
+                mk::format(LE_I18N("INTERNAL ERROR: '%s' module name not found."), reqKMod)
+            );
+        }
+
+        if (modulePtr->moduleBuildType == model::Module_t::Prebuilt)
+        {
+            int kmodprebuiltnum = 1;
+            for (auto &mapEntrykoFiles : modulePtr->koFiles)
+            {
+                cfgStream << "       \"" << "kernelModule" << kmodprebuiltnum << "\" \""
+                           << path::GetLastNode(mapEntrykoFiles.first) << "\"\n";
+                kmodprebuiltnum++;
+            }
+        }
+        else
+        {
+            cfgStream << "       \"" << "kernelModule" << kmodnum << "\" \""
+                      << reqKMod << ".ko" << "\"\n";
+            kmodnum++;
+        }
+    }
+
+    cfgStream << "    }\n";
 
     cfgStream << "  }" << std::endl << std::endl;
 
@@ -319,14 +354,14 @@ static void GenerateFileMappingConfig
     {
         for (auto mappingPtr : componentPtr->bundledFiles)
         {
-            GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr);
+            GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr.get());
         }
     }
 
     // .adef
     for (auto mappingPtr : appPtr->bundledFiles)
     {
-        GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr);
+        GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr.get());
     }
 
     cfgStream << "    }" << std::endl << std::endl;
@@ -340,7 +375,7 @@ static void GenerateFileMappingConfig
     // .adef
     for (auto mappingPtr : appPtr->bundledDirs)
     {
-        GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr);
+        GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr.get());
     }
 
     // .cdef
@@ -348,7 +383,7 @@ static void GenerateFileMappingConfig
     {
         for (auto mappingPtr : componentPtr->bundledDirs)
         {
-            GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr);
+            GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr.get());
         }
     }
 
@@ -430,7 +465,16 @@ static std::string GenerateClassPath
 
         if (componentPtr->HasJavaCode())
         {
-            classPath += ":lib/" + path::GetLastNode(componentPtr->lib);
+            std::list<std::string> bundledJars;
+            componentPtr->GetBundledFilesOfType(model::BundleAccess_t::Dest, ".jar", bundledJars);
+
+            for (const auto& jarFile : bundledJars)
+            {
+                classPath += ":" + jarFile;
+            }
+
+            classPath += ":lib/" +
+                path::GetLastNode(componentPtr->getTargetInfo<target::LinuxComponentInfo_t>()->lib);
         }
     }
 
@@ -535,6 +579,12 @@ static void GenerateProcessConfig
             if (procEnvPtr->watchdogTimeout.IsSet())
             {
                 cfgStream << "      \"watchdogTimeout\" [" << procEnvPtr->watchdogTimeout.Get()
+                          << "]" << std::endl;
+            }
+            if (procEnvPtr->maxWatchdogTimeout.IsSet())
+            {
+                cfgStream << "      \"maxWatchdogTimeout\" ["
+                          << procEnvPtr->maxWatchdogTimeout.Get()
                           << "]" << std::endl;
             }
             if (procEnvPtr->watchdogAction.IsSet())
@@ -750,183 +800,16 @@ static void GenerateAppWatchdogConfig
         cfgStream << "  \"watchdogTimeout\" [" << appPtr->watchdogTimeout.Get()
                   << "]" << std::endl;
     }
+    if (appPtr->maxWatchdogTimeout.IsSet())
+    {
+        cfgStream << "  \"maxWatchdogTimeout\" [" << appPtr->maxWatchdogTimeout.Get()
+                  << "]" << std::endl;
+    }
     if (appPtr->watchdogAction.IsSet())
     {
         cfgStream << "  \"watchdogAction\" \"" << appPtr->watchdogAction.Get()
                   << "\"" << std::endl;
     }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Convert an asset action type into a permission string suitable for the config data.
- *
- * @return The converted string.
- **/
-//--------------------------------------------------------------------------------------------------
-static std::string AssetActionTypeToStr
-(
-    model::AssetField_t::ActionType_t actionType
-)
-//--------------------------------------------------------------------------------------------------
-{
-    switch (actionType)
-    {
-        case model::AssetField_t::ActionType_t::TYPE_SETTING:
-            return "r";
-
-        case model::AssetField_t::ActionType_t::TYPE_VARIABLE:
-            return "rw";
-
-        case model::AssetField_t::ActionType_t::TYPE_COMMAND:
-            return "x";
-
-        case model::AssetField_t::ActionType_t::TYPE_UNSET:
-            throw mk::Exception_t("Internal error, asset actionType has been left unset.");
-    }
-
-    throw mk::Exception_t("Internal error, unexpected value for asset actionType.");
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Convert the given default value string into something appropriate for the config file format.
- *
- * @return The filtered default value.
- **/
-//--------------------------------------------------------------------------------------------------
-static std::string FilterDefaultValue
-(
-    const std::string& dataType,
-    const std::string& defaultValue
-)
-//--------------------------------------------------------------------------------------------------
-{
-    std::string newDefaultValue;
-
-    if (dataType == "bool")
-    {
-        // If the value is on or off, convert to true or false.
-        if (   (defaultValue == "true")
-            || (defaultValue == "on"))
-        {
-            newDefaultValue = "!t";
-        }
-        else if (   (defaultValue == "false")
-                 || (defaultValue == "off"))
-        {
-            newDefaultValue = "!f";
-        }
-    }
-    else if (dataType == "int")
-    {
-        newDefaultValue = "[" + defaultValue + "]";
-    }
-    else if (dataType == "float")
-    {
-        newDefaultValue = "(" + defaultValue + ")";
-    }
-    else if (dataType == "string")
-    {
-        newDefaultValue = '"' + path::Unquote(defaultValue) + '"';
-    }
-    else
-    {
-        throw mk::Exception_t("Internal error, could not filter default value for unexpected data "
-                              "type, '" + dataType + ".'");
-    }
-
-    return newDefaultValue;
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Create Legato configuration data for LWM2M objects.
- **/
-//--------------------------------------------------------------------------------------------------
-static void GenerateAssetConfig
-(
-    std::ofstream& cfgStream,    ///< The configuration file being written to.
-    model::App_t* appPtr
-)
-//--------------------------------------------------------------------------------------------------
-{
-    // Start the "assets" section and add hard-coded object instances 0 and 1 (the "Application"
-    // and "Process" standard objects).
-    cfgStream << "  \"assets\"" << std::endl
-              << "  {" << std::endl
-              << "    \"0\"" << std::endl
-              << "    {" << std::endl
-              << "      \"name\" \"Application Object\"" << std::endl
-              << "      \"fields\"" << std::endl
-              << "      {" << std::endl
-              << "        \"0\" { \"name\" \"Version\" \"type\" \"string\" \"access\" \"w\" }" << std::endl
-              << "        \"1\" { \"name\" \"Name\" \"type\" \"string\" \"access\" \"w\" }" << std::endl
-              << "        \"2\" { \"name\" \"State\" \"type\" \"int\" \"access\" \"w\" }" << std::endl
-              << "        \"3\" { \"name\" \"StartMode\" \"type\" \"int\" \"access\" \"w\" }" << std::endl
-              << "      }" << std::endl
-              << "    }" << std::endl
-              << "    \"1\"" << std::endl
-              << "    {" << std::endl
-              << "      \"name\" \"Process Object\"" << std::endl
-              << "      \"fields\"" << std::endl
-              << "      {" << std::endl
-              << "        \"0\" { \"name\" \"Name\" \"type\" \"string\" \"access\" \"w\" }" << std::endl
-              << "        \"1\" { \"name\" \"ExecName\" \"type\" \"string\"  \"access\" \"w\" }" << std::endl
-              << "        \"2\" { \"name\" \"State\" \"type\" \"int\" \"access\" \"w\" }" << std::endl
-              << "        \"3\" { \"name\" \"FaultAction\" \"type\" \"int\" \"access\" \"w\" }" << std::endl
-              << "        \"4\" { \"name\" \"FaultCount\" \"type\" \"int\" \"access\" \"w\" }" << std::endl
-              << "        \"5\" { \"name\" \"FaultLogs\" \"type\" \"string\" \"access\" \"w\" }" << std::endl
-              << "      }" << std::endl
-              << "    }" << std::endl;
-
-    // Now, include any user defined assets.
-    unsigned int assetId = 1000;
-    for (const auto& componentPtr : appPtr->components)
-    {
-        for (const auto& asset : componentPtr->assets)
-        {
-            unsigned int fieldId = 0;
-
-            cfgStream << "    \"" << assetId << "\"" << std::endl
-                      << "    {" << std::endl
-                      << "      \"name\" \"" << asset->GetName() << "\"" << std::endl
-                      << "      \"fields\"" << std::endl
-                      << "      {" << std::endl;
-
-            for (const auto& fieldPtr : asset->fields)
-            {
-                cfgStream << "        \"" << fieldId
-                          << "\" { \"name\" \"" << fieldPtr->GetName()
-                          << "\" \"access\" \"" << AssetActionTypeToStr(fieldPtr->GetActionType())
-                          << "\"";
-
-                if (fieldPtr->GetDataType().size() != 0)
-                {
-                    cfgStream << " \"type\" \"" << fieldPtr->GetDataType() << "\"";
-                }
-
-                const auto& defaultValue = fieldPtr->GetDefaultValue();
-                if (defaultValue.size() > 0)
-                {
-                    cfgStream << " \"default\" "
-                              << FilterDefaultValue(fieldPtr->GetDataType(), defaultValue);
-                }
-
-                cfgStream << " }" << std::endl;
-                ++fieldId;
-            }
-
-            cfgStream << "      }" << std::endl
-                      << "    }" << std::endl;
-            ++assetId;
-        }
-    }
-
-    cfgStream << "  }" << std::endl;
 }
 
 
@@ -951,15 +834,18 @@ void Generate
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating system configuration data for app '" << appPtr->name << "'"
-                     " in file '" << filePath << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating system configuration data for"
+                                        " app '%s' in file '%s'."), appPtr->name, filePath)
+                  << std::endl;
     }
 
     std::ofstream cfgStream(filePath, std::ofstream::trunc);
 
     if (cfgStream.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + filePath + ",' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), filePath)
+        );
     }
 
     cfgStream << "{" << std::endl;
@@ -980,9 +866,138 @@ void Generate
 
     GenerateAppWatchdogConfig(cfgStream, appPtr);
 
-    GenerateAssetConfig(cfgStream, appPtr);
-
     cfgStream << "}" << std::endl;
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate kernel module configuration for each module.
+ */
+//--------------------------------------------------------------------------------------------------
+static void GenerateConfigEachModuleFile
+(
+    model::System_t* systemPtr,
+    model::Module_t* modulePtr,
+    std::ofstream& cfgStream
+)
+{
+    cfgStream << "  {\n";
+
+    if (modulePtr->loadTrigger == model::Module_t::MANUAL)
+    {
+        cfgStream << "    \"loadManual\" !t" << std::endl;
+    }
+
+    cfgStream << "    \"params\"\n";
+    cfgStream << "    {\n";
+
+    // For each parameter in module parameter list
+    for (auto mapEntry : modulePtr->params)
+    {
+        cfgStream << "       \"" << mapEntry.first << "\" \""
+                  << mapEntry.second << "\"\n";
+    }
+
+    cfgStream << "    }\n";
+
+    cfgStream << "    \"requires\"" << std::endl;
+    cfgStream << "    {" << std::endl;
+    cfgStream << "      \"kernelModules\"" << std::endl;
+    cfgStream << "      {" << std::endl;
+
+    // For each parameter in required kernel modules list
+    int kmodnum = 1;
+    for (auto setEntry : modulePtr->requiredModules)
+    {
+        auto mapEntry = systemPtr->modules.find(setEntry);
+        if (mapEntry->second->moduleBuildType == model::Module_t::Prebuilt)
+        {
+            int kmodprebuiltnum = 1;
+            for (auto &mapEntrykoFiles : mapEntry->second->koFiles)
+            {
+                 cfgStream << "         \"" << "kernelModule" << kmodprebuiltnum << "\" \""
+                           << path::GetLastNode(mapEntrykoFiles.first) << "\"\n";
+                kmodprebuiltnum++;
+            }
+        }
+        else
+        {
+            cfgStream << "         \"" << "kernelModule" << kmodnum << "\" \""
+                      << mapEntry->first << ".ko" << "\"\n";
+            kmodnum++;
+        }
+    }
+
+    cfgStream << "      }\n";
+    cfgStream << "    }\n";
+
+    // Create the "bundles" section.
+    cfgStream << "    \"bundles\"" << std::endl;
+    cfgStream << "    {" << std::endl;
+
+    // Create nodes under "files", where each node is named with an index, starting at 0.
+    cfgStream << "      \"file\"" << std::endl;
+    cfgStream << "      {" << std::endl;
+
+    size_t index = 0;
+
+    for (auto mappingPtr : modulePtr->bundledFiles)
+    {
+        GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr.get());
+    }
+
+    cfgStream << "      }" << std::endl << std::endl;
+
+    // Create nodes under "dirs", where each node is named with an index, starting at 0.
+    cfgStream << "      \"dir\"" << std::endl;
+    cfgStream << "      {" << std::endl;
+
+    index = 0;
+
+    for (auto mappingPtr : modulePtr->bundledDirs)
+    {
+        GenerateBundledObjectMappingConfig(cfgStream, index++, mappingPtr.get());
+    }
+
+    cfgStream << "      }" << std::endl;
+
+    cfgStream << "    }" << std::endl << std::endl;
+
+
+    // Create "scripts" section:
+    cfgStream << "    \"scripts\"" << std::endl;
+    cfgStream << "    {" << std::endl;
+
+    std::string scriptFirstFilePath = "/legato/systems/current/modules/files/";
+    std::string scriptSecondFilePath = path::Combine(modulePtr->name, "/scripts/");
+    std::string scriptFilePath = path::Combine(scriptFirstFilePath, scriptSecondFilePath);
+
+    if (!modulePtr->installScript.empty())
+    {
+        std::string installScriptPath = path::Combine(scriptFilePath,
+                                                      path::GetLastNode(modulePtr->installScript));
+        cfgStream << "      \"install\" \"" << installScriptPath << "\"" << std::endl;
+    }
+    else
+    {
+        cfgStream << "      \"install\" \"" << modulePtr->installScript << "\"" << std::endl;
+    }
+
+    if (!modulePtr->removeScript.empty())
+    {
+        std::string removeScriptPath = path::Combine(scriptFilePath,
+                                                     path::GetLastNode(modulePtr->removeScript));
+        cfgStream << "      \"remove\" \"" << removeScriptPath << "\"" << std::endl;
+    }
+    else
+    {
+        cfgStream << "      \"remove\" \"" << modulePtr->removeScript << "\"" << std::endl;
+    }
+
+    cfgStream << "    }" << std::endl;
+
+    cfgStream << "  }\n";
 }
 
 
@@ -1003,15 +1018,18 @@ static void GenerateModulesConfig
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating module configuration data in file "
-                     "'" << filePath << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating module configuration data in file "
+                                        "'%s'."), filePath)
+                  << std::endl;
     }
 
     std::ofstream cfgStream(filePath, std::ofstream::trunc);
 
     if (cfgStream.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + filePath + ",' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), filePath)
+        );
     }
 
     cfgStream << "{\n";
@@ -1021,26 +1039,23 @@ static void GenerateModulesConfig
     {
         auto modulePtr = mapEntry.second;
 
-        cfgStream << "  \"" << path::GetLastNode(modulePtr->path) << "\"\n";
-        cfgStream << "  {\n";
-        cfgStream << "    \"params\"\n";
-        cfgStream << "    {\n";
-
-        // For each parameter in module parameter list
-        for (auto mapEntry : modulePtr->params)
+        if (modulePtr->moduleBuildType == model::Module_t::Prebuilt)
         {
-            cfgStream << "       \"" << mapEntry.first << "\" \""
-                      << mapEntry.second << "\"\n";
+            for (auto &mapEntrykoFiles : modulePtr->koFiles)
+            {
+                cfgStream << "  \"" << path::GetLastNode(mapEntrykoFiles.first) << "\"\n";
+                GenerateConfigEachModuleFile(systemPtr, modulePtr, cfgStream);
+            }
         }
-
-        cfgStream << "    }\n";
-        cfgStream << "  }\n";
+        else
+        {
+            cfgStream << "  \"" << modulePtr->name << ".ko" << "\"\n";
+            GenerateConfigEachModuleFile(systemPtr, modulePtr, cfgStream);
+        }
     }
 
     cfgStream << "}\n";
 }
-
-
 
 
 //--------------------------------------------------------------------------------------------------
@@ -1060,15 +1075,18 @@ static void GenerateUsersConfig
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating non-app users' binding configuration data in file "
-                     "'" << filePath << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating non-app users' binding configuration data "
+                                        "in file '%s'."), filePath)
+                  << std::endl;
     }
 
     std::ofstream cfgStream(filePath, std::ofstream::trunc);
 
     if (cfgStream.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + filePath + ",' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), filePath)
+        );
     }
 
     cfgStream << "{\n";
@@ -1118,7 +1136,9 @@ static void AddAppConfig
 
     if (appCfgStream.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + filePath + ",' for reading.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for reading."), filePath)
+        );
     }
 
     char buffer[1024];
@@ -1148,15 +1168,18 @@ static void GenerateAppsConfig
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating app configuration data in file "
-                     "'" << filePath << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating app configuration data in file '%s'."),
+                                filePath)
+                  << std::endl;
     }
 
     std::ofstream cfgStream(filePath, std::ofstream::trunc);
 
     if (cfgStream.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + filePath + ",' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), filePath)
+        );
     }
 
     cfgStream << "{\n";
@@ -1171,6 +1194,64 @@ static void GenerateAppsConfig
     }
 
     cfgStream << "}\n";
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate the externalWatchdogKick configuration.
+ **/
+//--------------------------------------------------------------------------------------------------
+static void GenerateExternalWatchdogKickConfig
+(
+    std::ofstream& cfgStream,
+    const model::System_t* systemPtr
+)
+{
+    if (systemPtr->externalWatchdogKick != "")
+    {
+        cfgStream << "\"externalWatchdogKick\" [" << systemPtr->externalWatchdogKick << "]" << std::endl;
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate the framework watchdog configuration settings file "framework.cfg" in the "config"
+ * directory of the system's staging directory.
+ */
+//--------------------------------------------------------------------------------------------------
+static void GenerateFrameworkConfig
+(
+    model::System_t* systemPtr,     ///< The system to generate the configuration for.
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    std::string filePath = path::Combine(buildParams.workingDir, "staging/config/framework.cfg");
+
+    if (buildParams.beVerbose)
+    {
+        std::cout << mk::format(LE_I18N("Generating watchdog configuration data in file '%s'."),
+                                filePath)
+                  << std::endl;
+    }
+
+
+    std::ofstream cfgStream(filePath, std::ofstream::trunc);
+
+    if (cfgStream.is_open() == false)
+    {
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), filePath)
+        );
+    }
+
+    cfgStream << "{" << std::endl;
+
+    GenerateExternalWatchdogKickConfig(cfgStream, systemPtr);
+
+    cfgStream << "}" << std::endl;
 }
 
 
@@ -1199,6 +1280,8 @@ void Generate
     GenerateUsersConfig(systemPtr, buildParams);
 
     GenerateAppsConfig(systemPtr, buildParams);
+
+    GenerateFrameworkConfig(systemPtr, buildParams);
 }
 
 

@@ -2,7 +2,7 @@
 /**
  *  Class whose objects can be used to store watchdogAction settings.
  *
- *  Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ class WatchdogAction_t: public Limit_t
 
     public:
 
-        void operator =(const std::string &action);
+        WatchdogAction_t& operator =(const std::string &action);
 
         const std::string& Get() const;
 };

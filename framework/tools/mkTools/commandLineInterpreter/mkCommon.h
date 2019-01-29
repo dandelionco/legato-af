@@ -4,12 +4,41 @@
  *
  * Functions shared by different command-line tools.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
 #ifndef LEGATO_MKTOOLS_MK_COMMON_H_INCLUDE_GUARD
 #define LEGATO_MKTOOLS_MK_COMMON_H_INCLUDE_GUARD
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Figure out what compiler, linker, etc. to use based on the target device type and store that
+ * info in the @c buildParams object.
+ *
+ * If a given tool is not specified through the means documented in
+ * @ref buildToolsmk_ToolChainConfig, then the corresponding entry in @c buildParams will be
+ * left empty.
+ */
+//--------------------------------------------------------------------------------------------------
+void FindToolChain
+(
+    mk::BuildParams_t& buildParams
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Checks the info in @c buildParams object for IMA signing. If nothing specified in @c buildParams
+ * object then check environment variables for IMA signing and update @c buildParams object
+ * accordingly.
+ */
+//--------------------------------------------------------------------------------------------------
+void CheckForIMASigning
+(
+    mk::BuildParams_t& buildParams
+);
 
 
 //--------------------------------------------------------------------------------------------------

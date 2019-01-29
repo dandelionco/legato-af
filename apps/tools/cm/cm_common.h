@@ -4,7 +4,7 @@
  *
  * Common functions between components.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  * to license.
  */
 //-------------------------------------------------------------------------------------------------
@@ -22,6 +22,8 @@
 #define CMODEM_COMMON_AUTH_STR_LEN          10
 #define CMODEM_COMMON_PROFILE_IDX_STR_LEN   5
 #define CMODEM_COMMON_TIMEOUT_STR_LEN       5
+
+#define CMODEM_COMMON_COLUMN_LEN            30
 
 
 //-------------------------------------------------------------------------------------------------
@@ -68,9 +70,23 @@ void cm_cmn_ToUpper
 //--------------------------------------------------------------------------------------------------
 bool cm_cmn_CheckEnoughParams
 (
-    size_t requiredParam,   ///< [IN] Required parameters for the command
+    size_t requiredParams,  ///< [IN] Required parameters for the command
     size_t numArgs,         ///< [IN] Number of arguments passed into the command line
     const char * errorMsg   ///< [IN] Error message to output if not enough parameters
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Verify if enough parameter passed into command. If not, output error message to stderr and exit.
+ */
+//--------------------------------------------------------------------------------------------------
+void cm_cmn_CheckNumberParams
+(
+    size_t requiredParams,      ///< [IN] Required parameters for the command
+    size_t maxParams,           ///< [IN] Max number of parameters for the command
+                                ///       Optional included, use -1 to disable check.
+    size_t numArgs,             ///< [IN] Number of arguments passed into the command line
+    const char * errorMsg       ///< [IN] Error message to output if not enough parameters
 );
 
 //-------------------------------------------------------------------------------------------------

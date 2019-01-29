@@ -2,7 +2,7 @@
 /**
  *  Implementation of the WatchdogAction_t class.
  *
- *  Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -17,9 +17,11 @@ namespace model
  * Assignment operator.  Validates and stores the WatchdogAction_t value.
  *
  * @throws mk::Exception_t if input is not one of the valid action strings
+ *
+ * @return  Reference of this object.
  */
 //--------------------------------------------------------------------------------------------------
-void WatchdogAction_t::operator =
+WatchdogAction_t& WatchdogAction_t::operator =
 (
     const std::string& action
 )
@@ -33,13 +35,17 @@ void WatchdogAction_t::operator =
         && (action != "reboot")
        )
     {
-        throw mk::Exception_t("Unknown watchdog action '" + action + "'.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Unknown watchdog action '%s'."), action)
+        );
     }
     else
     {
         value = action;
         isSet = true;
     }
+
+    return *this;
 }
 
 
@@ -61,7 +67,7 @@ const
 {
     if (!isSet)
     {
-        throw mk::Exception_t("Fetching watchdog action that has not been set.");
+        throw mk::Exception_t(LE_I18N("Fetching watchdog action that has not been set."));
     }
 
     return value;

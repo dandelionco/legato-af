@@ -3,11 +3,9 @@
  * @page c_ecall eCall
  *
  * @ref le_ecall_interface.h "API Reference" <br>
- * @ref howToEcall <br>
+ * @ref legatoServicesModemECall <br>
  * @ref sampleApps_eCall sample app <br>
  * @ref le_ecall_samples <br>
- *
- * <HR>
  *
  * eCall is a technology initiative intended to bring rapid assistance to auto
  * accidents anywhere in the European Union. When a serious vehicle accident occurs,
@@ -150,6 +148,16 @@
  * The MSD can be updated before calling le_ecall_SendMsd(), using the e_ecall_ImportMsd() function
  * or the le_ecall_SetMsdXxx() functions.
  *
+ * Date/time on MSD information is set automatically by fetching the time from linux system time
+ * (epoch time since 1970-01-01 00:00:00 +0000 (UTC)).
+ *
+ * @note If linux system time is not updated automatically, update system date/time with either
+ * Linux date command or by calling le_clk_SetAbsoluteTime() function.
+ *
+ * The time given to le_clk_SetAbsoluteTime() function can be retrieved by:
+ * - le_data_GetTime()/le_data_GetDate(): the time from the network NTP.
+ * - le_gnss_GetEpochTime() the GPS epoch time.
+ *
  * @section le_ecall_eraglonass ERA-GLONASS compliancy
  *
  * To perform an emergency call following the ERA-GLONASS requirements, the 'systemStandard' entry
@@ -158,15 +166,16 @@
  * Moreover, the User can set some specific configuration settings in accordance with the PSAP
  * configuration:
  *
- * - le_ecall_SetEraGlonassManualDialAttempts(): set the MANUAL_DIAL_ATTEMPTS value. If a dial
+ * - le_ecall_SetEraGlonassManualDialAttempts(): set the ECALL_MANUAL_DIAL_ATTEMPTS value. If a dial
  *   attempt under manual emergency call initiation failed, it should be repeated maximally
  *   ECALL_MANUAL_DIAL_ATTEMPTS-1 times within the maximal time limit of ECALL_DIAL_DURATION.
  *   The default value is 10.
  *   Redial attempts stop once the call has been cleared down correctly, or if counter / timer
  *   reached their limits.
- *   Available for both manual and test modes.
- * - le_ecall_SetEraGlonassAutoDialAttempts(): set the AUTO_DIAL_ATTEMPTS value. If a dial attempt
- *   under automatic emergency call initiation failed, it should be repeated maximally
+ *
+ *   Available for both manual and test modes:
+ * - le_ecall_SetEraGlonassAutoDialAttempts(): set the ECALL_AUTO_DIAL_ATTEMPTS value. If a dial
+ *   attempt under automatic emergency call initiation failed, it should be repeated maximally
  *   ECALL_AUTO_DIAL_ATTEMPTS-1 times within the maximal time limit of ECALL_DIAL_DURATION.
  *   The default value is 10.
  *   Redial attempts stop once the call has been cleared down correctly, or if counter / timer
@@ -175,22 +184,47 @@
  *   the IVS have to connect the emergency call to the PSAP, including all redial attempts.
  *   If the call is not connected within this time (or ManualDialAttempts/AutoDialAttempts dial
  *   attempts), it will stop.
+ * - le_ecall_SetEraGlonassFallbackTime(): set the ECALL_CCFT time. When the specified timer
+ *   duration is reached and IVS NAD didn't receive a call clear-down indication then the call
+ *   is automatically terminated.
+ * - le_ecall_SetEraGlonassAutoAnswerTime(): sets the ECALL_AUTO_ANSWER_TIME time, the
+ *   maximum time interval wherein IVDS responds to incoming calls automatically after emergency
+ *   call completion.
+ * - le_ecall_SetEraGlonassMSDMaxTransmissionTime(): sets the ECALL_MSD_MAX_TRANSMISSION_TIME time,
+ *   the maximum time for MSD transmission.
+ *
+ *   Available for test mode only:
+ * - le_ecall_SetEraGlonassPostTestRegistrationTime(): sets the ECALL_POST_TEST_REGISTRATION_TIME,
+ *   the time interval wherein IVS remains registered in the network after the completion of
+ *   transmission of test results to System Operator. The ECALL_POST_TEST_REGISTRATION_TIME default
+ *   time value is 120 seconds.
  *
  * The corresponding getter functions let you retrieve the configuration settings values:
  *
- * - le_ecall_GetEraGlonassManualDialAttempts(): get the MANUAL_DIAL_ATTEMPTS value.
- * - le_ecall_GetEraGlonassAutoDialAttempts(): get the AUTO_DIAL_ATTEMPTS value.
+ * - le_ecall_GetEraGlonassManualDialAttempts(): get the ECALL_MANUAL_DIAL_ATTEMPTS value.
+ * - le_ecall_GetEraGlonassAutoDialAttempts(): get the ECALL_AUTO_DIAL_ATTEMPTS value.
  * - le_ecall_GetEraGlonassDialDuration(): get the ECALL_DIAL_DURATION time.
+ * - le_ecall_GetEraGlonassFallbackTime(): get the ECALL_CCFT time.
+ * - le_ecall_GetEraGlonassAutoAnswerTime(): get the ECALL_AUTO_ANSWER_TIME time.
+ * - le_ecall_GetEraGlonassMSDMaxTransmissionTime(): get the ECALL_MSD_MAX_TRANSMISSION_TIME time.
+ * - le_ecall_GetEraGlonassPostTestRegistrationTime(): get the ECALL_POST_TEST_REGISTRATION_TIME
+ *   time.
  *
  * @section le_ecall_eraGlonassData ERA-GLONASS MSD additional data
  *
  * ERA-GLONASS additional data are optional and provided in the MSD message if any.
  * They are located in MSD data block number 12 as optional additional data.
  *
- * ERA-GLONASS MSD additional data describes:
+ * ERA-GLONASS MSD additional data for MSD version 1 describes:
  * - The crash severity (Accident Severity Index - ASI15)
  * - The diagnostic result
  * - The crash information
+ *
+ * ERA-GLONASS MSD additional data for MSD version 2 describes:
+ * - The crash severity (Accident Severity Index - ASI15)
+ * - The diagnostic result
+ * - The crash information
+ * - The coordinate system type
  *
  * ERA-GLONASS MSD additional data can be specified through the following functions:
  * - le_ecall_SetMsdEraGlonassCrashSeverity().
@@ -199,10 +233,14 @@
  * - le_ecall_ResetMsdEraGlonassDiagnosticResult().
  * - le_ecall_SetMsdEraGlonassCrashInfo().
  * - le_ecall_ResetMsdEraGlonassCrashInfo().
+ * - le_ecall_SetMsdEraGlonassCoordinateSystemType().
+ * - le_ecall_ResetMsdEraGlonassCoordinateSystemType().
  *
- * ERA-GLONASS additional data is encoded using the OID version "1.4.1".
- * This was assigned to ERA-GLONASS optional additional data by CEN. Content of data
- * block in the AdditionalData should be:
+ * ERA-GLONASS additional data is encoded using the OID version "1.4.1" for
+ * MSD version 1 and the OID version "1.4.2" for MSD version 2.
+ * This was assigned to ERA-GLONASS optional additional data by CEN.
+ *
+ * Content of data block in the AdditionalData for MSD version 1 should be:
  *
  * @code
  *
@@ -256,6 +294,67 @@
  * END
  * @endcode
  *
+ * Content of data block in the AdditionalData for MSD version 2 should be:
+ *
+ * @code
+ *
+ * ERAOADASN1Module
+ * DEFINITIONS
+ * AUTOMATIC TAGS ::=
+ * BEGIN
+ * ERADataFormatId::= INTEGER (1)
+ *
+ * ERAAdditionalData ::= SEQUENCE {
+ *    crashSeverity INTEGER(0..2047) OPTIONAL,
+ *    diagnosticResult DiagnosticResult OPTIONAL,
+ *    crashInfo CrashInfo OPTIONAL,
+ *    coordinateSystemType CoordinateSystemType DEFAULT wgs84,
+ *    ...
+ * }
+ *
+ * DiagnosticResult ::= SEQUENCE {
+ *    micConnectionFailure BOOLEAN OPTIONAL,
+ *    micFailure BOOLEAN OPTIONAL,
+ *    rightSpeakerFailure BOOLEAN OPTIONAL,
+ *    leftSpeakerFailure BOOLEAN OPTIONAL,
+ *    speakersFailure BOOLEAN OPTIONAL,
+ *    ignitionLineFailure BOOLEAN OPTIONAL,
+ *    uimFailure BOOLEAN OPTIONAL,
+ *    statusIndicatorFailure BOOLEAN OPTIONAL,
+ *    batteryFailure BOOLEAN OPTIONAL,
+ *    batteryVoltageLow BOOLEAN OPTIONAL,
+ *    crashSensorFailure BOOLEAN OPTIONAL,
+ *    firmwareImageCorruption BOOLEAN OPTIONAL,
+ *    commModuleInterfaceFailure BOOLEAN OPTIONAL,
+ *    gnssReceiverFailure BOOLEAN OPTIONAL,
+ *    raimProblem BOOLEAN OPTIONAL,
+ *    gnssAntennaFailure BOOLEAN OPTIONAL,
+ *    commModuleFailure BOOLEAN OPTIONAL,
+ *    eventsMemoryOverflow BOOLEAN OPTIONAL,
+ *    crashProfileMemoryOverflow BOOLEAN OPTIONAL,
+ *    otherCriticalFailires BOOLEAN OPTIONAL,
+ *    otherNotCriticalFailures BOOLEAN OPTIONAL
+ * }
+ *
+ * CrashInfo ::= SEQUENCE {
+ *    crashFront BOOLEAN OPTIONAL,
+ *    crashLeft BOOLEAN OPTIONAL,
+ *    crashRight BOOLEAN OPTIONAL,
+ *    crashRear BOOLEAN OPTIONAL,
+ *    crashRollover BOOLEAN OPTIONAL,
+ *    crashSide BOOLEAN OPTIONAL,
+ *    crashFrontOrSide BOOLEAN OPTIONAL,
+ *    crashAnotherType BOOLEAN OPTIONAL
+ * }
+ *
+ * CoordinateSystemType ::= ENUMERATED {
+ *    wgs64 (1),
+ *    ps90 (2)
+ * }
+ * END
+ *
+ * @endcode
+ *
  * @section le_ecall_redial Redial management
  *
  * In the case of PAN-EUROPEAN, the redial can be performed as many times as desired but should be
@@ -267,54 +366,108 @@
  * The \b LE_ECALL_STATE_END_OF_REDIAL_PERIOD state event notifies the User of the redial period
  * end.
  *
- * @section le_ecall_samples Code samples
- *
- * A sample code that implements an eCall test session with a local voice prompt can be found in
- * \b eCallWPrompt.c file (please refer to @ref c_ecallWPromptSample page).
- *
- * A sample code that implements an eCall test session with a voice call connection can be found in
- * \b eCallWVoice.c file (please refer to @ref c_ecallWVoiceSample page).
- *
- * If you want to have a look at a more in-depth usage of these APIs, please refer to the
- * @ref c_ecall.
- *
  * @section le_ecall_configuration eCall configuration
+ *
+ * Some parameters used by the eCall service can be configured through APIs. This includes the
+ * number to dial, the deregistration time, the redial interval, and some MSD information.
+ *
+ * @subsection le_ecall_configuration_callNumber eCall number
  *
  * By default, the number to dial is read from the FDN/SDN (Fixed Dialling Numbers/Service
  * Dialling Numbers) of the U/SIM, depending upon the eCall operating mode.
  *
- * However, the PSAP telephone number can be specified and retrieved with:
- *  - le_ecall_SetPsapNumber()
+ * However, the PSAP phone number can be queried and set with:
  *  - le_ecall_GetPsapNumber()
+ *  - le_ecall_SetPsapNumber()
  *
- * @note That PSAP number is not applied to Manually or Automatically initiated eCall. For those
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" PsapNumber
+ *
+ * @note That PSAP number is not applied to a manual or an automatically initiated eCall. For these
  *       modes, an emergency call is launched.
 
- * @warning These two functions don't modified the U/SIM content nor read the U/SIM content.
+ * @warning These two functions don't modify or read the U/SIM content.
  *
- * le_ecall_UseUSimNumbers() function can be recalled to indicate the modem to read the number to
- * dial from the FDN/SDN of the U/SIM, depending upon the eCall operating mode.
+ * When modem is in @ref LE_ECALL_FORCED_PERSISTENT_ONLY_MODE or @ref LE_ECALL_ONLY_MODE,
+ * le_ecall_UseUSimNumbers() API can be called to request the modem to read the number to
+ * dial from the FDN/SDN of the U/SIM.
  *
- * The NAD (Network Access Device, i.e. the Modem) deregistration time value can be set or get with:
- *  - le_ecall_SetNadDeregistrationTime()
- *  - le_ecall_GetNadDeregistrationTime()
+ * @note If FDN directory is updated with new dial numbers, be sure that the SIM card is refreshed.
  *
- * Time is set in hours where:
- * -  from 1 to 60 minutes -> 1 hour
- * - from 61 to 120 minutes -> 2hours, etc.
+ * @subsection le_ecall_configuration_nad NAD deregistration time
+ *
+ * The NAD (Network Access Device, i.e. the Modem) deregistration time value can be set with the
+ * le_ecall_SetNadDeregistrationTime() API and retrieved with the
+ * le_ecall_GetNadDeregistrationTime() API.
+ *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" NadTime
+ *
+ * 1. PAN-EUROPEAN standard (<em>EN 16062</em>) defines the T9 and T10 timers. After an eCall
+ *    clear-down, an <b>eCall only</b> IVS shall:
+ *    - Remain registered on the network for at least the duration of T9, which is set to
+ *      one hour by default.
+ *    - Deregister from the network after the expiration of T10, which duration is set to
+ *      twelve hours by default.
+ * 2. ERA-GLONASS standard (<em>ENG_GOST_R_54620</em>) defines the NAD_DEREGISTRATION_TIME
+ *    with a minimal value of two hours and a maximum value of twelve hours. After an eCall
+ *    clear-down, the IVS shall remain registered on the network and deregister from the network
+ *    after the expiration of the NAD_DEREGISTRATION_TIME.
+ *
+ * The le_ecall_SetNadDeregistrationTime() API is used to set the duration of a
+ * <em>deregistration timer</em>: after an eCall clear-down, the IVS remains registered on the
+ * network for the duration of this timer and then automatically deregisters from the network upon
+ * its expiration.
+ *
+ * @subsubsection le_ecall_configuration_nad_panEU PAN-EUROPEAN standard
+ * As the T9 timer duration is fixed to one hour, the notified events depend on the
+ * <em>deregistration timer</em> duration:
+ *  - If its duration is set to one hour, the @ref LE_ECALL_STATE_TIMEOUT_T9 event will be reported.
+ *    In this case deregistration is automatically performed when the T9 timeout indication is
+ *    received.
+ *  - If its duration is set to more than one hour and less than twelve hours then the
+ *    @ref LE_ECALL_STATE_TIMEOUT_T10 event will be reported when the <em>deregistration timer</em>
+ *    expires. The T9 timeout (@ref LE_ECALL_STATE_TIMEOUT_T9 event) will not be notified.
+ *    In this case deregistration is automatically performed when the <em>deregistration timer</em>
+ *    expires, provided that the application didn't already deregister from the network before.
+ *
+ * @subsubsection le_ecall_configuration_nad_eraGlonass ERA-GLONASS standard
+ *  - The @ref LE_ECALL_STATE_TIMEOUT_T9 event is not reported as it is not defined in the
+ *    ERA-GLONASS standard.
+ *  - The NAD_DEREGISTRATION_TIME default value is eight hours, as defined by
+ *    <em>GOST_R 54620 Table A.1</em>. It can be changed with le_ecall_SetNadDeregistrationTime()
+ *    and the value must be set between two and twelve hours.
+ *  - The @ref LE_ECALL_STATE_TIMEOUT_T10 event will be reported when the NAD_DEREGISTRATION_TIME
+ *    expires. In this case deregistration is automatically performed when the timer expires.
+ *
+ * @subsubsection le_ecall_configuration_nad_timerValue Timer value
+ *
+ * Although the time is set in minutes the value is taken in hours, for example:
+ * - from 1 to 60 minutes -> 1 hour
+ * - from 61 to 120 minutes -> 2 hours, etc.
  *
  * Example: if @c deregTime parameter unit is minutes, the effective time is:
  * @code ECallConfiguration.nad_deregistration_time = (deregTime+59)/60; @endcode
  *
  * After termination of an emergency call the in-vehicle system remains registered on the network
- * for the period of time, defined by the installation parameter 'NAD_DEREGISTRATION_TIME'.
+ * for the period of time, defined by the installation parameter NAD_DEREGISTRATION_TIME.
  *
- * @warning Be sure to check the possible values of 'NAD_DEREGISTRATION_TIME' for your specific
+ * @warning Be sure to check the possible values of NAD_DEREGISTRATION_TIME for your specific
  * platform.
+ *
+ * @subsection le_ecall_configuration_postTestRegistrationTime Post test registration time
+ *
+ * The ECALL_POST_TEST_REGISTRATION_TIME time value can be set with the
+ * le_ecall_SetEraGlonassPostTestRegistrationTime() function and retrieved by the
+ * le_ecall_GetEraGlonassPostTestRegistrationTime() function.
+ *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" PostTest
+ *
+ * @subsection le_ecall_configuration_redialInterval Redial interval
  *
  * The minimum interval value between dial attempts can be set or get with:
  *  - le_ecall_SetIntervalBetweenDialAttempts()
  *  - le_ecall_GetIntervalBetweenDialAttempts()
+ *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" DialTimer
  *
  * The default value is set to 30 seconds.
  *
@@ -328,32 +481,55 @@
  *
  * In the case the call was connected, the redial will be immediate.
  *
- *  le_ecall_SetIntervalBetweenDialAttempts() is available for both manual and test modes.
+ * le_ecall_SetIntervalBetweenDialAttempts() is available for both manual and test modes.
  *
- * The prefered system standard defaults to PAN-EUROPEAN
+ * @subsection le_ecall_configuration_misc Miscellaneous
+ *
+ * The preferred system standard defaults to PAN-EUROPEAN
  * It can be set an gotten with the following functions:
  * - le_ecall_SetSystemStandard()
  * - le_ecall_GetSystemStandard()
+ *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" Standard
  *
  * The MSD version can be set and and gotten with the following functions:
  * - le_ecall_SetMsdVersion()
  * - le_ecall_GetMsdVersion()
  *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" MsdVersion
+ *
  * The vehicle type can be set and gotten with the following functions:
  * - le_ecall_SetVehicleType()
  * - le_ecall_GetVehicleType()
+ *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" Vehicle
  *
  * The vehicle identifier can be set and gotten with the following functions:
  * - le_ecall_SetVIN()
  * - le_ecall_GetVIN()
  *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" VIN
+ *
  * The propulsion type can be set and gotten with the following functions:
  * - le_ecall_SetPropulsionType()
  * - le_ecall_GetPropulsionType()
  *
+ * @snippet "apps/test/modemServices/ecall/ecallIntegrationTest/eCallTest/le_ecallTest.c" Propulsion
+ *
+ * @section le_ecall_samples Code samples
+ *
+ * A sample code that implements an eCall test session with a local voice prompt can be found in
+ * \b eCallWPrompt.c file (please refer to @ref c_ecallWPromptSample page).
+ *
+ * A sample code that implements an eCall test session with a voice call connection can be found in
+ * \b eCallWVoice.c file (please refer to @ref c_ecallWVoiceSample page).
+ *
+ * If you want to have a look at a more in-depth usage of these APIs, please refer to the
+ * @ref le_ecall_interface.h.
+ *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -363,7 +539,7 @@
  *
  * Legato @ref c_ecall include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -516,7 +692,6 @@ ENUM MsdVehicleType
     MSD_VEHICLE_MOTORCYCLE_L7E,  ///< Motorcycles (Class L7e)
 };
 
-
 //--------------------------------------------------------------------------------------------------
 /**
  * Propulsion type Bit Mask
@@ -532,7 +707,6 @@ BITMASK PropulsionTypeBitMask
     PROPULSION_TYPE_HYDROGEN,        ///< Hydrogen propulsion
     PROPULSION_TYPE_OTHER,           ///< Other type of propulsions
 };
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -614,6 +788,18 @@ BITMASK CrashInfoBitMask
 
 //--------------------------------------------------------------------------------------------------
 /**
+ *  eCall MSD coordinate system type
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM MsdCoordinateType
+{
+    MSD_COORDINATE_SYSTEM_TYPE_ABSENT,  ///< Coordinate system type is absent
+    MSD_COORDINATE_SYSTEM_TYPE_WGS84,   ///< Coordinate system type WGS-84
+    MSD_COORDINATE_SYSTEM_TYPE_PZ90     ///< Coordinate system type PZ-90
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function configures the eCall operation mode to eCall only, only emergency number can be
  * used to start an eCall session. The modem doesn't try to register on the Cellular network.
  * This function forces the modem to behave as eCall only mode whatever U/SIM operation mode.
@@ -623,6 +809,7 @@ BITMASK CrashInfoBitMask
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ForceOnlyMode
@@ -636,6 +823,7 @@ FUNCTION le_result_t ForceOnlyMode
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ForcePersistentOnlyMode
@@ -652,6 +840,7 @@ FUNCTION le_result_t ForcePersistentOnlyMode
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ExitOnlyMode
@@ -663,8 +852,12 @@ FUNCTION le_result_t ExitOnlyMode
  * Get the configured Operation mode.
  *
  * @return
- *      - LE_OK on success
- *      - LE_FAULT for other failures
+ *      - LE_OK     on success
+ *      - LE_FAULT  for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetConfiguredOperationMode
@@ -839,6 +1032,7 @@ FUNCTION le_result_t SetVIN
  *  - LE_OK on success
  *  - LE_NOT_FOUND if the value is not set.
  *  - LE_BAD_PARAMETER parameter is NULL or to small
+ *  - LE_FAULT for other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetVIN
@@ -887,6 +1081,7 @@ FUNCTION le_result_t GetPropulsionType
  * @return
  *  - LE_OK on success
  *  - LE_FAULT for other failures
+ *  - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetMsdTxMode
@@ -899,8 +1094,12 @@ FUNCTION le_result_t SetMsdTxMode
  * Get the push/pull transmission mode.
  *
  * @return
- *  - LE_OK on success
- *  - LE_FAULT for other failures
+ *      - LE_OK     on success
+ *      - LE_FAULT  for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetMsdTxMode
@@ -1057,6 +1256,7 @@ FUNCTION le_result_t ExportMsd
  *      - LE_OK on success
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note On failure, the process exits, so you don't have to worry about checking the returned
  *       reference for validity.
@@ -1076,6 +1276,7 @@ FUNCTION le_result_t SendMsd
  *      - LE_BUSY an eCall session is already in progress
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note The process exits, if an invalid eCall reference is given
  */
@@ -1094,6 +1295,7 @@ FUNCTION le_result_t StartAutomatic
  *      - LE_BUSY an eCall session is already in progress
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note The process exits, if an invalid eCall reference is given
  */
@@ -1112,6 +1314,7 @@ FUNCTION le_result_t StartManual
  *      - LE_BUSY an eCall session is already in progress
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note The process exits, if an invalid eCall reference is given
  */
@@ -1129,6 +1332,7 @@ FUNCTION le_result_t StartTest
  *      - LE_OK on success
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t End
@@ -1158,14 +1362,15 @@ FUNCTION State GetState
  * @note That PSAP number is not applied to Manually or Automatically initiated eCall. For those
  *       modes, an emergency call is launched.
  *
- * @warning This function doesn't modified the U/SIM content.
+ * @warning This function doesn't modify the U/SIM content.
  *
  * @return
- *  - LE_OK on success
- *  - LE_FAULT for other failures
+ *  - LE_OK           On success
+ *  - LE_FAULT        For other failures
+ *  - LE_UNSUPPORTED  Not supported on this platform
  *
- * @note If PSAP number is too long (max LE_MDMDEFS_PHONE_NUM_MAX_LEN digits), it is a fatal error,
- *       the function will not return.
+ * @note If PSAP number is empty or too long (max LE_MDMDEFS_PHONE_NUM_MAX_LEN digits), it is a
+ *       fatal error, the function will not return.
  */
 //--------------------------------------------------------------------------------------------------
  FUNCTION le_result_t SetPsapNumber
@@ -1184,19 +1389,27 @@ FUNCTION State GetState
  * @warning This function doesn't read the U/SIM content.
  *
  * @return
- *  - LE_OK on success
- *  - LE_FAULT on failures or if le_ecall_SetPsapNumber() has never been called before.
+ *  - LE_OK           On success
+ *  - LE_FAULT        On failures or if le_ecall_SetPsapNumber() has never been called before
+  * - LE_OVERFLOW     Retrieved PSAP number is too long for the out parameter
+ *  - LE_UNSUPPORTED  Not supported on this platform
+ *
+ * @note If the passed PSAP pointer is NULL, a fatal error is raised and the function will not
+ *       return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetPsapNumber
 (
-    string psap[le_mdmDefs.PHONE_NUM_MAX_LEN] OUT ///< Public Safely Answering Point telephone number
+    string psap[le_mdmDefs.PHONE_NUM_MAX_LEN] OUT ///< Public Safely Answering Point telephone
+                                                  ///< number
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function can be recalled to indicate the modem to read the number to dial from the FDN/SDN
- * of the U/SIM, depending upon the eCall operating mode.
+ * When modem is in ECALL_FORCED_PERSISTENT_ONLY_MODE or ECALL_ONLY_MODE, this function
+ * can be called to request the modem to read the number to dial from the FDN/SDN of the U/SIM.
+ *
+ * @note If FDN directory is updated with new dial numbers, be sure that the SIM card is refreshed.
  *
  * @return
  *  - LE_OK on success
@@ -1209,23 +1422,26 @@ FUNCTION le_result_t UseUSimNumbers
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the NAD_DEREGISTRATION_TIME value. After termination of an emergency call the in-vehicle
- * system remains registered on the network for the period of time, defined by the installation
- * parameter NAD_DEREGISTRATION_TIME.
+ * Set the NAD (network access device) deregistration time value. After termination of an emergency
+ * call the in-vehicle system remains registered on the network for the period of time, defined by
+ * the installation parameter NAD (network access device) deregistration time.
  *
  * @return
  *  - LE_OK on success
  *  - LE_FAULT on failure
+ *
+ * @note The formula to calculate NAD deregistration time for PAN_EUROPEAN is as below:
+ *       ECallConfiguration.nad_deregistration_time = (deregTime+59)/60;
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetNadDeregistrationTime
 (
-    uint16    deregTime  IN  ///< the NAD_DEREGISTRATION_TIME value (in minutes).
+    uint16 deregTime IN ///< the NAD (network access device) deregistration time value (in minutes).
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the NAD_DEREGISTRATION_TIME value.
+ * Get the NAD (network access device) deregistration time value.
  *
  * @return
  *  - LE_OK on success
@@ -1234,7 +1450,8 @@ FUNCTION le_result_t SetNadDeregistrationTime
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetNadDeregistrationTime
 (
-    uint16    deregTime  OUT  ///< the NAD_DEREGISTRATION_TIME value (in minutes).
+    uint16    deregTime  OUT  ///< the NAD (network access device) deregistration time value
+                              /// (in minutes).
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -1267,9 +1484,9 @@ FUNCTION le_result_t GetIntervalBetweenDialAttempts
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the MANUAL_DIAL_ATTEMPTS value. If a dial attempt under manual emergency call initiation
- * failed, it should be repeated maximally ECALL_MANUAL_DIAL_ATTEMPTS-1 times within the maximal
- * time limit of ECALL_DIAL_DURATION. The default value is 10.
+ * Set the ECALL_MANUAL_DIAL_ATTEMPTS value. If a dial attempt under manual emergency call
+ * initiation failed, it should be repeated maximally ECALL_MANUAL_DIAL_ATTEMPTS-1 times within
+ * the maximal time limit of ECALL_DIAL_DURATION. The default value is 10.
  * Redial attempts stop once the call has been cleared down correctly, or if counter/timer reached
  * their limits.
  *
@@ -1280,14 +1497,14 @@ FUNCTION le_result_t GetIntervalBetweenDialAttempts
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetEraGlonassManualDialAttempts
 (
-    uint16    attempts  IN  ///< the MANUAL_DIAL_ATTEMPTS value
+    uint16    attempts  IN  ///< the ECALL_MANUAL_DIAL_ATTEMPTS value
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set tthe AUTO_DIAL_ATTEMPTS value. If a dial attempt under automatic emergency call initiation
- * failed, it should be repeated maximally ECALL_AUTO_DIAL_ATTEMPTS-1 times within the maximal time
- * limit of ECALL_DIAL_DURATION. The default value is 10.
+ * Set the ECALL_AUTO_DIAL_ATTEMPTS value. If a dial attempt under automatic emergency call
+ * initiation failed, it should be repeated maximally ECALL_AUTO_DIAL_ATTEMPTS-1 times within
+ * the maximal time limit of ECALL_DIAL_DURATION. The default value is 10.
  * Redial attempts stop once the call has been cleared down correctly, or if counter/timer reached
  * their limits.
  *
@@ -1298,7 +1515,7 @@ FUNCTION le_result_t SetEraGlonassManualDialAttempts
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetEraGlonassAutoDialAttempts
 (
-    uint16    attempts  IN  ///< the AUTO_DIAL_ATTEMPTS value
+    uint16    attempts  IN  ///< the ECALL_AUTO_DIAL_ATTEMPTS value
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -1311,6 +1528,7 @@ FUNCTION le_result_t SetEraGlonassAutoDialAttempts
  * @return
  *  - LE_OK on success
  *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetEraGlonassDialDuration
@@ -1320,7 +1538,87 @@ FUNCTION le_result_t SetEraGlonassDialDuration
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the MANUAL_DIAL_ATTEMPTS value.
+ * Set the ECALL_CCFT time. It's the maximum delay before initiating an an automatic call
+ * termination.
+ * When the delay is reached and IVS NAD didn't receive a call clear-down indication then the call
+ * is immediatly terminated.
+ *
+ * @note Allowed range of values is 1 to 720 minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetEraGlonassFallbackTime
+(
+    uint16    duration  IN  ///< the ECALL_CCFT time value (in minutes)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ECALL_AUTO_ANSWER_TIME time, the time interval wherein IVDS responds to incoming calls
+ * automatically after emergency call completion.
+ *
+ * @note Default value of auto answer time is 20 minutes. Maximum value is 720 minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetEraGlonassAutoAnswerTime
+(
+    uint16 autoAnswerTime IN ///< The ECALL_AUTO_ANSWER_TIME time value (in minutes)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ECALL_MSD_MAX_TRANSMISSION_TIME time, the time period for MSD transmission.
+ *
+ * @note Default value of MSD transmission time is 20 seconds.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetEraGlonassMSDMaxTransmissionTime
+(
+    uint16 msdMaxTransTime IN ///< The ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ERA-GLONASS ECALL_POST_TEST_REGISTRATION_TIME time.
+ *
+ * After completion of transmission of test diagnostics results in an eCall test session, the
+ * in-vehicle system remains registered on the network for the period of time defined by the
+ * ECALL_POST_TEST_REGISTRATION_TIME value.
+ *
+ * @note The ECALL_POST_TEST_REGISTRATION_TIME setting takes effect immediately and is persistent to
+ * reset.
+ *
+ * @note An ECALL_POST_TEST_REGISTRATION_TIME value of zero means the IVS doesn't remain registered
+ * after completion of transmission of test (diagnostics) results.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetEraGlonassPostTestRegistrationTime
+(
+    uint16 postTestRegTime IN  ///< The ECALL_POST_TEST_REGISTRATION_TIME time value (in seconds)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_MANUAL_DIAL_ATTEMPTS value.
  *
  * @return
  *  - LE_OK on success
@@ -1329,12 +1627,12 @@ FUNCTION le_result_t SetEraGlonassDialDuration
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetEraGlonassManualDialAttempts
 (
-    uint16    attempts  OUT  ///< the MANUAL_DIAL_ATTEMPTS value
+    uint16    attempts  OUT  ///< the ECALL_MANUAL_DIAL_ATTEMPTS value
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the AUTO_DIAL_ATTEMPTS value.
+ * Get the ECALL_AUTO_DIAL_ATTEMPTS value.
  *
  * @return
  *  - LE_OK on success
@@ -1343,7 +1641,7 @@ FUNCTION le_result_t GetEraGlonassManualDialAttempts
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetEraGlonassAutoDialAttempts
 (
-    uint16    attempts  OUT  ///< the AUTO_DIAL_ATTEMPTS value
+    uint16    attempts  OUT  ///< the ECALL_AUTO_DIAL_ATTEMPTS value
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -1362,12 +1660,73 @@ FUNCTION le_result_t GetEraGlonassDialDuration
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Get the ECALL_CCFT time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetEraGlonassFallbackTime
+(
+    uint16    duration  OUT  ///< the ECALL_CCFT time value (in minutes)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_AUTO_ANSWER_TIME time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on execution failure
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetEraGlonassAutoAnswerTime
+(
+    uint16 autoAnswerTime OUT ///< The ECALL_AUTO_ANSWER_TIME time value (in minutes)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_MSD_MAX_TRANSMISSION_TIME time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetEraGlonassMSDMaxTransmissionTime
+(
+    uint16 msdMaxTransTime OUT ///< The ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ERA-GLONASS ECALL_POST_TEST_REGISTRATION_TIME time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetEraGlonassPostTestRegistrationTime
+(
+    uint16 postTestRegTime OUT  ///< The ECALL_POST_TEST_REGISTRATION_TIME time value (in
+                                ///< seconds).
+
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Set the ERA-GLONASS crash severity parameter.
  *
  * @return
  *  - LE_OK on success
  *  - LE_DUPLICATE an MSD has been already imported
  *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetMsdEraGlonassCrashSeverity
@@ -1385,6 +1744,7 @@ FUNCTION le_result_t SetMsdEraGlonassCrashSeverity
  *  - LE_OK on success
  *  - LE_DUPLICATE an MSD has been already imported
  *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ResetMsdEraGlonassCrashSeverity
@@ -1400,6 +1760,7 @@ FUNCTION le_result_t ResetMsdEraGlonassCrashSeverity
  *  - LE_OK on success
  *  - LE_DUPLICATE an MSD has been already imported
  *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetMsdEraGlonassDiagnosticResult
@@ -1417,6 +1778,7 @@ FUNCTION le_result_t SetMsdEraGlonassDiagnosticResult
  *  - LE_OK on success
  *  - LE_DUPLICATE an MSD has been already imported
  *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ResetMsdEraGlonassDiagnosticResult
@@ -1432,6 +1794,7 @@ FUNCTION le_result_t ResetMsdEraGlonassDiagnosticResult
  *  - LE_OK on success
  *  - LE_DUPLICATE an MSD has been already imported
  *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetMsdEraGlonassCrashInfo
@@ -1449,6 +1812,7 @@ FUNCTION le_result_t SetMsdEraGlonassCrashInfo
  *  - LE_OK on success
  *  - LE_DUPLICATE an MSD has been already imported
  *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ResetMsdEraGlonassCrashInfo
@@ -1456,6 +1820,39 @@ FUNCTION le_result_t ResetMsdEraGlonassCrashInfo
     Call        ecallRef        IN   ///< eCall reference
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ERA-GLONASS coordinate system type.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_DUPLICATE an MSD has been already imported
+ *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetMsdEraGlonassCoordinateSystemType
+(
+    Call              ecallRef              IN,  ///< eCall reference
+    MsdCoordinateType coordinateSystemType  IN   ///< the ERA-GLONASS coordinate system type
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reset the ERA-GLONASS coordinate system type. Therefore that optional parameter is not included
+ * in the MSD message.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_DUPLICATE an MSD has been already imported
+ *  - LE_BAD_PARAMETER bad eCall reference
+ *  - LE_FAULT on other failures
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t ResetMsdEraGlonassCoordinateSystemType
+(
+    Call        ecallRef        IN   ///< eCall reference
+);
 
 //--------------------------------------------------------------------------------------------------
 /**

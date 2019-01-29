@@ -5,7 +5,7 @@
  * it holds everything in a single "processes:" section, except for the contents of any "run:"
  * subsections.
  *
- * Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless, Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -18,7 +18,7 @@ struct ProcessEnv_t
     ProcessEnv_t();
 
     /// List of processes to run in this environment.
-    /// NB: It is permitted to have multiple sharing the same name.
+    /// NB: It is NOT permitted to have multiple sharing the same name.
     std::list<Process_t*> processes;
 
     /// The environment variable list is a map with the variable name as the key.
@@ -36,6 +36,7 @@ struct ProcessEnv_t
     // Watchdog
     WatchdogAction_t  watchdogAction;
     WatchdogTimeout_t watchdogTimeout;
+    WatchdogTimeout_t maxWatchdogTimeout;
 
     void SetStartPriority(const std::string& priority);
     const Priority_t& GetStartPriority() const { return startPriority; }

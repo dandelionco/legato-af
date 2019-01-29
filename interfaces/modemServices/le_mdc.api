@@ -58,12 +58,20 @@
  *  - Access Point Name using le_mdc_SetAPN().
  *  - Authentication settings using le_mdc_SetAuthentication().
  *
+ * @warning The maximum APN length might be limited by the platform.
+ *          Please refer to the platform documentation.
+ *
  *  A sample code can be seen in the following page:
  * - @subpage c_mdcDataProfiles
  *
  * @section le_mdc_session Data Sessions
  *
  * @subsection le_mdc_session_MO Mobile Originated (MO-PDP context activation)
+ *
+ * le_mdc_MapProfileOnNetworkInterface() may be used to map a data session with a network interface.
+ * To take effect, this API has to be called before starting the data session. Otherwise, the
+ * mapping will be taken into account at the next start of the data profile.
+ *
  * A data session can be started using le_mdc_StartSession(). To start a data session, a
  * data profile must be created and written to the modem, or  an existing data profile
  * can be used. A data session can be stopped using le_mdc_StopSession(). The number of
@@ -83,7 +91,7 @@
  * handler using le_mdc_AddMtPdpSessionStateHandler().
  * When the incoming MT-PDP context request is notified,
  * the application takes responsibility to trigger the data session for that MT PDP request using
- * le_mdc_StartSession. That data session can be stopped using le_mdc_StopSession().
+ * le_mdc_StartSession(). That data session can be stopped using le_mdc_StopSession().
  *
  * The network interface settings of that MT-PDP context can be retrieved using the provided
  * Data Profile.
@@ -94,6 +102,9 @@
  * but cannot be more than the maximum number of supported profiles.
  *
  * The handler can be released using le_mdc_RemoveMtPdpSessionStateHandler().
+ *
+ * @warning The MT-PDP context activation feature is not supported on all platforms. Please refer to
+ * @ref MT-PDP_context section for full details.
  *
  * @subsection le_mdc_session_networkItf Network interface settings
  * Once a data session starts, a Linux network interface is created.  It's the application's
@@ -108,31 +119,38 @@
  * The Access Point Name can be retrieved by le_mdc_GetAPN(). The Data bearer
  * Technology can be retrieved by le_mdc_GetDataBearerTechnology().
  *
- * When the data session is stopped, the disconnection reason can be known using
- * le_mdc_GetDisconnectionReason() or le_mdc_GetPlatformSpecificDisconnectionCode() (refer to
- * your platform documentation for further details).
+ * le_mdc_GetDisconnectionReason() or le_mdc_GetPlatformSpecificDisconnectionCode() let you get
+ * the reason for disconnection of data session by retrieving the call end failure code
+ * from @c le_mdc_ProfileRef_t.
  *
- * When the data session connection fails, the failure reason can be known using
- * le_mdc_GetDisconnectionReason(), le_mdc_GetPlatformSpecificDisconnectionCode() or
- * le_mdc_GetPlatformSpecificFailureConnectionReason() (refer to your platform documentation
- * for further details).
+ * le_mdc_GetPlatformSpecificFailureConnectionReason() let you get the data session connection
+ * failure reason by retrieving the  call connection failure code and type from
+ * @c le_mdc_ProfileRef_t.
+ *
+ * Please refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * disconnection code description.
  *
  * A sample code can be seen in the following page:
  * - @subpage c_mdcDataSessions
  *
  * @section le_mdc_dataStatistics Data Statistics
  *
- * Data bytes received/transmitted can be access through le_mdc_GetBytesCounters().
- * These values correspond to the number of bytes received/transmitted since the last software reset
- * or the last le_mdc_ResetBytesCounter() called.
- * Making these value persistent after a software reboot is the client responsibility.
+ * The amount of received and transmitted data can be retrieved through le_mdc_GetBytesCounters().
+ * The returned values correspond to the number of received and transmitted
+ * bytes since the last call to le_mdc_ResetBytesCounter().
+ *
+ * The data statistics collection can be enabled with le_mdc_StartBytesCounter() and disabled
+ * without resetting the counters with le_mdc_StopBytesCounter().
+ *
+ * @note The data statistics collection activation and the data counters are persistent even after
+ * a reboot of the platform.
  *
  * A sample code can be seen in the following page:
  * - @subpage c_mdcDataStatistics
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -158,7 +176,7 @@
  *
  * Legato @ref c_mdc include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -235,6 +253,12 @@ DEFINE DEFAULT_PROFILE = -1;
  */
 DEFINE SIMTOOLKIT_BIP_DEFAULT_PROFILE = -2;
 
+/**
+ * @deprecated LE_MDC_DISC_USER_AUTHENTIFICATION_FAILURE is deprecated.
+ * LE_MDC_DISC_USER_AUTHENTICATION_FAILURE should be used instead.
+ */
+DEFINE DISC_USER_AUTHENTIFICATION_FAILURE = 7;
+
 //--------------------------------------------------------------------------------------------------
 /**
  * Reference to a modem data connection profile.
@@ -257,12 +281,32 @@ ENUM DataBearerTechnology
     DATA_BEARER_TECHNOLOGY_HSPA,                  ///< HSPA
     DATA_BEARER_TECHNOLOGY_HSPA_PLUS,             ///< HSPA+
     DATA_BEARER_TECHNOLOGY_DC_HSPA_PLUS,          ///< Dual Cell - HSPA+
+    DATA_BEARER_TECHNOLOGY_HSDPA,                 ///< HSDPA
+    DATA_BEARER_TECHNOLOGY_HSUPA,                 ///< HSUPA
+    DATA_BEARER_TECHNOLOGY_DC_HSUPA,              ///< Dual Cell - HSUPA
+    DATA_BEARER_TECHNOLOGY_DC_HSPA,               ///< Dual Cell - HSPA
     DATA_BEARER_TECHNOLOGY_LTE,                   ///< LTE
+    DATA_BEARER_TECHNOLOGY_LTE_FDD,               ///< LTE FDD
+    DATA_BEARER_TECHNOLOGY_LTE_TDD,               ///< LTE TDD
+    DATA_BEARER_TECHNOLOGY_LTE_CA_DL,             ///< LTE CA DL
+    DATA_BEARER_TECHNOLOGY_LTE_CA_UL,             ///< LTE CA UL
     DATA_BEARER_TECHNOLOGY_TD_SCDMA,              ///< TD-SCDMA
     DATA_BEARER_TECHNOLOGY_CDMA2000_1X,           ///< CDMA2000 1X
     DATA_BEARER_TECHNOLOGY_CDMA2000_EVDO,         ///< CDMA2000 HRPD (1xEV-DO)
     DATA_BEARER_TECHNOLOGY_CDMA2000_EVDO_REVA,    ///< CDMA2000 HRPD (1xEV-DO RevA)
-    DATA_BEARER_TECHNOLOGY_CDMA2000_EHRPD         ///< CDMA2000 EHRPD
+    DATA_BEARER_TECHNOLOGY_CDMA2000_EHRPD,        ///< CDMA2000 EHRPD
+    DATA_BEARER_TECHNOLOGY_IS95_1X,               ///< IS95 1X
+    DATA_BEARER_TECHNOLOGY_HDR_REV0_DPA,          ///< HDR REV0 DPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVA_DPA,          ///< HDR REVA DPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVB_DPA,          ///< HDR REVB DPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVA_MPA,          ///< HDR REVA MPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVB_MPA,          ///< HDR REVB MPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVA_EMPA,         ///< HDR REVA EMPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVB_EMPA,         ///< HDR REVB EMPA
+    DATA_BEARER_TECHNOLOGY_HDR_REVB_MMPA,         ///< HDR REVB MMPA
+    DATA_BEARER_TECHNOLOGY_HDR_EVDO_FMC,          ///< HDR EVDO FMC
+    DATA_BEARER_TECHNOLOGY_64_QAM,                ///< 64 QAM
+    DATA_BEARER_TECHNOLOGY_S2B                    ///< S2B
 };
 
 
@@ -320,7 +364,7 @@ ENUM DisconnectionReason
     DISC_INSUFFICIENT_RESOURCES,                            ///< cf. 3GPP 24.008 Annex I1
     DISC_MISSING_OR_UNKNOWN_APN,                            ///< cf. 3GPP 24.008 Annex I1
     DISC_UNKNOWN_PDP_ADDR_OR_TYPE,                          ///< cf. 3GPP 24.008 Annex I1
-    DISC_USER_AUTHENTIFICATION_FAILURE,                     ///< cf. 3GPP 24.008 Annex I1
+    DISC_USER_AUTHENTICATION_FAILURE,                       ///< cf. 3GPP 24.008 Annex I1
     DISC_ACTIVATION_REJECTED_BY_GGSN_OR_GW,                 ///< cf. 3GPP 24.008 Annex I1
     DISC_ACTIVATION_REJECTED_UNSPECIFIED,                   ///< cf. 3GPP 24.008 Annex I1
     DISC_SERVICE_OPTION_NOT_SUPPORTED,                      ///< cf. 3GPP 24.008 Annex I1
@@ -499,6 +543,9 @@ FUNCTION StartSessionAsync
  *
  * @note
  *      The process exits, if an invalid profile object is given
+ *
+ * @warning The MT-PDP context activation feature is not supported on all platforms. Please refer to
+ * @ref MT-PDP_context section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t StopSession
@@ -529,10 +576,14 @@ FUNCTION StopSessionAsync
  * @return
  *      - LE_OK on success
  *      - LE_BAD_PARAMETER if the input parameter is not valid
+ *      - LE_UNSUPPORTED if not supported by the target
  *      - LE_FAULT for other failures
  *
  * @note
  *      The process exits, if an invalid profile object is given
+ *
+ * @warning The MT-PDP context activation feature is not supported on all platforms. Please refer to
+ * @ref MT-PDP_context section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t RejectMtPdpSession
@@ -788,6 +839,32 @@ FUNCTION le_result_t ResetBytesCounter
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Stop collecting received/transmitted data flow statistics
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t StopBytesCounter
+(
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Start collecting received/transmitted data flow statistics
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t StartBytesCounter
+(
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Set the Packet Data Protocol (PDP) for the given profile.
  *
  * @return
@@ -834,6 +911,10 @@ FUNCTION Pdp GetPDP
  *
  * @note If APN is too long (max APN_NAME_MAX_LEN digits), it is a fatal error, the
  *       function will not return.
+ *
+ * @warning The maximum APN length might be limited by the platform.
+ *          Please refer to the platform documentation @ref platformConstraintsMdc.
+ *
  * @note
  *      The process exits, if an invalid profile object is given
  */
@@ -898,7 +979,7 @@ FUNCTION le_result_t GetAPN
  *       function will not return.
  * @note If password is too long (max PASSWORD_NAME_MAX_LEN digits), it is a fatal error, the
  *       function will not return.
- * @note Both PAP and CHAP authentification can be set for 3GPP network: in this case, the device
+ * @note Both PAP and CHAP authentication can be set for 3GPP network: in this case, the device
  *       decides which authentication procedure is performed. For example, the device can have a
  *       policy to select the most secure authentication mechanism.
  *
@@ -981,6 +1062,9 @@ FUNCTION DisconnectionReason GetDisconnectionReason
 /**
  * Called to get the platform specific disconnection code.
  *
+ * Refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * disconnection code description.
+ *
  * @return The platform specific disconnection code.
  *
  * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
@@ -1006,4 +1090,21 @@ FUNCTION GetPlatformSpecificFailureConnectionReason
     Profile profileRef  IN,      ///< profile reference
     int32   failureType OUT,     ///< platform specific failure type
     int32   failureCode OUT      ///< platform specific failure code
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Map a profile on a network interface
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_UNSUPPORTED if not supported by the target
+ *      - LE_FAULT for all other errors
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t MapProfileOnNetworkInterface
+(
+    Profile profileRef                             IN,  ///< Profile reference
+    string  interfaceName[INTERFACE_NAME_MAX_LEN]  IN   ///< Network interface name
 );

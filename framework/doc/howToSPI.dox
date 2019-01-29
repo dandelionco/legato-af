@@ -27,7 +27,7 @@ Install @c spidev:
 @code
 root@swi-mdm9x15:~/ktest_dir# modprobe spidev
 @endcode
- 
+
 Check @c spidev is now listed:
 @code
 root@swi-mdm9x15:~/ktest_dir# lsmod
@@ -42,7 +42,7 @@ unix 28948 625 - Live 0xbf000000
 @endcode
 
 Next, you'll need to create a kernel module @c .ko file. Follow the instructions in
-Out of Tree Kernel Module topic @ref howToAddKernelDriver_makeKernel. Your @c .ko file should use
+Out of Tree Kernel Module topic @ref basicBuildLegato_ToolchainSWI_KO. Your @c .ko file should use
 the code in the files located in <c>legato/drivers/spisvc: Makefile, spisvc.c, and spisvc.mdef</c>.
 Use @c scp to copy your  kernel module (driver) onto the target like this:
 @code
@@ -53,7 +53,7 @@ After you've copied your kernel module @c .ko file, install it like this:
 @code
 root@swi-mdm9x15:~/ktest_dir# insmod spisvc.ko
 @endcode
- 
+
 Check @c spisvc is installed:
 @code
 root@swi-mdm9x15:~/ktest_dir# lsmod
@@ -79,6 +79,6 @@ Start the @c spisvc:
 root@swi-mdm9x15:~/ktest_dir# app start spisvc
 @endcode
 
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 
 **/

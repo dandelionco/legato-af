@@ -4,7 +4,7 @@
  *
  * This file contains the source code of the high level Audio API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -13,6 +13,7 @@
 #include "le_audio_local.h"
 #include "le_media_local.h"
 #include "pa_audio.h"
+#include "watchdogChain.h"
 
 //--------------------------------------------------------------------------------------------------
 // Symbol and Enum definitions.
@@ -61,6 +62,13 @@
                                         (interface == LE_AUDIO_IF_DSP_FRONTEND_I2S_TX) || \
                                         (interface == LE_AUDIO_IF_DSP_FRONTEND_FILE_CAPTURE) \
                                     )
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * The timer interval to kick the watchdog chain.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MS_WDOG_INTERVAL 8
 
 //--------------------------------------------------------------------------------------------------
 // Data structures.
@@ -308,7 +316,9 @@ static bool EqualsAudioRef
 /**
  * This function set all dsp path from streamPtr to all stream into the streamListPtr
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  */
 //--------------------------------------------------------------------------------------------------
@@ -325,7 +335,7 @@ static le_result_t OpenStreamPaths
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("streamPtr is NULL !");
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     le_hashmap_It_Ref_t streamIterator = le_hashmap_GetIterator(streamListPtr);
@@ -352,10 +362,7 @@ static le_result_t OpenStreamPaths
                  inputStreamPtr->audioInterface,
                  outputStreamPtr->audioInterface);
 
-        if (pa_audio_SetDspAudioPath(inputStreamPtr, outputStreamPtr) != LE_OK)
-        {
-            res = LE_FAULT;
-        }
+        res = pa_audio_SetDspAudioPath(inputStreamPtr, outputStreamPtr);
     }
 
     return res;
@@ -365,7 +372,9 @@ static le_result_t OpenStreamPaths
 /**
  * This function reset all dsp path from streamPtr to all stream into the streamListPtr
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  */
 //--------------------------------------------------------------------------------------------------
@@ -383,7 +392,7 @@ static le_result_t CloseStreamPaths
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("streamPtr is NULL !");
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     LE_DEBUG("CloseStreamPaths stream.%p", streamPtr);
@@ -410,10 +419,7 @@ static le_result_t CloseStreamPaths
                  inputStreamPtr->audioInterface,
                  outputStreamPtr->audioInterface);
 
-        if (pa_audio_ResetDspAudioPath(inputStreamPtr, outputStreamPtr) != LE_OK)
-        {
-            res = LE_FAULT;
-        }
+        res = pa_audio_ResetDspAudioPath(inputStreamPtr, outputStreamPtr);
     }
 
     return res;
@@ -614,9 +620,9 @@ static le_event_Id_t GetEventId
     void
 )
 {
-    struct eventIdList* currentPtr=NULL;
+    struct eventIdList* currentPtr = NULL;
     le_dls_Link_t*      linkPtr = le_dls_Peek(&EventIdList);
-    char                eventIdName[24];
+    char                eventIdName[25];
     int32_t             eventIdIdx = 1;
 
     while (linkPtr!=NULL)
@@ -967,11 +973,12 @@ static void DestructStream
     if (streamPtr->fd != LE_AUDIO_NO_FD)
     {
         close(streamPtr->fd);
+        streamPtr->fd = LE_AUDIO_NO_FD;
     }
 
-    pa_audio_ReleasePaParameters(streamPtr);
-
     DisconnectStreamFromAllConnectors (streamPtr);
+
+    pa_audio_ReleasePaParameters(streamPtr);
 
     le_hashmap_RemoveAll(streamPtr->connectorList);
     ReleaseHashMapElement(streamPtr->connectorList);
@@ -1203,11 +1210,40 @@ static void CloseSessionEventHandler
 
     le_result_t result = le_ref_NextNode(iterRef);
 
+    // Close audio streams
+    // This is a two stage process: parse audio stream reference map
+    // once in order to close dsp frontend file play/capture streams
+    // first, then parse it a second time to close remaining streams.
+    iterRef = le_ref_GetIterator(AudioStreamRefMap);
+
+    while (le_ref_NextNode(iterRef) == LE_OK)
+    {
+        le_audio_Stream_t* audioStreamPtr = (le_audio_Stream_t*) le_ref_GetValue(iterRef);
+        if ((audioStreamPtr->audioInterface == LE_AUDIO_IF_DSP_FRONTEND_FILE_PLAY) ||
+            (audioStreamPtr->audioInterface == LE_AUDIO_IF_DSP_FRONTEND_FILE_CAPTURE))
+        {
+            ReleaseAudioStream(audioStreamPtr, sessionRef, true);
+        }
+    }
+    // Reset map iterator and close remaining streams
+    iterRef = le_ref_GetIterator(AudioStreamRefMap);
+
+    while (le_ref_NextNode(iterRef) == LE_OK)
+    {
+        le_audio_Stream_t* audioStreamPtr = (le_audio_Stream_t*) le_ref_GetValue(iterRef);
+        ReleaseAudioStream(audioStreamPtr, sessionRef, true);
+    }
+
     // Close connectors
     while ( result == LE_OK )
     {
         le_audio_ConnectorRef_t connectorRef = (le_audio_ConnectorRef_t) le_ref_GetSafeRef(iterRef);
         le_audio_Connector_t* connectorPtr = le_ref_Lookup(AudioConnectorRefMap, connectorRef);
+        if (NULL == connectorPtr)
+        {
+            LE_ERROR("Invalid reference (%p) provided!", connectorRef);
+            return;
+        }
 
         // Get the next value in the reference maps (before releasing the node)
         result = le_ref_NextNode(iterRef);
@@ -1219,15 +1255,6 @@ static void CloseSessionEventHandler
             LE_DEBUG("Delete connector %p", connectorRef);
             le_audio_DeleteConnector( connectorRef );
         }
-    }
-
-    // Close audio stream
-    iterRef = le_ref_GetIterator(AudioStreamRefMap);
-
-    while (le_ref_NextNode(iterRef) == LE_OK)
-    {
-        le_audio_Stream_t* audioStreamPtr = (le_audio_Stream_t*) le_ref_GetValue(iterRef);
-        ReleaseAudioStream(audioStreamPtr, sessionRef, true);
     }
 }
 
@@ -1288,6 +1315,11 @@ COMPONENT_INIT
     le_msg_AddServiceCloseHandler( le_audio_GetServiceRef(),
                                    CloseSessionEventHandler,
                                    NULL );
+
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_Init(1);
+    le_wdogChain_MonitorEventLoop(0, watchdogInterval);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1568,9 +1600,10 @@ void le_audio_Close
 /**
  * Set the Gain value of an input or output stream.
  *
- * @return LE_FAULT         The function failed.
  * @return LE_BAD_PARAMETER The audio stream reference is invalid.
- * @return LE_OUT_OF_RANGE  Gain value is out of range
+ * @return LE_OUT_OF_RANGE  The gain value is out of range.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
@@ -1608,11 +1641,12 @@ le_result_t le_audio_SetGain
 /**
  * Get the Gain value of an input or output stream.
  *
- * @return LE_FAULT         The function failed.
  * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
- * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
  *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1622,6 +1656,7 @@ le_result_t le_audio_GetGain
     int32_t            *gainPtr      ///< [OUT] The gain value (specific to the platform)
 )
 {
+    le_result_t res;
     le_audio_Stream_t* streamPtr = le_ref_Lookup(AudioStreamRefMap, streamRef);
 
     if (streamPtr == NULL)
@@ -1631,14 +1666,14 @@ le_result_t le_audio_GetGain
     }
     if (gainPtr == NULL)
     {
-        LE_KILL_CLIENT("gainPtr is NULL !");
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
         return LE_BAD_PARAMETER;
     }
 
-    if ( pa_audio_GetGain(streamPtr, gainPtr) != LE_OK )
+    if ((res = pa_audio_GetGain(streamPtr, gainPtr)) != LE_OK)
     {
         LE_ERROR("Cannot get stream gain");
-        return LE_FAULT;
+        return res;
     }
 
     streamPtr->gain = *gainPtr;
@@ -1650,11 +1685,15 @@ le_result_t le_audio_GetGain
 /**
  * Set the value of a platform specific gain in the audio subsystem.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_BAD_PARAMETER The pointer to the name of the platform specific gain is invalid.
  * @return LE_NOT_FOUND     The specified gain's name is not recognized in your audio subsystem.
- * @return LE_OUT_OF_RANGE  The gain parameter is out of range
+ * @return LE_OUT_OF_RANGE  The gain parameter is out of range.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  * @warning Ensure to check the names of supported gains for your specific platform.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1664,6 +1703,11 @@ le_result_t le_audio_SetPlatformSpecificGain
     int32_t        gain         ///< [IN] The gain value (specific to the platform)
 )
 {
+    if (gainNamePtr == NULL)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", gainNamePtr);
+        return LE_BAD_PARAMETER;
+    }
     return pa_audio_SetPlatformSpecificGain(gainNamePtr, gain);
 }
 
@@ -1671,10 +1715,14 @@ le_result_t le_audio_SetPlatformSpecificGain
 /**
  * Get the value of a platform specific gain in the audio subsystem.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_BAD_PARAMETER The pointer to the name of the platform specific gain is invalid.
  * @return LE_NOT_FOUND     The specified gain's name is not recognized in your audio subsystem.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  * @warning Ensure to check the names of supported gains for your specific platform.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1684,6 +1732,11 @@ le_result_t le_audio_GetPlatformSpecificGain
     int32_t*       gainPtr      ///< [OUT] The gain value (specific to the platform)
 )
 {
+    if (gainNamePtr == NULL)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", gainNamePtr);
+        return LE_BAD_PARAMETER;
+    }
     return pa_audio_GetPlatformSpecificGain(gainNamePtr, gainPtr);
 }
 
@@ -1691,8 +1744,9 @@ le_result_t le_audio_GetPlatformSpecificGain
 /**
  * Mute an audio stream.
  *
- * @return LE_FAULT         The function failed.
  * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
@@ -1704,6 +1758,7 @@ le_result_t le_audio_Mute
     le_audio_StreamRef_t streamRef  ///< [IN] The audio stream reference.
 )
 {
+    le_result_t res;
     le_audio_Stream_t* streamPtr = le_ref_Lookup(AudioStreamRefMap, streamRef);
 
     if (streamPtr == NULL)
@@ -1712,10 +1767,10 @@ le_result_t le_audio_Mute
         return LE_BAD_PARAMETER;
     }
 
-    if ( pa_audio_Mute(streamPtr, true) != LE_OK )
+    if ((res = pa_audio_Mute(streamPtr, true)) != LE_OK )
     {
         LE_ERROR("Cannot mute the interface");
-        return LE_FAULT;
+        return res;
     }
 
     return LE_OK;
@@ -1725,8 +1780,9 @@ le_result_t le_audio_Mute
 /**
  * Unmute an audio stream.
  *
- * @return LE_FAULT         The function failed.
  * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
@@ -1738,6 +1794,7 @@ le_result_t le_audio_Unmute
     le_audio_StreamRef_t streamRef  ///< [IN] The audio stream reference.
 )
 {
+    le_result_t res;
     le_audio_Stream_t* streamPtr = le_ref_Lookup(AudioStreamRefMap, streamRef);
 
     if (streamPtr == NULL)
@@ -1747,10 +1804,10 @@ le_result_t le_audio_Unmute
     }
 
 
-    if ( pa_audio_Mute(streamPtr, false) != LE_OK )
+    if ((res = pa_audio_Mute(streamPtr, false)) != LE_OK )
     {
         LE_ERROR("Cannot unmute the interface");
-        return LE_FAULT;
+        return res;
     }
     return LE_OK;
 }
@@ -1821,9 +1878,10 @@ void le_audio_DeleteConnector
 /**
  * Connect an audio stream to the connector reference.
  *
- * @return LE_FAULT         The function failed.
  * @return LE_BUSY          There are insufficient DSP resources available.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
  * @return LE_BAD_PARAMETER The connector and/or the audio stream references are invalid.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
@@ -1836,6 +1894,7 @@ le_result_t le_audio_Connect
     le_audio_StreamRef_t    streamRef       ///< [IN] The audio stream reference.
 )
 {
+    le_result_t res;
     le_audio_Stream_t*    streamPtr = le_ref_Lookup(AudioStreamRefMap, streamRef);
     le_audio_Connector_t* connectorPtr = le_ref_Lookup(AudioConnectorRefMap, connectorRef);
     le_hashmap_Ref_t      listPtr=NULL;
@@ -1892,9 +1951,9 @@ le_result_t le_audio_Connect
     // If there are 1 input stream and 1 output stream, then we can create the audio path.
     if (le_hashmap_Size(listPtr) >= 1)
     {
-        if (OpenStreamPaths (streamPtr, listPtr)!=LE_OK)
+        if ((res = OpenStreamPaths (streamPtr, listPtr)) != LE_OK)
         {
-            return LE_FAULT;
+            return res;
         }
     }
 
@@ -2022,9 +2081,10 @@ void le_audio_RemoveDtmfDetectorHandler
 /**
  * This function must be called to enable the Noise Suppressor.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2041,7 +2101,7 @@ le_result_t le_audio_EnableNoiseSuppressor
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     if ( (res = pa_audio_NoiseSuppressorSwitch(streamPtr, LE_ON)) != LE_OK )
@@ -2060,9 +2120,10 @@ le_result_t le_audio_EnableNoiseSuppressor
 /**
  * This function must be called to disable the Noise Suppressor.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2079,7 +2140,7 @@ le_result_t le_audio_DisableNoiseSuppressor
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     if ( (res = pa_audio_NoiseSuppressorSwitch(streamPtr, LE_OFF)) != LE_OK )
@@ -2098,9 +2159,10 @@ le_result_t le_audio_DisableNoiseSuppressor
 /**
  * This function must be called to enable the Echo Canceller.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2117,7 +2179,7 @@ le_result_t le_audio_EnableEchoCanceller
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     if ( (res = pa_audio_EchoCancellerSwitch(streamPtr, LE_ON)) != LE_OK )
@@ -2136,9 +2198,10 @@ le_result_t le_audio_EnableEchoCanceller
 /**
  * This function must be called to disable the Echo Canceller.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2155,7 +2218,7 @@ le_result_t le_audio_DisableEchoCanceller
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     if ( (res = pa_audio_EchoCancellerSwitch(streamPtr, LE_OFF)) != LE_OK )
@@ -2174,8 +2237,9 @@ le_result_t le_audio_DisableEchoCanceller
 /**
  * This function must be called to get the status of Noise Suppressor.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -2187,12 +2251,13 @@ le_result_t le_audio_IsNoiseSuppressorEnabled
     bool*                   statusPtr        ///< [OUT] true if NS is enabled, false otherwise
 )
 {
+    le_result_t res;
     le_audio_Stream_t* streamPtr = le_ref_Lookup(AudioStreamRefMap, streamRef);
 
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     if (statusPtr == NULL)
@@ -2201,10 +2266,10 @@ le_result_t le_audio_IsNoiseSuppressorEnabled
         return LE_BAD_PARAMETER;
     }
 
-    if ( pa_audio_GetNoiseSuppressorStatus(streamPtr, statusPtr) != LE_OK )
+    if ((res = pa_audio_GetNoiseSuppressorStatus(streamPtr, statusPtr)) != LE_OK)
     {
         LE_ERROR("Cannot get stream NS status");
-        return LE_FAULT;
+        return res;
     }
 
     streamPtr->noiseSuppressorEnabled = *statusPtr;
@@ -2216,8 +2281,9 @@ le_result_t le_audio_IsNoiseSuppressorEnabled
 /**
  * This function must be called to get the status of Echo Canceller.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -2229,12 +2295,13 @@ le_result_t le_audio_IsEchoCancellerEnabled
     bool*                   statusPtr        ///< [OUT] true if EC is enabled, false otherwise
 )
 {
+    le_result_t res;
     le_audio_Stream_t* streamPtr = le_ref_Lookup(AudioStreamRefMap, streamRef);
 
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     if (statusPtr == NULL)
@@ -2243,10 +2310,10 @@ le_result_t le_audio_IsEchoCancellerEnabled
         return LE_BAD_PARAMETER;
     }
 
-    if ( pa_audio_GetEchoCancellerStatus(streamPtr, statusPtr) != LE_OK )
+    if ((res = pa_audio_GetEchoCancellerStatus(streamPtr, statusPtr)) != LE_OK )
     {
         LE_ERROR("Cannot get stream NS status");
-        return LE_FAULT;
+        return res;
     }
 
     streamPtr->echoCancellerEnabled = *statusPtr;
@@ -2258,9 +2325,10 @@ le_result_t le_audio_IsEchoCancellerEnabled
 /**
  * This function must be called to enable the FIR (Finite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2275,7 +2343,7 @@ le_result_t le_audio_EnableFirFilter
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     return pa_audio_FirFilterSwitch(streamPtr, LE_ON);
@@ -2285,9 +2353,10 @@ le_result_t le_audio_EnableFirFilter
 /**
  * This function must be called to disable the FIR (Finite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2302,7 +2371,7 @@ le_result_t le_audio_DisableFirFilter
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     return pa_audio_FirFilterSwitch(streamPtr, LE_OFF);
@@ -2310,11 +2379,12 @@ le_result_t le_audio_DisableFirFilter
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function must be called to enable the FIR (Finite Impulse Response) filter.
+ * This function must be called to enable the IIR (Infinite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2329,7 +2399,7 @@ le_result_t le_audio_EnableIirFilter
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     return pa_audio_IirFilterSwitch(streamPtr, LE_ON);
@@ -2339,9 +2409,10 @@ le_result_t le_audio_EnableIirFilter
 /**
  * This function must be called to disable the IIR (Infinite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2356,7 +2427,7 @@ le_result_t le_audio_DisableIirFilter
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     return pa_audio_IirFilterSwitch(streamPtr, LE_OFF);
@@ -2366,9 +2437,10 @@ le_result_t le_audio_DisableIirFilter
 /**
  * This function must be called to enable the automatic gain control on the selected audio stream.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
  */
@@ -2383,7 +2455,7 @@ le_result_t le_audio_EnableAutomaticGainControl
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     return pa_audio_AutomaticGainControlSwitch(streamPtr, LE_ON);
@@ -2393,12 +2465,12 @@ le_result_t le_audio_EnableAutomaticGainControl
 /**
  * This function must be called to disable the automatic gain control on the selected audio stream.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface
  *
  * @note The process exits, if an invalid audio stream reference is given.
- *
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_DisableAutomaticGainControl
@@ -2411,7 +2483,7 @@ le_result_t le_audio_DisableAutomaticGainControl
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", streamRef);
-        return LE_FAULT;
+        return LE_BAD_PARAMETER;
     }
 
     return pa_audio_AutomaticGainControlSwitch(streamPtr, LE_OFF);
@@ -2421,7 +2493,8 @@ le_result_t le_audio_DisableAutomaticGainControl
 /**
  * This function must be called to set the audio profile.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  */
@@ -2433,11 +2506,13 @@ le_result_t le_audio_SetProfile
 {
     return pa_audio_SetProfile(profile);
 }
+
 //--------------------------------------------------------------------------------------------------
 /**
  * This function must be called to get the audio profile in use.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  */
@@ -2826,11 +2901,12 @@ le_result_t le_audio_PlayFile
  * @return LE_BUSY          The player interface is already active.
  * @return LE_OK            Function succeeded.
  *
- * @note the fd is closed by the IPC API. To use again the same pipe, the fd parameter can be set
+ * @note The fd is closed by the IPC API. To use again the same pipe, the fd parameter can be set
  * to LE_AUDIO_NO_FD: in this case, the previous file descriptor is re-used.
  * If the fd as to be kept on its side, the application should duplicate the fd (e.g., using dup() )
  * before calling the API.
  *
+ * @note Playback initiated with this function must be stopped by calling le_audio_Stop().
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_PlaySamples
@@ -2949,11 +3025,12 @@ le_result_t le_audio_RecordFile
  * @return LE_BUSY          The recorder interface is already active.
  * @return LE_OK            Function succeeded.
  *
- * @note the fd is closed by the API. To use again the same pipe, the fd parameter can be set to
+ * @note The fd is closed by the API. To use again the same pipe, the fd parameter can be set to
  * LE_AUDIO_NO_FD: in this case, the previous file descriptor is re-used.
  * If the fd as to be kept on its side, the application should duplicate the fd (e.g., using dup() )
  * before calling the API.
  *
+ * @note When using this function recording must be stopped by calling le_audio_Stop().
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_GetSamples
@@ -3220,11 +3297,6 @@ le_result_t le_audio_PlayDtmf
         return LE_BUSY;
     }
 
-    if (dtmfPtr == NULL)
-    {
-        LE_KILL_CLIENT("dtmfPtr is NULL !");
-        return LE_FAULT;
-    }
     if(strlen(dtmfPtr) > LE_AUDIO_DTMF_MAX_LEN)
     {
         LE_KILL_CLIENT("strlen(dtmfPtr) > %d", LE_AUDIO_DTMF_MAX_LEN);
@@ -3323,6 +3395,9 @@ le_result_t le_audio_SetEncodingFormat
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note A client calling this function with either an invalid
+ * streamRef or null formatPtr parameter will be killed and the
+ * function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_GetEncodingFormat
@@ -3341,6 +3416,12 @@ le_result_t le_audio_GetEncodingFormat
     if (streamPtr == NULL)
     {
         LE_KILL_CLIENT("Invalid stream reference (%p) provided!", streamRef);
+        return LE_FAULT;
+    }
+
+    if (formatPtr == NULL)
+    {
+        LE_KILL_CLIENT("formatPtr is NULL!");
         return LE_FAULT;
     }
 
@@ -3389,6 +3470,8 @@ le_result_t le_audio_SetSampleAmrMode
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note A client calling this function with a null modePtr parameter
+ * will be killed and the function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_GetSampleAmrMode
@@ -3410,6 +3493,12 @@ le_result_t le_audio_GetSampleAmrMode
         return LE_FAULT;
     }
 
+    if (modePtr == NULL)
+    {
+        LE_KILL_CLIENT("modePtr is NULL!");
+        return LE_FAULT;
+    }
+
     *modePtr = streamPtr->sampleAmrConfig.amrMode;
 
     return LE_OK;
@@ -3422,6 +3511,8 @@ le_result_t le_audio_GetSampleAmrMode
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_SetSampleAmrDtx
@@ -3455,6 +3546,8 @@ le_result_t le_audio_SetSampleAmrDtx
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_audio_GetSampleAmrDtx
@@ -3485,7 +3578,8 @@ le_result_t le_audio_GetSampleAmrDtx
 /**
  * Mute the Call Waiting Tone.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  */
 //--------------------------------------------------------------------------------------------------
@@ -3501,7 +3595,8 @@ le_result_t le_audio_MuteCallWaitingTone
 /**
  * Unmute the Call Waiting Tone.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  */
 //--------------------------------------------------------------------------------------------------

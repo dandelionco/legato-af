@@ -10,3 +10,12 @@ sources:
 {
     secStoreTool.c
 }
+
+cflags:
+{
+    #if ${SECSTOREADMIN} = ""
+        -DSECSTOREADMIN=0
+    #else
+        -DSECSTOREADMIN=${SECSTOREADMIN}
+    #endif
+}

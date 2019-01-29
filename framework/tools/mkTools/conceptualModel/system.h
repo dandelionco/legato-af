@@ -2,7 +2,7 @@
 /**
  * @file system.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@
  * Represents a single system.
  */
 //--------------------------------------------------------------------------------------------------
-struct System_t
+struct System_t : public HasTargetInfo_t
 {
     System_t(parseTree::SdefFile_t* filePtr);
 
@@ -32,6 +32,8 @@ struct System_t
     std::map<std::string, User_t*> users; ///< Map of non-app users (key is user name).
 
     std::map<std::string, Command_t*> commands; ///< Map of commands (key is command name).
+
+    std::string externalWatchdogKick; /// < External watchdog kick timer
 
     App_t* FindApp(const parseTree::Token_t* appTokenPtr);
 

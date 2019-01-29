@@ -3,14 +3,14 @@
  * Legato @ref c_info implementation.
  *
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 #include "legato.h"
 #include "interfaces.h"
 #include "pa_info.h"
 #include "pa_sim.h"
-
+#include "sysResets.h"
 
 //--------------------------------------------------------------------------------------------------
 //                                       Public declarations
@@ -41,6 +41,11 @@ le_result_t le_info_GetImei
         LE_KILL_CLIENT("imeiPtr is NULL !");
         return LE_FAULT;
     }
+    if (0 == len)
+    {
+        LE_ERROR("parameter error");
+        return LE_FAULT;
+    }
 
     if(pa_info_GetImei(imei) != LE_OK)
     {
@@ -54,7 +59,49 @@ le_result_t le_info_GetImei
     }
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to retrieve the International Mobile Equipment Identity software
+ * version number (IMEISV).
+ *
+ * @return LE_FAULT       Function failed to retrieve the IMEISV.
+ * @return LE_OVERFLOW    IMEISV length exceed the maximum length.
+ * @return LE_OK          Function succeeded.
+ *
+ * @note If the caller passes a bad pointer into this function, it's a fatal error; the
+ *       function will not return.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_info_GetImeiSv
+(
+    char*  imeiSvPtr,           ///< [OUT] IMEISV string.
+    size_t imeiSvNumElements    ///< [IN] The length of IMEISV string.
+)
+{
+    pa_info_ImeiSv_t imeiSv = {0};
 
+    if (imeiSvPtr == NULL)
+    {
+        LE_KILL_CLIENT("imeiSvPtr is NULL !");
+        return LE_FAULT;
+    }
+    if (0 == imeiSvNumElements)
+    {
+        LE_ERROR("parameter error");
+        return LE_FAULT;
+    }
+
+    if (pa_info_GetImeiSv(imeiSv) != LE_OK)
+    {
+        LE_ERROR("Failed to get the IMEISV");
+        imeiSvPtr[0] = '\0';
+        return LE_FAULT;
+    }
+    else
+    {
+        return (le_utf8_Copy(imeiSvPtr, imeiSv, imeiSvNumElements, NULL));
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -63,12 +110,16 @@ le_result_t le_info_GetImei
  * @return
  *      - LE_OK on success
  *      - LE_NOT_FOUND if the version string is not available
+ *      - LE_OVERFLOW if version string to big to fit in provided buffer
  *      - LE_FAULT for any other errors
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_info_GetFirmwareVersion
 (
-    char* version,
+    char* versionPtr,
         ///< [OUT]
         ///< Firmware version string
 
@@ -76,9 +127,57 @@ le_result_t le_info_GetFirmwareVersion
         ///< [IN]
 )
 {
-    return pa_info_GetFirmwareVersion(version, versionNumElements);
+    // Check input parameters
+    if (versionPtr == NULL)
+    {
+        LE_KILL_CLIENT("versionPtr is NULL !");
+        return LE_FAULT;
+    }
+    if (versionNumElements == 0)
+    {
+        LE_ERROR("parameter error");
+        return LE_FAULT;
+    }
+    return pa_info_GetFirmwareVersion(versionPtr, versionNumElements);
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the last reset information reason
+ *
+ * @return
+ *      - LE_OK          on success
+ *      - LE_UNSUPPORTED if it is not supported by the platform
+ *        LE_OVERFLOW    specific reset information length exceed the maximum length.
+ *      - LE_FAULT       for any other errors
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_info_GetResetInformation
+(
+    le_info_Reset_t* resetPtr,              ///< [OUT] Reset information
+    char* resetSpecificInfoStr,             ///< [OUT] Reset specific information
+    size_t resetSpecificInfoNumElements     ///< [IN] The length of specific information string.
+)
+{
+    // Check input parameters
+    if (resetPtr == NULL)
+    {
+        LE_KILL_CLIENT("resetPtr is NULL !");
+        return LE_FAULT;
+    }
+    // Check input parameters
+    if (resetSpecificInfoStr == NULL)
+    {
+        LE_KILL_CLIENT("resetSpecificInfoStr is NULL !");
+        return LE_FAULT;
+    }
+
+    return pa_info_GetResetInformation(resetPtr, resetSpecificInfoStr,
+                                       resetSpecificInfoNumElements);
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -87,12 +186,16 @@ le_result_t le_info_GetFirmwareVersion
  * @return
  *      - LE_OK on success
  *      - LE_NOT_FOUND if the version string is not available
+ *      - LE_OVERFLOW if version string to big to fit in provided buffer
  *      - LE_FAULT for any other errors
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_info_GetBootloaderVersion
 (
-    char* version,
+    char* versionPtr,
         ///< [OUT]
         ///< Bootloader version string
 
@@ -100,7 +203,18 @@ le_result_t le_info_GetBootloaderVersion
         ///< [IN]
 )
 {
-    return pa_info_GetBootloaderVersion(version, versionNumElements);
+    // Check input parameters
+    if (versionPtr == NULL)
+    {
+        LE_KILL_CLIENT("versionPtr is NULL !");
+        return LE_FAULT;
+    }
+    if (versionNumElements == 0)
+    {
+        LE_ERROR("parameter error");
+        return LE_FAULT;
+    }
+    return pa_info_GetBootloaderVersion(versionPtr, versionNumElements);
 }
 
 
@@ -128,6 +242,12 @@ le_result_t le_info_GetDeviceModel
     if(modelPtr == NULL)
     {
         LE_KILL_CLIENT("model pointer is NULL");
+        return LE_FAULT;
+    }
+
+    if (0 == modelNumElements)
+    {
+        LE_ERROR("parameter error");
         return LE_FAULT;
     }
 
@@ -423,10 +543,65 @@ le_result_t le_info_GetPriId
         return LE_FAULT;
     }
 
-    return pa_info_GetPriId(priIdPnStr, priIdPnStrNumElements,
-        priIdRevStr, priIdRevStrNumElements);
+    if (priIdPnStrNumElements > LE_INFO_MAX_PRIID_PN_BYTES)
+    {
+        LE_ERROR("priIdPnStrNumElements lentgh (%zu) exceeds > %d",
+                        priIdPnStrNumElements, LE_INFO_MAX_PRIID_PN_BYTES);
+        return LE_OVERFLOW;
+    }
+
+    if (priIdRevStrNumElements > LE_INFO_MAX_PRIID_REV_BYTES)
+    {
+        LE_ERROR("priIdRevStrNumElements lentgh (%zu) exceeds > %d",
+                        priIdRevStrNumElements, LE_INFO_MAX_PRIID_REV_BYTES);
+        return LE_OVERFLOW;
+    }
+
+    return pa_info_GetPriId(priIdPnStr,
+                            priIdPnStrNumElements,
+                            priIdRevStr,
+                            priIdRevStrNumElements);
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Carrier PRI Name and Revision Number strings in ASCII text.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed to get the value.
+ *      - LE_OVERFLOW      The Name or the Revision Number strings length exceed the maximum length.
+ *      - LE_UNSUPPORTED   The function is not supported on the platform.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_info_GetCarrierPri
+(
+    char* capriNameStr,
+        ///< [OUT]
+        ///< The Carrier Product Requirement Information
+        ///< (CAPRI) Name string (null-terminated).
+
+    size_t capriNameStrNumElements,
+        ///< [IN]
+
+    char* capriRevStr,
+        ///< [OUT]
+        ///< The Carrier Product Requirement Information
+        ///< (CAPRI) Revision Number string (null-terminated).
+
+    size_t capriRevStrNumElements
+        ///< [IN]
+)
+{
+    if ( (capriNameStr == NULL) || (capriRevStr == NULL))
+    {
+        LE_KILL_CLIENT("capriNameStr or capriRevStr is NULL.");
+        return LE_FAULT;
+    }
+
+    return pa_info_GetCarrierPri(capriNameStr, capriNameStrNumElements,
+                                 capriRevStr, capriRevStrNumElements);
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -498,6 +673,10 @@ le_result_t le_info_GetPlatformSerialNumber
  *      - LE_FAULT function failed to get the RF devices working status
  *      - LE_OVERFLOW the number of statuses exceeds the maximum size
  *        (LE_INFO_RF_DEVICES_STATUS_MAX)
+ *      - LE_BAD_PARAMETER Null pointers provided
+ *
+ * @note If the caller is passing null pointers to this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_info_GetRfDeviceStatus
@@ -523,20 +702,19 @@ le_result_t le_info_GetRfDeviceStatus
         ///< [INOUT]
 )
 {
-
     // Check input pointers
     if ((manufacturedIdPtr == NULL) || (manufacturedIdNumElementsPtr == NULL)||
         (productIdPtr == NULL)|| (productIdNumElementsPtr == NULL) ||
         (statusPtr == NULL)|| (statusNumElementsPtr == NULL))
     {
-        LE_KILL_CLIENT("NULL pointer!");
-        return LE_FAULT;
+        LE_KILL_CLIENT("NULL pointers!");
+        return LE_BAD_PARAMETER;
     }
 
     // Check elements size
-    if ((* manufacturedIdNumElementsPtr < LE_INFO_RF_DEVICES_STATUS_MAX) ||
-        (* productIdNumElementsPtr < LE_INFO_RF_DEVICES_STATUS_MAX) ||
-        (* statusNumElementsPtr < LE_INFO_RF_DEVICES_STATUS_MAX))
+    if ((*manufacturedIdNumElementsPtr < LE_INFO_RF_DEVICES_STATUS_MAX) ||
+        (*productIdNumElementsPtr < LE_INFO_RF_DEVICES_STATUS_MAX) ||
+        (*statusNumElementsPtr < LE_INFO_RF_DEVICES_STATUS_MAX))
     {
         LE_ERROR("Buffer size overflow !!");
         return LE_OVERFLOW;
@@ -545,4 +723,74 @@ le_result_t le_info_GetRfDeviceStatus
     return pa_info_GetRfDeviceStatus( manufacturedIdPtr, manufacturedIdNumElementsPtr
                                     , productIdPtr, productIdNumElementsPtr
                                     , statusPtr, statusNumElementsPtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the number of expected resets
+ *
+ * @return
+ *      - LE_OK             Success
+ *      - LE_BAD_PARAMETER  Input prameter is a null pointer
+ *      - LE_FAULT          Failed to get the number if expected resets
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_info_GetExpectedResetsCount
+(
+    uint64_t* resetsCountPtr    ///< Number of unexpected resets
+)
+{
+    int64_t count;
+
+    if (!resetsCountPtr)
+    {
+        LE_ERROR("Invalid parameter");
+        return LE_BAD_PARAMETER;
+    }
+
+    count = sysResets_GetExpectedResetsCount();
+    if (-1 == count)
+    {
+        LE_ERROR("Failed to get expected resets count");
+        return LE_FAULT;
+    }
+
+    *resetsCountPtr = (uint64_t)count;
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the number of unexpected resets
+ *
+ * @return
+ *      - LE_OK             Success
+ *      - LE_BAD_PARAMETER  Input prameter is a null pointer
+ *      - LE_FAULT          Failed to get the number if expected resets
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_info_GetUnexpectedResetsCount
+(
+    uint64_t* resetsCountPtr    ///< Number of unexpected resets
+)
+{
+    int64_t count;
+
+    if (!resetsCountPtr)
+    {
+        LE_ERROR("Invalid parameter");
+        return LE_BAD_PARAMETER;
+    }
+
+    count = sysResets_GetUnexpectedResetsCount();
+    if (-1 == count)
+    {
+        LE_ERROR("Failed to get unexpected resets count");
+        return LE_FAULT;
+    }
+
+    *resetsCountPtr = (uint64_t)count;
+
+    return LE_OK;
 }

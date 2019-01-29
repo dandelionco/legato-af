@@ -2,19 +2,31 @@
 /**
  * @page c_wdog Watchdog Service
  *
- * @ref le_wdog_interface.h "API Reference"
+ * @ref le_wdog_interface.h "Type/Function Reference"
  *
- * <HR>
+ * @section Watchdog Service
  *
- * Simple watchdog service.
+ * Provides an API for monitoring critical applications and services for deadlocks and other
+ * similar faults.  The watchdog for a process is started by calling @c le_wdog_Kick or
+ * @c le_wdog_Timeout.  Once started, the watchdog must be kicked periodically by calling
+ * @c le_wdog_Kick.  If the watchdog is not kicked (because it is deadlocked, for example),
+ * the watchdog service will attempt to recover the service by killing the process and
+ * executing the action specified in the process' watchdogAction (if specified)
+ * otherwise its faultAction.
  *
- * Provides a kickable watchdog with a timeout that can be configured in <c> .adef</c> or specified at run
- * time.  If a kick is not received within the specified time, the supervisor will be signalled
- * to perform the action specified in WatchdogAction.
+ * Generally a service which uses the watchdog should set @c watchdogTimeout to give the
+ * default timeout, and @c watchdogAction to give a recovery action.
  *
- * <HR>
+ * Critical services should also set @c maxWatchdogTimeout.  In this case the watchdog
+ * will be started on system boot, and cannot be stopped or set
+ * longer than the timeout given in @c maxWatchdogTimeout.  This ensures the service is
+ * always running as long as the system is running.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * @note If maxWatchdogTimeout is not set, no more action is taken if performing the process'
+ * @c watchdogAction doesn't recover the process.  If @c maxWatchdogTimeout is specified the
+ * system will be rebooted if the process does not recover.
+ *
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -24,7 +36,7 @@
  *
  * Legato @ref c_wdog include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -46,6 +58,13 @@ DEFINE TIMEOUT_NEVER = -1;
  * Timeout immediately
  */
 DEFINE TIMEOUT_NOW = 0;
+
+/**
+ * External watchdog kick handler
+ */
+HANDLER ExternalWatchdogHandler
+(
+);
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -70,4 +89,32 @@ FUNCTION Kick
 FUNCTION Timeout
 (
     int32 milliseconds IN ///< The number of milliseconds until this timer expires
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the watchdog timeout configured for this process
+ *
+ * @return
+ *      - LE_OK            The watchdog timeout is configured and returned
+ *      - LE_NOT_FOUND     The watchdog timeout is not set
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetWatchdogTimeout
+(
+    uint64 milliseconds OUT        ///< The watchdog timeout set for this process
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the max watchdog timeout configured for this process
+ *
+ * @return
+ *      - LE_OK            The max watchdog timeout is configured and returned
+ *      - LE_NOT_FOUND     The max watchdog timeout is not set
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetMaxWatchdogTimeout
+(
+    uint64 milliseconds OUT        ///< The max watchdog timeout set for this process
 );

@@ -517,7 +517,7 @@ GENERATE_BUGLIST       = NO
 # disable (NO) the deprecated list. This list is created by putting
 # \deprecated commands in the documentation.
 
-GENERATE_DEPRECATEDLIST= NO
+GENERATE_DEPRECATEDLIST= YES
 
 # The ENABLED_SECTIONS tag can be used to enable conditional
 # documentation sections, marked by \if sectionname ... \endif.
@@ -649,7 +649,7 @@ WARN_LOGFILE           =
 # with spaces.
 
 INPUT                  = "@LEGATO_ROOT@/framework/doc" \
-                         "@LEGATO_ROOT@/framework/c/inc" \
+                         "@LEGATO_ROOT@/framework/include" \
                          "@LEGATO_ROOT@/apps/sample/eCallDemo/doc" \
                          "@LEGATO_BINARY_DIR@/interfaces" \
                          "@LEGATO_BINARY_DIR@/framework/doc/generated" \
@@ -1785,3 +1785,7 @@ GENERATE_LEGEND        = YES
 # the various graphs.
 
 DOT_CLEANUP            = YES
+
+# PlantUML jar file path (used to generate PlantUML diagrams during doxygen generation)
+
+PLANTUML_JAR_PATH = "@PLANTUML_JAR_FILE@"

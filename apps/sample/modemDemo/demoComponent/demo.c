@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 #define SERVER_ADDR_V4 "69.10.131.102"
 #define SERVER_ADDR_V6 "2a01:cd00:ff:ffff::450a:8366"
-
+#define BUFFER_SIZE 10240
 
 // -------------------------------------------------------------------------------------------------
 /**
@@ -136,6 +136,10 @@ static const char* GetSimStateString
             string = "busy";
             break;
 
+        case LE_SIM_POWER_DOWN:
+            string = "powered down";
+            break;
+
         case LE_SIM_STATE_UNKNOWN:
         default:
             string = "in an unknown state";
@@ -228,7 +232,7 @@ static le_result_t SendMessage
 )
 {
     le_sms_MsgRef_t messageRef = NULL;
-    le_result_t result;
+    le_result_t result = LE_FAULT;
 
     uint32_t messageSize = strlen(message);
     uint32_t messagePart;
@@ -364,9 +368,12 @@ static void TestDataConnectionV4
     int sockFd = 0;
     struct sockaddr_in servAddr;
 
+    //Setting everything in this structure to zero
+    memset(&servAddr, 0, sizeof(servAddr));
+
     if ((sockFd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        sprintf(buffer, "Failed to create socket");
+        snprintf(buffer, BUFFER_SIZE, "Failed to create socket");
         return;
     }
 
@@ -378,11 +385,11 @@ static void TestDataConnectionV4
 
     if (connect(sockFd, (struct sockaddr *)&servAddr, sizeof(servAddr)) < 0)
     {
-        sprintf(buffer, "Failed to connect to www.sierrawireless.com.");
+        snprintf(buffer, BUFFER_SIZE, "Failed to connect to www.sierrawireless.com.");
     }
     else
     {
-        sprintf(buffer, "Connection to www.sierrawireless.com was successful.");
+        snprintf(buffer, BUFFER_SIZE, "Connection to www.sierrawireless.com was successful.");
     }
 
     close(sockFd);
@@ -390,8 +397,8 @@ static void TestDataConnectionV4
 
 // -------------------------------------------------------------------------------------------------
 /**
- *  In order to test out the active data connection, we simply attempt to connect to Sierra's website and
- *  report either success or failure (through TCP connection).
+ *  In order to test out the active data connection, we simply attempt to connect to Sierra's
+ *  website and report either success or failure (through TCP connection).
  */
 // -------------------------------------------------------------------------------------------------
 static void TestDataConnectionV6
@@ -402,9 +409,12 @@ static void TestDataConnectionV6
     int sockFd = 0;
     struct sockaddr_in6 servAddr;
 
+    //Setting everything in this structure to zero
+    memset(&servAddr, 0, sizeof(servAddr));
+
     if ((sockFd = socket(AF_INET6, SOCK_STREAM, 0)) < 0)
     {
-        sprintf(buffer, "Failed to create socket");
+        snprintf(buffer, BUFFER_SIZE, "Failed to create socket");
         return;
     }
 
@@ -416,16 +426,16 @@ static void TestDataConnectionV6
     {
         if (connect(sockFd, (struct sockaddr *)&servAddr, sizeof(servAddr)) < 0)
         {
-            sprintf(buffer, "Failed to connect to www.sierrawireless.com.");
+            snprintf(buffer, BUFFER_SIZE, "Failed to connect to www.sierrawireless.com.");
         }
         else
         {
-            sprintf(buffer, "Connection to www.sierrawireless.com was successful.");
+            snprintf(buffer, BUFFER_SIZE, "Connection to www.sierrawireless.com was successful.");
         }
     }
     else
     {
-        sprintf(buffer, "Failed to convert %s ipv6.",SERVER_ADDR_V6);
+        snprintf(buffer, BUFFER_SIZE, "Failed to convert %s ipv6.",SERVER_ADDR_V6);
     }
 
     close(sockFd);
@@ -447,7 +457,8 @@ static void Netinfo
 
     if (profileRef == NULL)
     {
-        bufferIndex += sprintf(&buffer[bufferIndex], "Failed to open profile.");
+        bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                "Failed to open profile.");
         return;
     }
 
@@ -458,7 +469,8 @@ static void Netinfo
 
     if (le_mdc_GetInterfaceName(profileRef, interfaceName, sizeof(interfaceName)) != LE_OK)
     {
-        bufferIndex += sprintf(&buffer[bufferIndex], "Failed to get interface name.");
+        bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                "Failed to get interface name.");
         interfaceName[0] = '\0';
         return;
     }
@@ -467,7 +479,8 @@ static void Netinfo
     {
         if (le_mdc_GetIPv4GatewayAddress(profileRef, gatewayAddr, sizeof(gatewayAddr)) != LE_OK)
         {
-            bufferIndex += sprintf(&buffer[bufferIndex], "Failed to get gateway address.");
+            bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                    "Failed to get gateway address.");
             gatewayAddr[0] = '\0';
             return;
         }
@@ -476,22 +489,24 @@ static void Netinfo
                                    dns1Addr, sizeof(dns1Addr),
                                    dns2Addr, sizeof(dns2Addr)) != LE_OK)
         {
-            bufferIndex += sprintf(&buffer[bufferIndex], "Failed to read DNS addresses.");
+            bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                    "Failed to read DNS addresses.");
             dns1Addr[0] = '\0';
             dns2Addr[0] = '\0';
             return;
         }
 
-        bufferIndex += sprintf(&buffer[bufferIndex],
-                               "\nIPV4 GW: %s, DNS1: %s, DNS2: %s on %s",
-                               gatewayAddr, dns1Addr, dns2Addr, interfaceName);
+        bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                "\nIPV4 GW: %s, DNS1: %s, DNS2: %s on %s",
+                                gatewayAddr, dns1Addr, dns2Addr, interfaceName);
     }
 
     if ( le_mdc_IsIPv6(profileRef) )
     {
         if (le_mdc_GetIPv6GatewayAddress(profileRef, gatewayAddr, sizeof(gatewayAddr)) != LE_OK)
         {
-            bufferIndex += sprintf(&buffer[bufferIndex], "Failed to get gateway address.");
+            bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                    "Failed to get gateway address.");
             gatewayAddr[0] = '\0';
             return;
         }
@@ -500,15 +515,16 @@ static void Netinfo
                                    dns1Addr, sizeof(dns1Addr),
                                    dns2Addr, sizeof(dns2Addr)) != LE_OK)
         {
-            bufferIndex += sprintf(&buffer[bufferIndex], "Failed to read DNS addresses.");
+            bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                    "Failed to read DNS addresses.");
             dns1Addr[0] = '\0';
             dns2Addr[0] = '\0';
             return;
         }
 
-        bufferIndex += sprintf(&buffer[bufferIndex],
-                               "\nIPV6 GW: %s, DNS1: %s, DNS2: %s on %s",
-                               gatewayAddr, dns1Addr, dns2Addr, interfaceName);
+        bufferIndex += snprintf(&buffer[bufferIndex], BUFFER_SIZE - bufferIndex,
+                                "\nIPV6 GW: %s, DNS1: %s, DNS2: %s on %s",
+                                gatewayAddr, dns1Addr, dns2Addr, interfaceName);
     }
 
 }
@@ -528,12 +544,12 @@ static void Datainfo
 
     if (le_mdc_GetBytesCounters(&rxBytes,&txBytes) != LE_OK)
     {
-        sprintf(buffer, "Failed to get bytes statistics.");
+        snprintf(buffer, BUFFER_SIZE, "Failed to get bytes statistics.");
         return;
     }
 
-    sprintf(buffer, "Data bytes statistics: Received: %"PRIu64", Transmitted: %"PRIu64" ",
-                    rxBytes, txBytes);
+    snprintf(buffer, BUFFER_SIZE,
+           "Data bytes statistics: Received: %"PRIu64", Transmitted: %"PRIu64" ", rxBytes, txBytes);
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -553,12 +569,13 @@ static void DataReset
 
     if (le_mdc_GetBytesCounters(&rxBytes,&txBytes) != LE_OK)
     {
-        sprintf(buffer, "Failed to get bytes statistics.");
+        snprintf(buffer, BUFFER_SIZE, "Failed to get bytes statistics.");
         return;
     }
 
-    sprintf(buffer, "Reset Data bytes statistics: Received: %"PRIu64", Transmitted: %"PRIu64" ",
-                    rxBytes, txBytes);
+    snprintf(buffer, BUFFER_SIZE,
+             "Reset Data bytes statistics: Received: %"PRIu64", Transmitted: %"PRIu64" ",
+             rxBytes, txBytes);
 }
 
 static const char* PrintNetworkName
@@ -574,6 +591,8 @@ static const char* PrintNetworkName
         return "GSM";
     case LE_MRC_RAT_UMTS:
         return "UMTS";
+    case LE_MRC_RAT_TDSCDMA:
+        return "TD-SCDMA";
     case LE_MRC_RAT_LTE:
         return "LTE";
     case LE_MRC_RAT_CDMA:
@@ -627,6 +646,7 @@ static void PerformScan
     int bufferIdx = 0;
 
     le_mrc_ScanInformationListRef_t scanInformationList = NULL;
+    LE_ASSERT(NULL != OutputFilePtr);
     fprintf(OutputFilePtr, "Scan was asked");
     scanInformationList = le_mrc_PerformCellularNetworkScan(LE_MRC_BITMASK_RAT_ALL);
     if (!scanInformationList)
@@ -718,7 +738,7 @@ static bool ProcessCommand
     const char* requesterPtr  ///< [IN] If not NULL, then any response text is SMSed to this target.
 )
 {
-    char buffer[10240];
+    char buffer[BUFFER_SIZE] = {0};
 
     // Start looking for a match...
     if (strcmp(textPtr, "Crash") == 0)
@@ -760,7 +780,7 @@ static bool ProcessCommand
             signalQuality = 0;
         }
 
-        sprintf(buffer, "The radio is %s and is %s. The signal strength is %s.",
+        snprintf(buffer, BUFFER_SIZE, "The radio is %s and is %s. The signal strength is %s.",
                 radioStatusPtr,
                 GetNetStateString(netRegState),
                 GetSignalString(signalQuality));
@@ -774,6 +794,7 @@ static bool ProcessCommand
 
         char iccid[100];
         char imsi[100];
+        char eid[100];
         int pos = 0;
 
         simId = le_sim_GetSelectedCard();
@@ -794,6 +815,12 @@ static bool ProcessCommand
         {
             pos += snprintf(buffer + pos, sizeof(buffer) - pos,
                     " IMSI=%s", imsi);
+        }
+
+        if(le_sim_GetEID(simId, eid, sizeof(eid)) == LE_OK)
+        {
+            pos += snprintf(buffer + pos, sizeof(buffer) - pos,
+                    " EID=%s", eid);
         }
 
     }
@@ -874,6 +901,7 @@ static void SmsReceivedHandler
 {
     // First off, make sure this is a message that we can handle.
     LE_DEBUG("smsReceivedHandler called.");
+    le_result_t result;
 
     if (le_sms_GetFormat(messagePtr) != LE_SMS_FORMAT_TEXT)
     {
@@ -886,7 +914,16 @@ static void SmsReceivedHandler
     char text[LE_SMS_TEXT_MAX_BYTES] = { 0 };
 
     le_sms_GetSenderTel(messagePtr, tel, LE_MDMDEFS_PHONE_NUM_MAX_BYTES);
-    le_sms_GetText(messagePtr, text, LE_SMS_TEXT_MAX_BYTES);
+    result = le_sms_GetText(messagePtr, text, LE_SMS_TEXT_MAX_BYTES);
+
+    if (LE_OK == result)
+    {
+        LE_INFO("Message content: \"%s\"", text);
+    }
+    else
+    {
+        LE_ERROR("Failed to get the message text. Result: %s", LE_RESULT_TXT(result));
+    }
 
     // We are now reporting to this person
     DestNumValid = true;

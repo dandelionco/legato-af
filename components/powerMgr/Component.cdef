@@ -8,6 +8,24 @@ provides:
     }
 }
 
+requires:
+{
+    component:
+    {
+        $LEGATO_ROOT/components/watchdogChain
+    }
+
+    api:
+    {
+        le_framework.api
+    }
+}
+
+cflags:
+{
+    -I$LEGATO_ROOT/components/watchdogChain
+}
+
 sources:
 {
     le_pm.c

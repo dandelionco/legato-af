@@ -3,12 +3,15 @@ requires:
     api:
     {
         le_fwupdate.api  [types-only]
+        le_dualsys.api  [types-only]
+        le_flash.api  [types-only]
     }
 }
 
 sources:
 {
     pa_fwupdate_default.c
+    pa_flash_default.c
 }
 
 cflags:

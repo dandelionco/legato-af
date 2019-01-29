@@ -4,7 +4,7 @@
  *
  * Handle data connection control related functionality
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -51,8 +51,7 @@ int cm_data_SetProfileInUse
 //--------------------------------------------------------------------------------------------------
 void cm_data_StartDataConnection
 (
-    const char * timeout,           ///< [IN] Data connection timeout timer
-    bool withDataBearerMonitoring   ///< [IN] Monitor data bearer technology
+    const char * timeoutPtr   ///< [IN] Data connection timeout timer
 );
 
 

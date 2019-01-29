@@ -3,10 +3,10 @@
 *
 * You must issue the following commands:
 * @verbatim
-  $ app start simProfileSwap
-  $ app runProc simProfileSwap --exe=simProfileSwap -- <ext/esim> <gemalto/oberthur/gd/morpho> <ecs/commercial>
+  $ app runProc simProfileSwap --exe=bin/simProfileSwap --
+  $        <ext/esim> <gemalto/oberthur/gd/morpho/valid> <ecs/commercial>
  @endverbatim
-* Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+* Copyright (C) Sierra Wireless Inc.
 *
 */
 
@@ -79,6 +79,9 @@ static void TestSimStateHandler
         case LE_SIM_BUSY:
             LE_INFO("-TEST- New state LE_SIM_BUSY for SIM card.%d", simId);
             break;
+        case LE_SIM_POWER_DOWN:
+            LE_INFO("-TEST- New state LE_SIM_POWER_DOWN for SIM card.%d", simId);
+            break;
         case LE_SIM_STATE_UNKNOWN:
             LE_INFO("-TEST- New state LE_SIM_STATE_UNKNOWN for SIM card.%d", simId);
             break;
@@ -126,7 +129,7 @@ void Testle_sim_SwapToEcs
 {
     bool isEcs;
 
-    LE_INFO("Start Testle_sim_SwapToEcs");
+    LE_INFO("Start Testle_sim_SwapToEcs SimId %d, Manufacture %d", SimIdSelect, Manufacturer);
 
     LE_ASSERT(le_sim_LocalSwapToEmergencyCallSubscription(SimIdSelect, Manufacturer) == LE_OK);
     LE_ASSERT(le_sim_IsEmergencyCallSubscriptionSelected(SimIdSelect, &isEcs) == LE_OK);
@@ -146,7 +149,8 @@ void Testle_sim_SwapToCommercial
 {
     bool isEcs;
 
-    LE_INFO("Start Testle_sim_SwapToCommercial");
+    LE_INFO("Start Testle_sim_SwapToCommercial SimId %d, Manufacture %d",
+        SimIdSelect, Manufacturer);
 
     LE_ASSERT(le_sim_LocalSwapToCommercialSubscription(SimIdSelect, Manufacturer) == LE_OK);
     LE_ASSERT(le_sim_IsEmergencyCallSubscriptionSelected(SimIdSelect, &isEcs) == LE_OK);
@@ -186,8 +190,8 @@ static void PrintUsage
     const char * usagePtr[] =
     {
             "Usage of the simProfileSwap app is:",
-            "   app runProc simProfileSwap --exe=simProfileSwap -- <ext/esim>"
-              " <gemalto/oberthur/gd/morpho> <ecs/commercial>",
+            "   app runProc simProfileSwap --exe=bin/simProfileSwap -- <ext/esim>"
+              " <gemalto/oberthur/gd/morpho/valid> <ecs/commercial>",
     };
 
     for(idx = 0; idx < NUM_ARRAY_MEMBERS(usagePtr); idx++)
@@ -213,17 +217,22 @@ static void GetArgs
     void
 )
 {
-    const char*  arg = NULL;
+    const char*  arg;
 
     // Get SIM type
     arg = le_arg_GetArg(0);
-    if( strncmp(arg, "ext", strlen("ext")) == 0 )
+    if (NULL == arg)
+    {
+        LE_ERROR("arg is NULL");
+        exit(EXIT_FAILURE);
+    }
+    if( 0 == strncmp(arg, "ext", strlen("ext")))
     {
         LE_INFO("external SIM is selected.");
         SimIdSelect = LE_SIM_EXTERNAL_SLOT_1;
 
     }
-    else if( strncmp(arg, "esim", strlen("esim")) == 0 )
+    else if( 0 == strncmp(arg, "esim", strlen("esim")))
     {
         LE_INFO("embedded SIM is selected.");
         SimIdSelect = LE_SIM_EMBEDDED;
@@ -237,25 +246,35 @@ static void GetArgs
 
     // Get Card manufacturer
     arg = le_arg_GetArg(1);
-    if( strncmp(arg, "gemalto", strlen("gemalto")) == 0 )
+    if (NULL == arg)
+    {
+        LE_ERROR("arg is NULL");
+        exit(EXIT_FAILURE);
+    }
+    if( 0 == strncmp(arg, "gemalto", strlen("gemalto")))
     {
         LE_INFO("Card manufacturer is Gemalto.");
         Manufacturer = LE_SIM_GEMALTO;
     }
-    else if( strncmp(arg, "oberthur", strlen("oberthur")) == 0 )
+    else if( 0 == strncmp(arg, "oberthur", strlen("oberthur")))
     {
         LE_INFO("Card manufacturer is Oberthur.");
         Manufacturer = LE_SIM_OBERTHUR;
     }
-    else if( strncmp(arg, "gd", strlen("gd")) == 0 )
+    else if( 0 == strncmp(arg, "gd", strlen("gd")))
     {
         LE_INFO("Card manufacturer is G&D.");
         Manufacturer = LE_SIM_G_AND_D;
     }
-    else if( strncmp(arg, "morpho", strlen("morpho")) == 0 )
+    else if( 0 == strncmp(arg, "morpho", strlen("morpho")))
     {
         LE_INFO("Card manufacturer is Morpho.");
         Manufacturer = LE_SIM_MORPHO;
+    }
+    else if( 0 == strncmp(arg, "valid", strlen("valid")))
+    {
+        LE_INFO("Card manufacturer is VALID.");
+        Manufacturer = LE_SIM_VALID;
     }
     else
     {
@@ -281,6 +300,11 @@ COMPONENT_INIT
 
         GetArgs();
         Profile = le_arg_GetArg(2);
+        if (NULL == Profile)
+        {
+            LE_ERROR("Profile is NULL");
+            exit(EXIT_FAILURE);
+        }
         LE_INFO("======== Start SIM local Profile Swap Test with Profile.%s========", Profile);
 
         StkHandlerRef=le_sim_AddSimToolkitEventHandler(TestSimToolkitHandler, NULL);
@@ -312,6 +336,7 @@ COMPONENT_INIT
         }
 
         LE_INFO("======== Test SIM local Profile Swap Test SUCCESS ========");
+        exit(EXIT_SUCCESS);
     }
     else
     {

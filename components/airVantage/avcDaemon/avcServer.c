@@ -5,7 +5,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -1200,6 +1200,26 @@ le_result_t le_avc_StopSession
 }
 
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Send a specific message to the server to be sure that the route between the device and the server
+ * is available.
+ * This API needs to be called when any package download is over (successfully or not) and before
+ * sending any notification on asset data to the server.
+ *
+ * @return
+ *      - LE_UNSUPPORTED in all cases
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_avc_CheckRoute
+(
+    void
+)
+{
+    return LE_UNSUPPORTED;
+}
+
 //--------------------------------------------------------------------------------------------------
 /**
  * Accept the currently pending download
@@ -1858,6 +1878,8 @@ le_result_t le_avc_SetPollingTimer
 }
 
 
+
+
 //--------------------------------------------------------------------------------------------------
 /**
  * Allow any pending updates to be installed
@@ -1883,6 +1905,27 @@ void le_avc_UnblockInstall
         le_ref_DeleteRef(BlockRefMap, blockRef);
         BlockRefCount--;
     }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Function to read a resource from a LwM2M object
+ *
+ * @return
+ *      - LE_UNSUPPORTED if unsupported.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_avc_ReadLwm2mResource
+(
+   uint16_t objectId,               ///< [IN] Object identifier
+   uint16_t objectInstanceId,       ///< [IN] Object instance identifier
+   uint16_t resourceId,             ///< [IN] Resource identifier
+   uint16_t resourceInstanceId,     ///< [IN] Resource instance identifier
+   char* dataPtr,                   ///< [IN/OUT] String of requested resources to be read
+   size_t dataSize                  ///< [IN/OUT] Size of the array
+)
+{
+   return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------

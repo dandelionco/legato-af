@@ -4,7 +4,7 @@
  *
  * Definition file common to multiple wifi related services.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 /**
@@ -135,3 +135,18 @@ DEFINE MAX_SSID_LENGTH       = 32;
 //--------------------------------------------------------------------------------------------------
 DEFINE MAX_SSID_BYTES        = (MAX_SSID_LENGTH + 1);
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * The maximum length of octets of the Basic Service set identifier (BSSID). The length is derived
+ * from 6 bytes represented as hexadecimal character string with bytes separated by colons.
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE MAX_BSSID_LENGTH      = 17;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of the Basic Service set identifier (BSSID).
+ * One extra byte is added for the null character.
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE MAX_BSSID_BYTES       = (MAX_BSSID_LENGTH + 1);

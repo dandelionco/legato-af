@@ -2,7 +2,7 @@
 /**
  * @file componentMainGenerator.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -63,8 +63,7 @@ namespace code
 void GenerateCLangComponentMainFile
 (
     const model::Component_t* componentPtr,
-    const mk::BuildParams_t& buildParams,
-    bool isStandAlone   ///< true = fully resolve all interface name variables.
+    const mk::BuildParams_t& buildParams
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -82,8 +81,10 @@ void GenerateCLangComponentMainFile
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Generating component-specific IPC code for component '" <<
-                     compName << "' in '" << filePath << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("Generating component-specific IPC code for"
+                                        " component '%s' in '%s'."),
+                                compName, filePath)
+                  << std::endl;
     }
 
     // Open the .c file for writing.
@@ -91,7 +92,9 @@ void GenerateCLangComponentMainFile
     std::ofstream fileStream(filePath, std::ofstream::trunc);
     if (!fileStream.is_open())
     {
-        throw mk::Exception_t("Failed to open file '" + filePath + "' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to open file '%s' for writing."), filePath)
+        );
     }
 
     // Generate file header and #include directives.
@@ -103,8 +106,8 @@ void GenerateCLangComponentMainFile
                   " */\n"
                   "\n"
                   "#include \"legato.h\"\n"
-                  "#include \"../src/eventLoop.h\"\n"
-                  "#include \"../src/log.h\"\n"
+                  "#include \"../liblegato/eventLoop.h\"\n"
+                  "#include \"../liblegato/log.h\"\n"
                   "\n"
                   "#ifdef __cplusplus\n"
                   "extern \"C\" {\n"
@@ -114,7 +117,7 @@ void GenerateCLangComponentMainFile
     // For each of the component's client-side interfaces,
     for (auto interfacePtr : componentPtr->clientApis)
     {
-        DefineServiceNameVars(fileStream, interfacePtr, isStandAlone);
+        DefineServiceNameVars(fileStream, interfacePtr, buildParams.isStandAloneComp);
 
         // Declare the client-side interface initialization function.
         fileStream << "void " << interfacePtr->internalName << "_ConnectService(void);\n";
@@ -123,7 +126,7 @@ void GenerateCLangComponentMainFile
     // For each of the component's server-side interfaces,
     for (auto interfacePtr : componentPtr->serverApis)
     {
-        DefineServiceNameVars(fileStream, interfacePtr, isStandAlone);
+        DefineServiceNameVars(fileStream, interfacePtr, buildParams.isStandAloneComp);
 
         // Declare the server-side interface initialization function.
         fileStream << "void " << interfacePtr->internalName << "_AdvertiseService(void);\n";

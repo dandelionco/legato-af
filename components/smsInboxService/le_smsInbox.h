@@ -4,7 +4,7 @@
  *
  * Wrapper.
  *
- *  Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless Inc.
  */
 // -------------------------------------------------------------------------------------------------
 #ifndef LE_SMSINBOX_H_INCLUDE_GUARD
@@ -31,7 +31,16 @@ LE_NAME##_SessionRef_t LE_NAME##_Open \
     void \
 ) \
 { \
-    LE_NAME##Ref = (LE_NAME##_SessionRef_t) SmsInbox_Open(#LE_NAME); \
+    le_msg_ServiceRef_t msgServiceRef = LE_NAME##_GetServiceRef(); \
+    le_msg_SessionRef_t msgSession = LE_NAME##_GetClientSessionRef(); \
+    static le_msg_SessionEventHandlerRef_t msgSessionRef = NULL; \
+    if (msgSessionRef == NULL) \
+    { \
+        /* Register CloseSessionEventHandler for smsInbox service */ \
+        msgSessionRef = le_msg_AddServiceCloseHandler(msgServiceRef, \
+                        SmsInbox_CloseSessionEventHandler, NULL); \
+    } \
+    LE_NAME##Ref = (LE_NAME##_SessionRef_t) SmsInbox_Open(#LE_NAME,msgServiceRef,msgSession); \
     return LE_NAME##Ref; \
 } \
 \
@@ -339,6 +348,38 @@ void LE_NAME##_MarkUnread \
 ) \
 { \
     return SmsInbox_MarkUnread((SmsInbox_SessionRef_t)LE_NAME##Ref, msgId); \
+} \
+\
+/** \
+ * Set the maximum number of messages for message box. \
+ * \
+ * @return \
+ *  - LE_BAD_PARAMETER The message box name is invalid. \
+ *  - LE_OVERFLOW      Message count exceed the maximum limit. \
+ *  - LE_OK            Function succeeded. \
+ *  - LE_FAULT         Function failed. \
+ */ \
+le_result_t LE_NAME##_SetMaxMessages \
+( \
+    uint32_t maxMessageCount \
+) \
+{ \
+    return SmsInbox_SetMaxMessages(#LE_NAME, maxMessageCount); \
+} \
+/** \
+ * Get the maximum number of messages for message box. \
+ * \
+ * @return \
+ *  - LE_BAD_PARAMETER The message box name is invalid. \
+ *  - LE_OK            Function succeeded. \
+ *  - LE_FAULT         Function failed. \
+ */ \
+le_result_t LE_NAME##_GetMaxMessages \
+( \
+    uint32_t* maxMessageCountPtr \
+) \
+{ \
+    return SmsInbox_GetMaxMessages(#LE_NAME, maxMessageCountPtr); \
 } \
 
 #endif

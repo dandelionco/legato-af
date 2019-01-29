@@ -2,7 +2,7 @@
   * This module is for unit testing of the modemServices component.
   *
   *
-  * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+  * Copyright (C) Sierra Wireless Inc.
   *
   */
 
@@ -55,8 +55,17 @@ void simTest_SimGetIccid
     le_sim_Id_t simId
 );
 
+void simTest_SimGetEid
+(
+    le_sim_Id_t simId
+);
+
 void simTest_SimAccess
 (
     le_sim_Id_t simId
 );
 
+void simTest_SimPowerUpDown
+(
+    void
+);

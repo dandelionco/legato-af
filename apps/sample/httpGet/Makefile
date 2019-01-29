@@ -1,10 +1,11 @@
-TARGETS := ar7 ar86 wp85 localhost
+TARGETS := $(MAKECMDGOALS)
 
 .PHONY: all $(TARGETS)
 all: $(TARGETS)
 
 $(TARGETS):
 	mkapp -v -t $@ \
+		-i $(LEGATO_ROOT)/interfaces/modemServices \
 		httpGet.adef
 
 clean:

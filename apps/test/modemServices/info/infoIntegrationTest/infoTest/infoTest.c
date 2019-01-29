@@ -1,7 +1,7 @@
  /**
   * This module implements the le_info's tests.
   *
-  * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+  * Copyright (C) Sierra Wireless Inc.
   *
   * testModemInfo Application shall be installed and executed on target.
   *
@@ -381,52 +381,39 @@ static void PriIdTest
     void
 )
 {
-    le_result_t result;
     char priIdPn[LE_INFO_MAX_PRIID_PN_BYTES];
     char priIdRev[LE_INFO_MAX_PRIID_REV_BYTES];
+    le_result_t result;
 
-    LE_INFO("======== PriidTest ========");
+    LE_INFO("======== PriIdTest ========");
 
+    // test LE_OK or LE_FAULT if PRI+RV not present
     result = le_info_GetPriId(priIdPn, LE_INFO_MAX_PRIID_PN_BYTES,
                               priIdRev, LE_INFO_MAX_PRIID_REV_BYTES);
-    if (result == LE_OK)
-    {
-        LE_INFO("le_info_GetPriId get priIdPn => %s", priIdPn);
-        LE_INFO("le_info_GetPriId get priIdRev => %s", priIdRev);
-    }
-    else
-    {
-        /* Other return values possibilities */
-        LE_ERROR("le_info_GetPriId return code %d",result);
-        LE_ERROR("======== PriidTest FAILED ========");
-        return;
-    }
+    LE_ASSERT((LE_OK == result) || (LE_FAULT == result));
 
+    LE_INFO("priIdPn => %s", priIdPn);
+    LE_INFO("priIdRev => %s", priIdRev);
+
+    // test LE_OVERFLOW
+    LE_ASSERT(LE_OVERFLOW == le_info_GetPriId(priIdPn,
+                              LE_INFO_MAX_PRIID_PN_BYTES + 1,
+                              priIdRev,
+                              LE_INFO_MAX_PRIID_REV_BYTES));
+
+    // test LE_OVERFLOW
+    LE_ASSERT(LE_OVERFLOW == le_info_GetPriId(priIdPn,
+                              LE_INFO_MAX_PRIID_PN_BYTES,
+                              priIdRev,
+                              LE_INFO_MAX_PRIID_REV_BYTES+1));
+
+    // test LE_OVERFLOW or LE_FAULT if PRI+RV not present
     result = le_info_GetPriId(priIdPn, 1, priIdRev, LE_INFO_MAX_PRIID_REV_BYTES);
-    if (result == LE_OVERFLOW)
-    {
-        LE_INFO("le_info_GetPriId return LE_OVERFLOW");
-    }
-    else
-    {
-        /* Other return values possibilities */
-        LE_ERROR("le_info_GetPriId return code %d",result);
-        LE_ERROR("======== PriidTest FAILED ========");
-        return;
-    }
+    LE_ASSERT((LE_OVERFLOW == result) || (LE_FAULT == result));
 
+    // test LE_OVERFLOW or LE_FAULT if PRI+RV not present
     result = le_info_GetPriId(priIdPn, LE_INFO_MAX_PRIID_PN_BYTES, priIdRev, 1);
-    if (result == LE_OVERFLOW)
-    {
-        LE_INFO("le_info_GetPriId return LE_OVERFLOW");
-        LE_INFO("======== PriidTest PASSED ========");
-    }
-    else
-    {
-        /* Other return values possibilities */
-        LE_ERROR("le_info_GetPriId return code %d",result);
-        LE_ERROR("======== PriidTest FAILED ========");
-    }
+    LE_ASSERT((LE_OVERFLOW == result) || (LE_FAULT == result));
 }
 
 
@@ -443,12 +430,22 @@ static void SkuIdTest
 {
     char skuId[LE_INFO_MAX_SKU_BYTES] = {0};
     char skuIdBadBuffer[2] = {0};
+    le_result_t result;
 
     LE_INFO("======== SkuId test ========");
 
-    LE_ASSERT(le_info_GetSku(skuId, 1) == LE_OVERFLOW);
-    LE_ASSERT(le_info_GetSku(skuIdBadBuffer, LE_INFO_MAX_SKU_BYTES) == LE_OVERFLOW);
-    LE_ASSERT(le_info_GetSku(skuId, LE_INFO_MAX_SKU_BYTES) == LE_OK);
+    // test LE_OVERFLOW or LE_FAULT if SKU not present
+    result = le_info_GetSku(skuId, 1);
+    LE_ASSERT((LE_OVERFLOW == result) || (LE_FAULT == result));
+
+    // test LE_OVERFLOW or LE_FAULT if SKU not present
+    result = le_info_GetSku(skuIdBadBuffer, LE_INFO_MAX_SKU_BYTES);
+    LE_ASSERT((LE_OVERFLOW == result) || (LE_FAULT == result));
+
+    // test LE_OK or LE_FAULT if SKU not present
+    result = le_info_GetSku(skuId, LE_INFO_MAX_SKU_BYTES);
+    LE_ASSERT((LE_OK == result) || (LE_FAULT == result));
+
 }
 
 
@@ -553,6 +550,66 @@ static void GetRfDeviceStatusTest
 
 
 /*
+ * This test BootloaderVersion and FirmwareVersion.
+ *
+ * API Tested:
+ *  - le_info_GetBootloaderVersion()
+ *  - le_info_GetFirmwareVersion()
+ */
+static void GetDeviceBootVersionTest
+(
+    void
+)
+{
+    char versionBootPtr[LE_INFO_MAX_VERS_BYTES] = {0};
+    char versionFWPtr[LE_INFO_MAX_VERS_BYTES] = {0};
+
+    LE_ASSERT(le_info_GetBootloaderVersion(versionBootPtr, 0) == LE_FAULT);
+    LE_ASSERT(le_info_GetBootloaderVersion(versionBootPtr, LE_INFO_MAX_VERS_BYTES+10) == LE_OK);
+    LE_ASSERT(le_info_GetBootloaderVersion(versionBootPtr, 2) == LE_OVERFLOW);
+    LE_ASSERT(le_info_GetBootloaderVersion(versionBootPtr, sizeof(versionBootPtr)) == LE_OK);
+    LE_INFO("le_info_GetBootloaderVersion get => %s", versionBootPtr);
+
+    LE_ASSERT(le_info_GetFirmwareVersion(versionFWPtr, 0) == LE_FAULT);
+    LE_ASSERT(le_info_GetFirmwareVersion(versionFWPtr, LE_INFO_MAX_VERS_BYTES+10) == LE_OK);
+    LE_ASSERT(le_info_GetFirmwareVersion(versionBootPtr, 2) == LE_OVERFLOW);
+    LE_ASSERT(le_info_GetFirmwareVersion(versionFWPtr, sizeof(versionFWPtr)) == LE_OK);
+    LE_INFO("le_info_GetFirmwareVersion get => %s", versionFWPtr);
+}
+
+/*
+ * Test le_info_GetImei and le_info_GetImeiSv APIs.
+ *
+ * API Tested:
+ *  le_info_GetImei().
+ *  le_info_GetImeiSv().
+ */
+static void ImeiTest
+(
+    void
+)
+{
+    char imei[LE_INFO_IMEI_MAX_BYTES];
+    char imeiSv[LE_INFO_IMEISV_MAX_BYTES];
+
+    LE_INFO("======== ImeiTest ========");
+    LE_ASSERT(le_info_GetImei(imei, sizeof(imei)) == LE_OK);
+    LE_INFO("le_info_GetImei get => %s", imei);
+    LE_ASSERT(le_info_GetImei(imei, 1) == LE_OVERFLOW);
+    LE_ASSERT(le_info_GetImei(imei, 0) == LE_FAULT);
+    LE_INFO("======== ImeiTest PASSED ========");
+
+    LE_INFO("======== ImeiSvTest ========");
+    LE_ASSERT(le_info_GetImeiSv(imeiSv, sizeof(imeiSv)) == LE_OK);
+    LE_INFO("le_info_GetImeiSv get => %s", imeiSv);
+    LE_ASSERT(le_info_GetImeiSv(imeiSv, 1) == LE_OVERFLOW);
+    LE_ASSERT(le_info_GetImeiSv(imeiSv, 0) == LE_FAULT);
+    LE_INFO("======== ImeiSvTest PASSED ========");
+}
+
+
+
+/*
  * Each Test called once.
  *  - modelDeviceIdentityTest()
  *  - ..
@@ -560,6 +617,10 @@ static void GetRfDeviceStatusTest
 COMPONENT_INIT
 {
     LE_INFO("======== Start LE_INFO implementation Test ========");
+
+    GetDeviceBootVersionTest();
+
+    ImeiTest();
 
     MeidTest();
 

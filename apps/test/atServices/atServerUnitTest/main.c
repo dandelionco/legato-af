@@ -1,15 +1,15 @@
 /**
  * This module implements the unit tests for AT server API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 #include "legato.h"
 #include "defs.h"
 #include "strerror.h"
 
-#define DSIZE           512     /* default buffer size */
-#define SERVER_TIMEOUT  2000    /* server timeout in milliseconds */
+#define DSIZE           1024     // default buffer size
+#define SERVER_TIMEOUT  10000    // server timeout in milliseconds
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -18,8 +18,6 @@
  */
 //--------------------------------------------------------------------------------------------------
 static SharedData_t SharedData;
-
-void* AtServer(void* contextPtr);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -34,6 +32,8 @@ static char* PrettyPrint
     char* strPtr
 )
 {
+    LE_ASSERT(strlen(strPtr) <= (DSIZE-1));
+
     static char copy[DSIZE];
     char* swapPtr;
 
@@ -44,14 +44,24 @@ static char* PrettyPrint
 
     while(*swapPtr)
     {
-        switch (*swapPtr) {
-        case '\r':
-            *swapPtr = '<';
+        switch (*swapPtr)
+        {
+            case '\r':
+                *swapPtr = '<';
             break;
-        case '\n':
-            *swapPtr = '>';
+            case '\n':
+                *swapPtr = '>';
             break;
-        default: break;
+            case '\x1a':
+            case '\x1b':
+                *swapPtr = '#';
+            break;
+          default:
+            if (!isprint(*swapPtr))
+            {
+                *swapPtr = '@';
+            }
+            break;
         }
         swapPtr++;
     }
@@ -61,15 +71,430 @@ static char* PrettyPrint
 
 //--------------------------------------------------------------------------------------------------
 /**
- * send an AT command and test on an expected result
+ * send text
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t SendCommandsAndTest
+static le_result_t SendText
 (
     int fd,
     int epollFd,
-    const char* commandsPtr,
+    const char* textPtr
+)
+{
+    LE_INFO("Text: %s", PrettyPrint((char *)textPtr));
+
+    if (write(fd, textPtr, strlen(textPtr)) == -1)
+    {
+        LE_ERROR("write failed: %s", strerror(errno));
+        return LE_IO_ERROR;
+    }
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * host thread function
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void* AtHost
+(
+    void* contextPtr
+)
+{
+    SharedData_t* sharedDataPtr;
+    char buf[DSIZE];
+    struct sockaddr_un addr;
+    int socketFd;
+    int epollFd;
+    struct epoll_event event;
+
+    sharedDataPtr = (SharedData_t *)contextPtr;
+
+    LE_DEBUG("Host Started");
+
+    le_clk_Time_t timeToWait = {SERVER_TIMEOUT/1000,0};
+    LE_ASSERT_OK(le_sem_WaitWithTimeOut(sharedDataPtr->semRef, timeToWait));
+
+    memset(buf, 0, DSIZE);
+
+    epollFd = epoll_create1(0);
+    LE_ASSERT(epollFd != -1);
+
+    socketFd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    LE_ASSERT(socketFd != -1);
+
+    event.events = EPOLLIN | EPOLLRDHUP;
+    event.data.fd = socketFd;
+
+    LE_ASSERT(epoll_ctl(epollFd, EPOLL_CTL_ADD, socketFd, &event) == 0);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, sharedDataPtr->devPathPtr, sizeof(addr.sun_path)-1);
+
+    LE_ASSERT(connect(socketFd, (struct sockaddr *)&addr, sizeof(addr)) != -1);
+
+    LE_ASSERT_OK(le_sem_WaitWithTimeOut(sharedDataPtr->semRef, timeToWait));
+
+    // activate echo
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+ECHO=1",
+                "\r\n+ECHO TYPE: PARA\r\n"
+                "\r\nOK\r\n"));
+
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT",
+               "AT\r"
+                "\r\n TYPE: ACT\r\n"
+                "\r\nOK\r\n"));
+
+    // deactivate echo
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+ECHO=0",
+               "AT+ECHO=0\r"
+                "\r\n+ECHO TYPE: PARA\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT",
+                "\r\n TYPE: ACT\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "ATI",
+                "\r\nManufacturer: Sierra Wireless, Incorporated\r\n"
+                "Model: WP8548\r\n"
+                "Revision: SWI9X15Y_07.10.04.00 "
+                "12c1700 jenkins 2016/06/02 02:52:45\r\n"
+                "IMEI: 359377060009700\r\n"
+                "IMEI SV: 42\r\n"
+                "FSN: LL542500111503\r\n"
+                "+GCAP: +CGSM\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "ATASVE",
+                "\r\nA TYPE: ACT\r\n"
+                "\r\nS TYPE: ACT\r\n"
+                "\r\nV TYPE: ACT\r\n"
+                "\r\nE TYPE: ACT\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "ATASVEB",
+                "\r\nA TYPE: ACT\r\n"
+                "\r\nS TYPE: ACT\r\n"
+                "\r\nV TYPE: ACT\r\n"
+                "\r\nE TYPE: ACT\r\n"
+                "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+ABCD;+ABCD=?;+ABCD?",
+                "\r\n+ABCD TYPE: ACT\r\n"
+                "\r\n+ABCD TYPE: TEST\r\n"
+                "\r\n+ABCD TYPE: READ\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                "ATE0S3?;+ABCD?;S0?S0=2E1;V0S0=\"3\"+ABCD",
+                "\r\nE TYPE: PARA\r\n"
+                "E PARAM 0: 0\r\n"
+                "\r\nS TYPE: READ\r\n"
+                "S PARAM 0: 3\r\n"
+                "\r\n+ABCD TYPE: READ\r\n"
+                "\r\nS TYPE: READ\r\n"
+                "S PARAM 0: 0\r\n"
+                "\r\nS TYPE: PARA\r\n"
+                "S PARAM 0: 0\r\n"
+                "S PARAM 1: 2\r\n"
+                "\r\nE TYPE: PARA\r\n"
+                "E PARAM 0: 1\r\n"
+                "\r\nV TYPE: PARA\r\n"
+                "V PARAM 0: 0\r\n"
+                "\r\nS TYPE: PARA\r\n"
+                "S PARAM 0: 0\r\n"
+                "S PARAM 1: 3\r\n"
+                "\r\n+ABCD TYPE: ACT\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,"AT&FE0V1&C1&D2S95=47S0=0",
+                "\r\n&F TYPE: ACT\r\n"
+                "\r\nE TYPE: PARA\r\n"
+                "E PARAM 0: 0\r\n"
+                "\r\nV TYPE: PARA\r\n"
+                "V PARAM 0: 1\r\n"
+                "\r\n&C TYPE: PARA\r\n"
+                "&C PARAM 0: 1\r\n"
+                "\r\n&D TYPE: PARA\r\n"
+                "&D PARAM 0: 2\r\n"
+                "\r\nS TYPE: PARA\r\n"
+                "S PARAM 0: 95\r\n"
+                "S PARAM 1: 47\r\n"
+                "\r\nS TYPE: PARA\r\n"
+                "S PARAM 0: 0\r\n"
+                "S PARAM 1: 0\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CBC=?",
+                "\r\n+CBC: (0-2),(1-100),(voltage)\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CBC",
+                "\r\n+CBC: 1,50,4190\r\n"
+                "\r\nOK\r\n"
+                "\r\n+CBC: 1,70,4190\r\n"
+                "\r\n+CBC: 2,100,4190\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+EEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+                "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+DATA=?",
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE",
+                "\r\nERROR\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=?",
+                "\r\n+CMEE: (0-2)\r\n"
+                "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=0",
+                "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE?",
+                "\r\n+CMEE: 0\r\n"
+                "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=1",
+                "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE?",
+                "\r\n+CMEE: 1\r\n"
+                "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=2",
+                "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE?",
+                "\r\n+CMEE: 2\r\n"
+                "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+DATA",
+                "\r\nCONNECT\r\n"
+                "testing the data mode"
+                "\r\nNO CARRIER\r\n"
+                "\r\nCONNECTED\r\n"
+                "\r\nCONNECTED\r\n"
+                "\r\nCONNECTED\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CBC",
+                "\r\n+CBC: 1,50,4190\r\n"
+                "\r\nOK\r\n"
+                "\r\n+CBC: 1,70,4190\r\n"
+                "\r\n+CBC: 2,100,4190\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=0",
+                "\r\nOK\r\n"));
+
+    // Test bridge feature
+    LE_ASSERT_OK(Testle_atServer_Bridge(socketFd, epollFd, sharedDataPtr));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+DEL="
+                "\"AT\",\"ATI\",\"AT+CBC\",\"AT+ABCD\",\"ATA\",\"AT&F\","
+                "\"ATS\",\"ATV\",\"AT&C\",\"AT&D\",\"ATE\",\"AT+DATA\"",
+                "\r\nOK\r\n"));
+
+    // ATD handler echoes the received parameter in intermediate response. The goal is to test
+    // here the expected parameter of dial command.
+    // AT server should bypass useless/unknown characters, and keep the ones belonging to the D
+    // command: T,P,W,!,@,>,',',;,0 to 9, A to D, I,i,G,g. It makes also the uppercase when
+    // possible.
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "ATD.T(+-33)1,-23-P-45-67-W-890-!tABCDabcde*#2pw@IiGg$:;",
+                                     "\r\nT+331,23P4567W890!TABCDABCD*#2PW@IiGg;\r\n"
+                                     "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "ATD>me\"John\"IG;D>1ig;D>ME1",
+                                     "\r\n>ME\"John\"IG;\r\n"
+                                     "\r\n>1ig;\r\n"
+                                     "\r\n>ME1\r\n"
+                                     "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1c"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_FORMAT_ERROR\r\n"
+                                                  "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1b"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\ntesting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x08\x08\x08\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\ntest"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t\x08t\x08t\x08ting\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\nting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1ctesting"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_FORMAT_ERROR\r\n"
+                                                  "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1btesting\x1b"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_FORMAT_ERROR\r\n"
+                                                  "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1atesting\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_FORMAT_ERROR\r\n"
+                                                  "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x0a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\ntesting\ntesting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x08"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\ntestintesting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "testing\x08testing\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\ntestintesting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "\bt\be\bs\bting\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\nting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "e"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "s"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "i"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "n"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "g"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "\x11"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_FORMAT_ERROR\r\n"
+                                                  "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "e"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "s"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "i"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "n"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "g"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "\x1b"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\n"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+TEXT", "\r\n> "));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "e"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "s"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "t"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "i"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "n"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "g"));
+    LE_ASSERT_OK(SendText(socketFd, epollFd, "\x1a"));
+    LE_ASSERT_OK(TestResponses(socketFd, epollFd, "\r\ntesting"
+                                                  "\r\nLE_OK\r\n"
+                                                  "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+ERRCODE?", "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=1", "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"513\",\"CUSTOM_ERROR: \"",
+                                     "\r\nCUSTOM_ERROR: 513\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=2", "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"514\",\"CUSTOM_ERROR: \",\"VERBOSE_MSG\"",
+                                     "\r\nCUSTOM_ERROR: VERBOSE_MSG\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"159\",\"+CME ERROR: \"",
+                                     "\r\n+CME ERROR: Uplink busy\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"159\",\"+CMS ERROR: \"",
+                                     "\r\n+CMS ERROR: Unspecified TP-DCS error\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"127\",\"+CME ERROR: \"",
+                                    "\r\n+CME ERROR: Missing or unknown APN\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"127\",\"+CMS ERROR: \"",
+                                    "\r\n+CMS ERROR: Interworking, unspecified\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd,
+                                     "AT+ERRCODE=\"128\",\"+UNDEF ERROR: \"",
+                                    "\r\n+UNDEF ERROR: 128\r\n"
+                                     ));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CMEE=0", "\r\nOK\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CLOSE?", "\r\nERROR\r\n"));
+
+    LE_ASSERT_OK(SendCommandsAndTest(socketFd, epollFd, "AT+CLOSE", ""));
+
+
+    LE_INFO("======== ATServer unit test PASSED ========");
+
+    exit(0);
+
+    return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Test on an expected result
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t TestResponses
+(
+    int fd,
+    int epollFd,
     const char* expectedResponsePtr
 )
 {
@@ -80,17 +505,10 @@ static le_result_t SendCommandsAndTest
     int count = 0;
     ssize_t size = 0;
 
-
-    memset(buf, 0 , DSIZE);
-
-    snprintf(buf, strlen(commandsPtr)+2, "%s\r", commandsPtr);
-
-    LE_DEBUG("Commands: %s", PrettyPrint(buf));
-
-    if (write(fd, buf, strlen(buf)) == -1)
+    if (!expectedResponsePtr)
     {
-        LE_ERROR("write failed: %s", strerror(errno));
-        return LE_IO_ERROR;
+        LE_ERROR("null expected response");
+        return LE_FAULT;
     }
 
     count = strlen(expectedResponsePtr);
@@ -98,14 +516,19 @@ static le_result_t SendCommandsAndTest
 
     while (count > 0)
     {
-        ret = epoll_wait(epollFd, &ev, 1, SERVER_TIMEOUT);
-        if (ret == -1)
+        do
+        {
+            ret = epoll_wait(epollFd, &ev, 1, SERVER_TIMEOUT);
+        }
+        while ((-1 == ret) && (EINTR == errno));
+
+        if (-1 == ret)
         {
             LE_ERROR("epoll wait failed: %s", strerror(errno));
             return LE_IO_ERROR;
         }
 
-        if  (!ret)
+        if (!ret)
         {
             LE_ERROR("Timed out waiting for server's response");
             return LE_TIMEOUT;
@@ -132,18 +555,17 @@ static le_result_t SendCommandsAndTest
 
         offset += size;
         count -= size;
+
     }
 
     LE_DEBUG("Response: %s", PrettyPrint(buf));
     LE_DEBUG("Expected: %s", PrettyPrint((char *)expectedResponsePtr));
 
-    if (expectedResponsePtr) {
-        if (strcmp(buf, expectedResponsePtr))
-        {
-            LE_ERROR("response %s", PrettyPrint(buf));
-            LE_ERROR("expected %s", PrettyPrint((char*)expectedResponsePtr));
-            return LE_FAULT;
-        }
+    if (strcmp(buf, expectedResponsePtr))
+    {
+        LE_ERROR("response %s", PrettyPrint(buf));
+        LE_ERROR("expected %s", PrettyPrint((char*)expectedResponsePtr));
+        return LE_FAULT;
     }
 
     return LE_OK;
@@ -151,36 +573,33 @@ static le_result_t SendCommandsAndTest
 
 //--------------------------------------------------------------------------------------------------
 /**
- * test data mode
+ * send an AT command and test on an expected result
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t TestDataMode
+le_result_t SendCommandsAndTest
 (
     int fd,
-    int epollFd
+    int epollFd,
+    const char* commandsPtr,
+    const char* expectedResponsePtr
 )
 {
     char buf[DSIZE];
-    char expectedResponse[DSIZE];
-    struct epoll_event ev;
-    int ret = 0;
-    int offset = 0;
-    ssize_t size = 0;
+    int size;
 
+    size = strlen(commandsPtr);
+    if (DSIZE <= size)
+    {
+        LE_ERROR("command is too long: %d", size);
+        return LE_FAULT;
+    }
 
     memset(buf, 0 , DSIZE);
 
-    sprintf(buf,"AT+DATA\r");
-    sprintf(expectedResponse,
-        "\r\nCONNECT\r\n"
-        "testing the data mode"
-        "\r\nNO CARRIER\r\n"
-        "\r\nCONNECTED\r\n"
-        "\r\nCONNECTED\r\n"
-        "\r\nCONNECTED\r\n");
+    snprintf(buf, strlen(commandsPtr)+2, "%s\r", commandsPtr);
 
-    LE_DEBUG("Command: %s", PrettyPrint(buf));
+    LE_INFO("Commands: %s", PrettyPrint(buf));
 
     if (write(fd, buf, strlen(buf)) == -1)
     {
@@ -188,333 +607,7 @@ static le_result_t TestDataMode
         return LE_IO_ERROR;
     }
 
-    memset(buf, 0 , DSIZE);
-
-    while (1)
-    {
-        ret = epoll_wait(epollFd, &ev, 1, SERVER_TIMEOUT);
-        if (ret == -1)
-        {
-            LE_ERROR("epoll wait failed: %s", strerror(errno));
-            return LE_IO_ERROR;
-        }
-
-        if  (!ret)
-        {
-            LE_ERROR("Timed out waiting for server's response");
-            return LE_TIMEOUT;
-        }
-
-        if (ev.data.fd != fd)
-        {
-            LE_ERROR("%s", strerror(EBADF));
-            return LE_IO_ERROR;
-        }
-
-        if (ev.events & EPOLLRDHUP)
-        {
-            LE_ERROR("%s", strerror(ECONNRESET));
-            return LE_TERMINATED;
-        }
-
-        size = read(fd, buf+offset, DSIZE);
-        if (size == -1)
-        {
-            LE_ERROR("read failed: %s", strerror(errno));
-            return LE_IO_ERROR;
-        }
-
-        offset += size;
-
-        LE_DEBUG("Response: %s", PrettyPrint(buf));
-
-        if (!strcmp(buf, expectedResponse))
-        {
-            break;
-        }
-    }
-
-    return LE_OK;
-}
-//--------------------------------------------------------------------------------------------------
-/**
- * host thread function
- *
- */
-//--------------------------------------------------------------------------------------------------
-static void* AtHost
-(
-    void* contextPtr
-)
-{
-    SharedData_t* sharedDataPtr;
-    char buf[DSIZE];
-    struct sockaddr_un addr;
-    int socketFd;
-    int epollFd;
-    struct epoll_event event;
-    struct timespec ts;
-    int ret;
-
-    sharedDataPtr = (SharedData_t *)contextPtr;
-
-    LE_DEBUG("Host Started");
-
-    memset(buf, 0, DSIZE);
-
-    epollFd = epoll_create1(0);
-    if (epollFd == -1)
-    {
-        LE_ERROR("epoll_create1 failed: %s", strerror(errno));
-        errno = LE_TERMINATED;
-        return (void *) &errno;
-    }
-
-    socketFd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
-    if (socketFd == -1)
-    {
-        LE_ERROR("socket failed: %s", strerror(errno));
-
-        close(socketFd);
-        close(epollFd);
-        errno = LE_TERMINATED;
-        return (void *) &errno;
-    }
-
-    event.events = EPOLLIN | EPOLLRDHUP;
-    event.data.fd = socketFd;
-
-    if (epoll_ctl(epollFd, EPOLL_CTL_ADD, socketFd, &event))
-    {
-        LE_ERROR("epoll_ctl failed: %s", strerror(errno));
-
-        close(socketFd);
-        close(epollFd);
-        errno = LE_TERMINATED;
-        return (void *) &errno;
-    }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, sharedDataPtr->devPathPtr, sizeof(addr.sun_path)-1);
-
-    /* wait for the server to bind to the socket */
-    pthread_mutex_lock(&sharedDataPtr->mutex);
-    while(!sharedDataPtr->ready)
-    {
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += SERVER_TIMEOUT/1000;
-
-        errno = pthread_cond_timedwait(
-                    &sharedDataPtr->cond, &sharedDataPtr->mutex, &ts);
-        if (errno)
-        {
-            LE_ERROR("pthread_cond_timedwait failed: %s", strerror(errno));
-
-            close(socketFd);
-            close(epollFd);
-            errno = LE_TIMEOUT;
-            return (void *) &errno;
-        }
-    }
-
-    pthread_mutex_unlock(&sharedDataPtr->mutex);
-
-    if (connect(socketFd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
-    {
-        LE_ERROR("connect failed: %s", strerror(errno));
-
-        close(socketFd);
-        close(epollFd);
-        errno = LE_COMM_ERROR;
-        return (void *) &errno;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT",
-                "\r\n TYPE: ACT\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "ATI",
-                "\r\nManufacturer: Sierra Wireless, Incorporated\r\n"
-                "Model: WP8548\r\n"
-                "Revision: SWI9X15Y_07.10.04.00 "
-                "12c1700 jenkins 2016/06/02 02:52:45\r\n"
-                "IMEI: 359377060009700\r\n"
-                "IMEI SV: 42\r\n"
-                "FSN: LL542500111503\r\n"
-                "+GCAP: +CGSM\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "ATASVE",
-                "\r\nA TYPE: ACT\r\n"
-                "\r\nS TYPE: ACT\r\n"
-                "\r\nV TYPE: ACT\r\n"
-                "\r\nE TYPE: ACT\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "ATASVEB",
-                "\r\nA TYPE: ACT\r\n"
-                "\r\nS TYPE: ACT\r\n"
-                "\r\nV TYPE: ACT\r\n"
-                "\r\nE TYPE: ACT\r\n"
-                "\r\nERROR\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+ABCD;+ABCD=?;+ABCD?",
-                "\r\n+ABCD TYPE: ACT\r\n"
-                "\r\n+ABCD TYPE: TEST\r\n"
-                "\r\n+ABCD TYPE: READ\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd,
-                "ATE0S3?;+ABCD?;S0?S0=2E1;V0S0=\"3\"+ABCD",
-                "\r\nE TYPE: PARA\r\n"
-                "E PARAM 0: 0\r\n"
-                "\r\nS TYPE: READ\r\n"
-                "S PARAM 0: 3\r\n"
-                "\r\n+ABCD TYPE: READ\r\n"
-                "\r\nS TYPE: READ\r\n"
-                "S PARAM 0: 0\r\n"
-                "\r\nS TYPE: PARA\r\n"
-                "S PARAM 0: 0\r\n"
-                "S PARAM 1: 2\r\n"
-                "\r\nE TYPE: PARA\r\n"
-                "E PARAM 0: 1\r\n"
-                "\r\nV TYPE: PARA\r\n"
-                "V PARAM 0: 0\r\n"
-                "\r\nS TYPE: PARA\r\n"
-                "S PARAM 0: 0\r\n"
-                "S PARAM 1: 3\r\n"
-                "\r\n+ABCD TYPE: ACT\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd,"AT&FE0V1&C1&D2S95=47S0=0",
-                "\r\n&F TYPE: ACT\r\n"
-                "\r\nE TYPE: PARA\r\n"
-                "E PARAM 0: 0\r\n"
-                "\r\nV TYPE: PARA\r\n"
-                "V PARAM 0: 1\r\n"
-                "\r\n&C TYPE: PARA\r\n"
-                "&C PARAM 0: 1\r\n"
-                "\r\n&D TYPE: PARA\r\n"
-                "&D PARAM 0: 2\r\n"
-                "\r\nS TYPE: PARA\r\n"
-                "S PARAM 0: 95\r\n"
-                "S PARAM 1: 47\r\n"
-                "\r\nS TYPE: PARA\r\n"
-                "S PARAM 0: 0\r\n"
-                "S PARAM 1: 0\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+CBC=?",
-                "\r\n+CBC: (0-2),(1-100),(voltage)\r\n"
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+CBC",
-                "\r\n+CBC: 1,50,4190\r\n"
-                "\r\nOK\r\n"
-                "\r\n+CBC: 1,70,4190\r\n"
-                "\r\n+CBC: 2,100,4190\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "ATEEEEEEEEEEEEEEEEEEEEEEEEEEE"
-                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
-                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
-                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
-                "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
-                "\r\nERROR\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+DATA=?",
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = TestDataMode(socketFd, epollFd);
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+CBC",
-                "\r\n+CBC: 1,50,4190\r\n"
-                "\r\nOK\r\n"
-                "\r\n+CBC: 1,70,4190\r\n"
-                "\r\n+CBC: 2,100,4190\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+DEL="
-                "\"AT\",\"ATI\",\"AT+CBC\",\"AT+ABCD\",\"ATA\",\"AT&F\","
-                "\"ATS\",\"ATV\",\"AT&C\",\"AT&D\",\"ATE\",\"AT+DATA\"",
-                "\r\nOK\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+STOP?",
-                "\r\nERROR\r\n");
-    if (ret)
-    {
-        goto err;
-    }
-
-    ret = SendCommandsAndTest(socketFd, epollFd, "AT+STOP",
-                "");
-    if (ret)
-    {
-        goto err;
-    }
-
-    return NULL;
-
-    err:
-        close(socketFd);
-        close(epollFd);
-        errno = ret;
-        return (void *)&errno;
+    return TestResponses(fd, epollFd, expectedResponsePtr);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -525,9 +618,7 @@ static void* AtHost
 //--------------------------------------------------------------------------------------------------
 COMPONENT_INIT
 {
-    le_thread_Ref_t atServerThread;
     le_thread_Ref_t atHostThread;
-    int* retVal;
 
     // To reactivate for all DEBUG logs
 #ifdef DEBUG
@@ -535,37 +626,13 @@ COMPONENT_INIT
     le_log_SetFilterLevel(LE_LOG_DEBUG);
 #endif
 
+    memset(&SharedData, 0, sizeof(SharedData));
     SharedData.devPathPtr = "\0at-dev";
-    pthread_mutex_init(&SharedData.mutex, NULL);
-    pthread_cond_init(&SharedData.cond, NULL);
-    SharedData.ready = false;
+    SharedData.semRef = le_sem_Create("AtUnitTestSem", 0);
+    SharedData.atServerThread = le_thread_GetCurrent();
 
-    atServerThread = le_thread_Create(
-        "atServerThread", AtServer, (void *)&SharedData);
-    atHostThread = le_thread_Create(
-        "atHostThread", AtHost, (void *)&SharedData);
-
-    le_thread_SetJoinable(atHostThread);
-    le_thread_SetJoinable(atServerThread);
-
-    le_thread_Start(atServerThread);
+    atHostThread = le_thread_Create("atHostThread", AtHost, (void *)&SharedData);
     le_thread_Start(atHostThread);
 
-    le_thread_Join(atHostThread, (void *)&retVal);
-
-    le_thread_Cancel(atServerThread);
-    le_thread_Join(atServerThread, NULL);
-
-    pthread_mutex_destroy(&SharedData.mutex);
-    pthread_cond_destroy(&SharedData.cond);
-
-    if (retVal)
-    {
-        LE_ERROR("atServer Unit Test: FAIL: %s", strerror(*retVal));
-        exit(*retVal);
-    }
-
-    LE_INFO("atServer Unit Test: PASS");
-
-    exit(0);
+    AtServer(&SharedData);
 }

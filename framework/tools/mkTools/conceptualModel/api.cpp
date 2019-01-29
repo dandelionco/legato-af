@@ -2,7 +2,7 @@
 /**
  * @file api.cpp
  *
- * (C) Copyright, Sierra Wireless Inc.  Use of this work is subject to license.
+ * (C) Copyright, Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -60,6 +60,23 @@ const
 //--------------------------------------------------------------------------------------------------
 {
     return path::Combine(codeGenDir, "server/") + internalName + "_server.h";
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the set of paths for the generated Java files of an interface.
+ **/
+//--------------------------------------------------------------------------------------------------
+std::string ApiFile_t::GetJavaInterfaceFile
+(
+    const std::string& internalName
+)
+const
+//--------------------------------------------------------------------------------------------------
+{
+    std::string srcDir = path::Combine(codeGenDir, "src/io/legato/api/");
+
+    return srcDir + internalName + ".java";
 }
 
 
@@ -136,8 +153,10 @@ ApiFile_t* ApiFile_t::CreateApiFile
     }
     else
     {
-        throw mk::Exception_t("Internal error: Attempt to create duplicate API File object"
-                                   " for '" + canonicalPath + "' (" + path + ").");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Internal error: Attempt to create duplicate API File object"
+                               " for '%s' (%s)."), canonicalPath, path)
+        );
     }
 }
 
@@ -289,6 +308,25 @@ const
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Get the set of paths for the generated Python files of an interface.
+ **/
+//--------------------------------------------------------------------------------------------------
+void ApiTypesOnlyInterface_t::GetInterfaceFiles
+(
+    InterfacePythonFiles_t& pythonFiles
+)
+const
+//--------------------------------------------------------------------------------------------------
+{
+    std::string srcDir = path::Combine(componentPtr->workingDir, "");
+
+    pythonFiles.cExtensionBinaryFile = internalName + "_native.so";
+    pythonFiles.wrapperSourceFile = internalName + ".py";
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Constructor for client-side interfaces.
  **/
 //--------------------------------------------------------------------------------------------------
@@ -346,6 +384,28 @@ const
     javaFiles.implementationSourceFile = srcDir + "implementation/" + internalName + "Client.java";
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the set of paths for the generated Python files of an interface.
+ * NOTE: Python server code not yet implemented.
+ **/
+//--------------------------------------------------------------------------------------------------
+void ApiClientInterface_t::GetInterfaceFiles
+(
+    InterfacePythonFiles_t& pythonFiles
+)
+const
+//--------------------------------------------------------------------------------------------------
+{
+    std::string srcDir = path::Combine(componentPtr->workingDir, "");
+
+    pythonFiles.cExtensionBinaryFile = internalName + "_native.so";
+    pythonFiles.cExtensionObjectFile = internalName + "_native.o";
+    pythonFiles.wrapperSourceFile = internalName + ".py";
+    pythonFiles.cExtensionSourceFile = internalName + "_native.c";
+    pythonFiles.cdefSourceFile = internalName + "_cdef.h";
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -414,6 +474,26 @@ const
 
     javaFiles.interfaceSourceFile = srcDir + internalName + ".java";
     javaFiles.implementationSourceFile = srcDir + "implementation/" + internalName + "Server.java";
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the set of paths for the generated Python files of an interface.
+ * NOTE: Python server code not yet implemented.
+ **/
+//--------------------------------------------------------------------------------------------------
+void ApiServerInterface_t::GetInterfaceFiles
+(
+    InterfacePythonFiles_t& pythonFiles
+)
+const
+//--------------------------------------------------------------------------------------------------
+{
+    std::string srcDir = path::Combine(componentPtr->workingDir, "");
+
+    pythonFiles.cExtensionBinaryFile = internalName + "_native.so";
+    pythonFiles.wrapperSourceFile = internalName + ".py";
 }
 
 

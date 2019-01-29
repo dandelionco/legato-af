@@ -1,7 +1,7 @@
 /**
  * This module implements the unit tests for SMS API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -16,14 +16,79 @@
 #include "pa_sms_simu.h"
 
 #include "le_sim_local.h"
-#include "args.h"
 #include "main.h"
+#include "le_cfg_simu.h"
 
 
 le_log_Level_t* LE_LOG_LEVEL_FILTER_PTR;
 
 #define DUMPSIZE 132
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Server Service Reference
+ */
+//--------------------------------------------------------------------------------------------------
+static le_msg_ServiceRef_t _ServerServiceRef;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Client Session Reference for the current message received from a client
+ */
+//--------------------------------------------------------------------------------------------------
+static le_msg_SessionRef_t _ClientSessionRef;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the server service reference
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_ServiceRef_t le_mrc_GetServiceRef
+(
+    void
+)
+{
+    return _ServerServiceRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the client session reference for the current message
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_SessionRef_t le_mrc_GetClientSessionRef
+(
+    void
+)
+{
+    return _ClientSessionRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the server service reference
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_ServiceRef_t le_sim_GetServiceRef
+(
+    void
+)
+{
+    return _ServerServiceRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the client session reference for the current message
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_SessionRef_t le_sim_GetClientSessionRef
+(
+    void
+)
+{
+    return _ClientSessionRef;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -41,7 +106,7 @@ void DumpPdu
         uint32_t i = 0;
         char output[DUMPSIZE] = {0};
 
-        LE_DEBUG("%s:",labelStr);
+        LE_INFO("%s:",labelStr);
         for (i=0; i<bufferSize; i++)
         {
             index += sprintf(&output[index],"%02X",bufferPtr[i]);
@@ -51,7 +116,7 @@ void DumpPdu
                 index = 0;
             }
         }
-        LE_DEBUG("%s",output);
+        LE_INFO("%s",output);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -76,7 +141,7 @@ COMPONENT_INIT
     // Init pa simu
     pa_simSimu_Init();
 
-    pa_simSimu_SetPin("0000");
+    pa_simSimu_SetPIN("0000");
     pa_sms_SetSmsc("+33123456789");
 
     // Init the sms PA Simu

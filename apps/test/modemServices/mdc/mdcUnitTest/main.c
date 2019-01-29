@@ -1,30 +1,150 @@
 /**
  * This module implements the unit tests for MDC API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
 #include "legato.h"
 #include "interfaces.h"
 #include "le_mdc_local.h"
+#include "le_sim_local.h"
 #include "log.h"
 #include "pa_mdc.h"
 #include "pa_mdc_simu.h"
 #include "pa_mrc_simu.h"
 #include "pa_sim_simu.h"
-#include "args.h"
+#include "le_cfg_simu.h"
 
 #define NB_PROFILE  5
 #define IP_STR_SIZE     16
 
 typedef void (*StartStopAsyncFunc_t) (le_mdc_ProfileRef_t,le_mdc_SessionHandlerFunc_t,void*);
 
-static le_sem_Ref_t    ThreadSemaphore;
+static le_sem_Ref_t  ThreadSemaphore;
+static le_sem_Ref_t  SimRefreshSemaphore;
 static le_mdc_ProfileRef_t ProfileRef[NB_PROFILE];
 static le_mdc_SessionStateHandlerRef_t SessionStateHandler[NB_PROFILE];
 static le_mdc_ProfileRef_t ProfileRefReceivedByHandler = NULL;
 static bool ConnectionStateReceivedByHandler = false;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Server Service Reference
+ */
+//--------------------------------------------------------------------------------------------------
+static le_msg_ServiceRef_t _ServerServiceRef = NULL;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Client Session Reference for the current message received from a client
+ */
+//--------------------------------------------------------------------------------------------------
+static le_msg_SessionRef_t _ClientSessionRef = NULL;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the server service reference (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_ServiceRef_t le_mrc_GetServiceRef
+(
+    void
+)
+{
+    return _ServerServiceRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the client session reference for the current message (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_SessionRef_t le_mrc_GetClientSessionRef
+(
+    void
+)
+{
+    return _ClientSessionRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the server service reference (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_ServiceRef_t le_sim_GetServiceRef
+(
+    void
+)
+{
+    return _ServerServiceRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the client session reference for the current message (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_SessionRef_t le_sim_GetClientSessionRef
+(
+    void
+)
+{
+    return _ClientSessionRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * SIM Refresh handler: this handler is called on STK event
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void SimRefreshHandler
+(
+    le_sim_Id_t simId,
+    le_sim_StkEvent_t stkEvent,
+    void* contextPtr
+)
+{
+    LE_INFO("SIM refresh performed");
+    le_sem_Post(SimRefreshSemaphore);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Add a handler to monitor SIM refresh events
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void InitSimRefresh
+(
+    void
+)
+{
+    // Create a semaphore to coordinate the test when SIM is refreshed
+    SimRefreshSemaphore = le_sem_Create("SimRefreshSem", 0);
+
+    le_sim_AddSimToolkitEventHandler(SimRefreshHandler, NULL);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function should be called to trigger a refresh in le_sim side when a SIM information has
+ * changed in PA level
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void TriggerSimRefresh
+(
+    void
+)
+{
+    pa_simSimu_SetRefreshMode(LE_SIM_REFRESH_FCN);
+    pa_simSimu_SetRefreshStage(LE_SIM_STAGE_END_WITH_SUCCESS);
+    pa_simSimu_ReportSTKEvent(LE_SIM_REFRESH);
+    le_sem_Wait(SimRefreshSemaphore);
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -86,6 +206,9 @@ static void TestMdc_Configuration( void )
         LE_ASSERT((i+1) == le_mdc_GetProfileIndex(ProfileRef[i]));
     }
 
+    /* Map profile on network interface */
+    LE_ASSERT(le_mdc_MapProfileOnNetworkInterface(ProfileRef[0], "rmnet_data0") == LE_OK);
+
     /* Get and change APN of 1st profile */
     char apn[30];
     LE_ASSERT_OK(le_mdc_GetAPN(ProfileRef[0], apn, sizeof(apn)));
@@ -100,7 +223,7 @@ static void TestMdc_Configuration( void )
     LE_ASSERT_OK(le_mdc_GetProfileFromApn(newAPN, &profile));
     LE_ASSERT(profile == ProfileRef[0]);
 
-    /* Get and change authentification */
+    /* Get and change authentication */
     le_mdc_Auth_t auth;
     char userName[10];
     char password[10];
@@ -175,8 +298,11 @@ static void TestMdc_Configuration( void )
     /* Test default APNs */
     char homeMcc[] = "000";
     char homeMnc[] = "00";
-    pa_simSimu_ReportSimState(LE_SIM_READY);
+    pa_simSimu_ReportSIMState(LE_SIM_READY);
     pa_simSimu_SetHomeNetworkMccMnc(homeMcc, homeMnc);
+    pa_simSimu_SetCardIdentification("");
+    TriggerSimRefresh();
+
     LE_ASSERT(LE_FAULT == le_mdc_SetDefaultAPN(ProfileRef[2]));
 
     /* Set default APN based on MCC and MNC */
@@ -190,7 +316,10 @@ static void TestMdc_Configuration( void )
 
     /* Set default APN based on ICCID, MCC and MNC */
     char iccid[] = "89332422217010081060";
+
     pa_simSimu_SetCardIdentification(iccid);
+    TriggerSimRefresh();
+
     LE_ASSERT_OK(le_mdc_SetDefaultAPN(ProfileRef[2]));
     /* Check APN */
     LE_ASSERT_OK(le_mdc_GetAPN(ProfileRef[2], apn, sizeof(apn)));
@@ -517,6 +646,8 @@ static void* ThreadTestHandler( void* ctxPtr )
     le_sem_Post(ThreadSemaphore);
 
     le_event_RunLoop();
+
+    return NULL;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -554,6 +685,8 @@ static void* AsyncStartStopSessionThread
 
     // Run the event loop
     le_event_RunLoop();
+
+    return NULL;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -669,30 +802,29 @@ static void TestMdc_Stat
     void
 )
 {
-    pa_mdc_PktStatistics_t dataStatistics;
-    dataStatistics.transmittedBytesCount = 123456789;
-    dataStatistics.receivedBytesCount = 369258147;
-
-    /* Set the statistics value to the pa */
-    pa_mdcSimu_SetDataFlowStatistics(&dataStatistics);
-
     uint64_t rxBytes;
     uint64_t txBytes;
+    pa_mdc_PktStatistics_t dataStatistics;
+
+    /* Set the statistics value to the pa */
+    dataStatistics.transmittedBytesCount = 123456789;
+    dataStatistics.receivedBytesCount = 369258147;
+    pa_mdcSimu_SetDataFlowStatistics(&dataStatistics);
 
     /* Get the statistics and check the values */
-    le_result_t res = le_mdc_GetBytesCounters(&rxBytes, &txBytes);
-    LE_ASSERT(res == LE_OK);
+    LE_ASSERT_OK(le_mdc_GetBytesCounters(&rxBytes, &txBytes));
     LE_ASSERT(rxBytes == dataStatistics.receivedBytesCount);
     LE_ASSERT(txBytes == dataStatistics.transmittedBytesCount);
 
     /* Reset counter, check again statistics (0 values expected) */
-    res = le_mdc_ResetBytesCounter();
-    LE_ASSERT(res == LE_OK);
-
-    res = le_mdc_GetBytesCounters(&rxBytes, &txBytes);
-    LE_ASSERT(res == LE_OK);
+    LE_ASSERT_OK(le_mdc_ResetBytesCounter());
+    LE_ASSERT_OK(le_mdc_GetBytesCounters(&rxBytes, &txBytes));
     LE_ASSERT(rxBytes == 0);
     LE_ASSERT(txBytes == 0);
+
+    /* Stop and start statistics counters */
+    LE_ASSERT_OK(le_mdc_StopBytesCounter());
+    LE_ASSERT_OK(le_mdc_StartBytesCounter());
 }
 
 
@@ -741,23 +873,15 @@ static void TestMdc_StartStopAsync
 
 //--------------------------------------------------------------------------------------------------
 /**
- * main of the test
+ * Thread used to run MDC unit tests
  *
  */
 //--------------------------------------------------------------------------------------------------
-COMPONENT_INIT
+static void* TestThread
+(
+    void* context
+)
 {
-    // To reactivate for all DEBUG logs
-    // le_log_SetFilterLevel(LE_LOG_DEBUG);
-
-    // pa simu init */
-    pa_mdcSimu_Init();
-
-    /* init the le_mdc service */
-    le_mdc_Init();
-
-    /* init the pa_simu */
-    pa_simSimu_Init();
 
     LE_INFO("======== Start UnitTest of MDC API ========");
 
@@ -781,7 +905,39 @@ COMPONENT_INIT
 
     LE_INFO("======== UnitTest of MDC API ends with SUCCESS ========");
 
-    exit(0);
+    exit(EXIT_SUCCESS);
+    return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * main of the test
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+COMPONENT_INIT
+{
+    // To reactivate for all DEBUG logs
+    le_log_SetFilterLevel(LE_LOG_DEBUG);
+
+    /* init the pa_simu */
+    pa_simSimu_Init();
+
+    // Init le_sim
+    le_sim_Init();
+
+    // pa simu init */
+    pa_mdcSimu_Init();
+
+    /* init the le_mdc service */
+    le_mdc_Init();
+
+    /* Add a handler to monitor SIM refresh and synchronize the tests */
+    InitSimRefresh();
+
+    // Start unit tests
+    le_thread_Start(le_thread_Create("TestThread", TestThread,NULL));
+
 }
 
 

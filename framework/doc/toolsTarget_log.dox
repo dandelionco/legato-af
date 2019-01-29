@@ -1,6 +1,6 @@
 /** @page toolsTarget_log log
 
-Use the Log tool to set logging variables for components. Also see @ref howToLogs.
+Use the Log tool to set logging variables for components. Also see @ref conceptsLogs.
 
 Here's more detailed info on the @ref c_logging.
 
@@ -96,6 +96,6 @@ Translated command to send to the log daemon:
 
 <HR>
 
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 
 **/

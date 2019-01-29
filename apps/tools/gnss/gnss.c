@@ -4,7 +4,7 @@
  *
  * Tool to debug/monitor GNSS device.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -30,14 +30,31 @@
 
 //-------------------------------------------------------------------------------------------------
 /**
+ * Max characters for constellations name.
+ */
+//-------------------------------------------------------------------------------------------------
+#define CONSTELLATIONS_NAME_LEN     256
+
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * Base 10
+ */
+//-------------------------------------------------------------------------------------------------
+#define BASE10 10
+
+//-------------------------------------------------------------------------------------------------
+/**
  * Different type of constellation.
  * {@
  */
 //-------------------------------------------------------------------------------------------------
-#define CONSTELLATION_GPS           1
-#define CONSTELLATION_GLONASS       2
-#define CONSTELLATION_BEIDOU        4
-#define CONSTELLATION_GALILEO       8
+#define CONSTELLATION_GPS           0x1
+#define CONSTELLATION_GLONASS       0x2
+#define CONSTELLATION_BEIDOU        0x4
+#define CONSTELLATION_GALILEO       0x8
+#define CONSTELLATION_UNUSED        0x10  // not supported : this constellation cannot be set.
+#define CONSTELLATION_QZSS          0x20
 // @}
 
 //-------------------------------------------------------------------------------------------------
@@ -55,7 +72,6 @@ static le_gnss_PositionHandlerRef_t PositionHandlerRef;
 //-------------------------------------------------------------------------------------------------
 static char ParamsName[128] = "";
 
-
 //-------------------------------------------------------------------------------------------------
 /**
  * Print the help text to stdout.
@@ -66,104 +82,149 @@ void PrintGnssHelp
     void
 )
 {
-    puts("\
-            NAME:\n\
-                gnss - Used to access different functionality of gnss\n\
-            \n\
-            SYNOPSIS:\n\
-                gnss help\n\
-                gnss <enable/disable>\n\
-                gnss <start/stop>\n\
-                gnss restart <RestartType>\n\
-                gnss fix [FixTime in seconds]\n\
-                gnss get <parameter>\n\
-                gnss get posInfo\n\
-                gnss set constellation <ConstellationType>\n\
-                gnss set agpsMode <ModeType>\n\
-                gnss set acqRate <acqRate in milliseconds>\n\
-                gnss set nmeaSentences <nmeaMask>\n\
-                gnss watch [WatchPeriod in seconds]\n\
-            \n\
-            DESCRIPTION:\n\
-                gnss help\n\
-                    - Print this help message and exit\n\
-                \n\
-                gnss <enable/disable>\n\
-                    - Enable/disable gnss device\n\
-                \n\
-                gnss <start/stop>\n\
-                    - Start/stop gnss device\n\
-                \n\
-                gnss restart <RestartType>\n\
-                    - Restart gnss device. Allowed when device in 'active' state. Restart type can\n\
-                      be as follows:\n\
-                         - hot\n\
-                         - warm\n\
-                         - cold\n\
-                         - factory\n\
-                    See GNSS topics in the Legato docs for more info on these restart types.\n\
-                \n\
-                gnss fix [FixTime in seconds]\n\
-                    - Loop for certain time for first position fix. Here, FixTime is optional.\n\
-                      Default time(60s) will be used if not specified\n\
-                \n\
-                gnss get <parameter>\n\
-                    - Used to get different gnss parameter. Parameters and their descriptions as follow:\n\
-                         - ttff --> Time to First Fix (milliseconds)\n\
-                         - acqRate       --> Acquisition Rate (unit milliseconds)\n\
-                         - agpsMode      --> Agps Mode\n\
-                         - nmeaSentences --> Enabled NMEA sentences (bit mask)\n\
-                         - constellation --> GNSS constellation\n\
-                         - posState      --> Position fix state(no fix, 2D, 3D etc)\n\
-                         - loc2d         --> 2D location (latitude, longitude, horizontal accuracy)\n\
-                         - alt           --> Altitude (Altitude, Vertical accuracy)\n\
-                         - loc3d         --> 3D location (latitude, longitude, altitude, horizontal accuracy,\n\
-                                             vertical accuracy)\n\
-                         - gpsTime       --> Get last updated gps time\n\
-                         - time          --> Time of the last updated location\n\
-                         - timeAcc       --> Time accuracy in milliseconds\n\
-                         - date          --> Date of the last updated location\n\
-                         - hSpeed        --> Horizontal speed(Horizontal Speed, Horizontal Speed accuracy)\n\
-                         - vSpeed        --> Vertical speed(Vertical Speed, Vertical Speed accuracy)\n\
-                         - motion        --> Motion data (Horizontal Speed, Horizontal Speed accuracy,\n\
-                                             Vertical Speed, Vertical Speed accuracy)\n\
-                         - direction     --> Direction indication\n\
-                         - satInfo       --> Satellites Vehicle information\n\
-                         - satStat       --> Satellites Vehicle status\n\
-                         - dop           --> Dilution Of Precision for the fixed position\n\
-                         - posInfo       --> Get all current position info of the device\n\
-                \n\
-                gnss set constellation <ConstellationType>\n\
-                    - Used to set constellation. Allowed when device in 'ready' state. May require\n\
-                      platform reboot, refer to platform documentation for details. ConstellationType\n\
-                      can be as follows:\n\
-                         - 1 --> GPS\n\
-                         - 2 --> GLONASS\n\
-                         - 4 --> BEIDOU\n\
-                         - 8 --> GALILEO\n\
-                      Please use sum of the values to set multiple constellation, e.g., 3 for GPS+GLONASS\n\
-                      15 for GPS+GLONASS+BEIDOU+GALILEO\n\
-                \n\
-                gnss set agpsMode <ModeType>\n\
-                    - Used to set agps mode. ModeType can be as follows:\n\
-                         - alone --> Standalone agps mode\n\
-                         - msBase --> MS-based agps mode\n\
-                         - msAssist --> MS-assisted agps mode\n\
-                \n\
-                gnss set acqRate <acqRate in milliseconds>\n\
-                    - Used to set acquisition rate. Available when device is in 'ready' state.\n\
-                \n\
-                gnss set nmeaSentences <nmeaMask>\n\
-                    - Used to set the enabled NMEA sentences. \n\
-                      Bit mask should be set with hexadecimal values, e.g., 7FFF\n\
-                \n\
-                gnss watch [WatchPeriod in seconds]\n\
-                    - Used to monitor all gnss information (position, speed, satellites used, etc.).\n\
-                      Here, WatchPeriod is optional. Default time(600s) will be used if not specified.\n\
-                \n\
-            Please note, some commands require gnss device to be in specific state (and platform reboot)\n\
-            to produce valid result. See GNSS topics in the Legato docs for more info.\n\
-         ");
+    puts("\n\t\tNAME:\n"
+         "\t\t\tgnss - Used to access different functionality of gnss\n\n"
+         "\t\tSYNOPSIS:\n"
+         "\t\t\tgnss help\n"
+         "\t\t\tgnss <enable/disable>\n"
+         "\t\t\tgnss <start/stop>\n"
+         "\t\t\tgnss restart <RestartType>\n"
+         "\t\t\tgnss fix [FixTime in seconds]\n"
+         "\t\t\tgnss get <parameter>\n"
+         "\t\t\tgnss get posInfo\n"
+         "\t\t\tgnss set constellation <ConstellationType>\n"
+         "\t\t\tgnss set constArea <Constellation> <ConstellationArea>\n"
+         "\t\t\tgnss set agpsMode <ModeType>\n"
+         "\t\t\tgnss set acqRate <acqRate in milliseconds>\n"
+         "\t\t\tgnss set nmeaSentences <nmeaMask>\n"
+         "\t\t\tgnss set minElevation <minElevation in degrees>\n"
+         "\t\t\tgnss watch [WatchPeriod in seconds]\n\n"
+         "\t\tDESCRIPTION:\n"
+         "\t\t\tgnss help\n"
+         "\t\t\t\t- Print this help message and exit\n\n"
+         "\t\t\tgnss <enable/disable>\n"
+         "\t\t\t\t- Enable/disable gnss device\n\n"
+         "\t\t\tgnss <start/stop>\n"
+         "\t\t\t\t- Start/stop gnss device\n\n"
+         "\t\t\tgnss restart <RestartType>\n"
+         "\t\t\t\t- Restart gnss device. Allowed when device in 'active' state. Restart type can\n"
+         "\t\t\t\t  be as follows:\n"
+         "\t\t\t\t\t- hot\n"
+         "\t\t\t\t\t- warm\n"
+         "\t\t\t\t\t- cold\n"
+         "\t\t\t\t\t- factory\n"
+         "\t\t\t\tTo know more about these restart types, please look at: \n"
+         "\t\t\t\t           https://docs.legato.io/latest/c_gnss.html\n\n"
+         "\t\t\tgnss fix [FixTime in seconds]\n"
+         "\t\t\t\t- Loop for certain time for first position fix. Here, FixTime is optional.\n"
+         "\t\t\t\t  Default time(60s) will be used if not specified\n\n"
+         "\t\t\tgnss get <parameter>\n"
+         "\t\t\t\t- Used to get different gnss parameter.\n"
+         "\t\t\t\t  Follows parameters and their descriptions :\n"
+         "\t\t\t\t\t- ttff          --> Time to First Fix (milliseconds)\n"
+         "\t\t\t\t\t- acqRate       --> Acquisition Rate (unit milliseconds)\n"
+         "\t\t\t\t\t- agpsMode      --> Agps Mode\n"
+         "\t\t\t\t\t- nmeaSentences --> Enabled NMEA sentences (bit mask)\n"
+         "\t\t\t\t\t- minElevation  --> Minimum elevation in degrees\n"
+         "\t\t\t\t\t- constellation --> GNSS constellation\n"
+         "\t\t\t\t\t- constArea     --> Area for each constellation\n"
+         "\t\t\t\t\t- posState      --> Position fix state(no fix, 2D, 3D etc)\n"
+         "\t\t\t\t\t- loc2d         --> 2D location (latitude, longitude, horizontal accuracy)\n"
+         "\t\t\t\t\t- alt           --> Altitude (Altitude, Vertical accuracy)\n"
+         "\t\t\t\t\t- altOnWgs84    --> Altitude with respect to the WGS-84 ellipsoid\n"
+         "\t\t\t\t\t- loc3d         --> 3D location (latitude, longitude, altitude,\n"
+         "\t\t\t\t\t                horizontal accuracy, vertical accuracy)\n"
+         "\t\t\t\t\t- gpsTime       --> Get last updated gps time\n"
+         "\t\t\t\t\t- time          --> Time of the last updated location\n"
+         "\t\t\t\t\t- epochTime     --> Epoch time of the last updated location\n"
+         "\t\t\t\t\t- timeAcc       --> Time accuracy in milliseconds\n"
+         "\t\t\t\t\t- LeapSeconds   --> Leap seconds in advance in seconds\n"
+         "\t\t\t\t\t- date          --> Date of the last updated location\n"
+         "\t\t\t\t\t- hSpeed        --> Horizontal speed(Horizontal Speed, Horizontal\n"
+         "\t\t\t\t\t                    Speed accuracy)\n"
+         "\t\t\t\t\t- vSpeed        --> Vertical speed(Vertical Speed, Vertical Speed accuracy)\n"
+         "\t\t\t\t\t- motion        --> Motion data (Horizontal Speed, Horizontal Speed accuracy,\n"
+         "\t\t\t\t\t                    Vertical Speed, Vertical Speed accuracy)\n"
+         "\t\t\t\t\t- direction     --> Direction indication\n"
+         "\t\t\t\t\t- satInfo       --> Satellites Vehicle information\n"
+         "\t\t\t\t\t- satStat       --> Satellites Vehicle status\n"
+         "\t\t\t\t\t- dop           --> Dilution of Precision for the fixed position. Displayed\n"
+         "\t\t\t\t\t-               in all resolutions: (0 to 3 digits after the decimal point) \n"
+         "\t\t\t\t\t- posInfo       --> Get all current position info of the device\n"
+         "\t\t\t\t\t- status        --> Get gnss device's current status\n\n"
+         "\t\t\tgnss set constellation <ConstellationType>\n"
+         "\t\t\t\t- Used to set constellation. Allowed when device in 'ready' state. May require\n"
+         "\t\t\t\t  platform reboot, please look platform documentation for details.\n"
+         "\t\t\t\t  ConstellationType can be as follows:\n"
+         "\t\t\t\t\t- 1 ---> GPS\n"
+         "\t\t\t\t\t- 2 ---> GLONASS\n"
+         "\t\t\t\t\t- 4 ---> BEIDOU\n"
+         "\t\t\t\t\t- 8 ---> GALILEO\n"
+         "\t\t\t\t\t- 16 --> Unused\n"
+         "\t\t\t\t\t- 32 --> QZSS\n"
+         "\t\t\t\tPlease use sum of the values to set multiple constellation, e.g.\n"
+         "\t\t\t\t3 for GPS+GLONASS, 47 for GPS+GLONASS+BEIDOU+GALILEO+QZSS\n\n"
+         "\t\t\tgnss set constArea <Constellation> <ConstellationArea>\n"
+         "\t\t\t\t- Used to set constellation area. Allowed when device in 'ready' state. May\n"
+         "\t\t\t\t  require platform reboot, please look platform documentation for details.\n"
+         "\t\t\t\t  Constellation can be as follows:\n"
+         "\t\t\t\t\t- 1 ---> GPS\n"
+         "\t\t\t\t\t- 2 ---> Unused\n"
+         "\t\t\t\t\t- 3 ---> GLONASS\n"
+         "\t\t\t\t\t- 4 ---> GALILEO\n"
+         "\t\t\t\t\t- 5 ---> BEIDOU\n"
+         "\t\t\t\t\t- 6 ---> QZSS\n"
+         "\t\t\t\t  ConstellationArea can be as follows:\n"
+         "\t\t\t\t\t- 0 ---> UNSET_AREA\n"
+         "\t\t\t\t\t- 1 ---> WORLDWIDE_AREA\n"
+         "\t\t\t\t\t- 2 ---> OUTSIDE_US_AREA\n"
+         "\t\t\tgnss set agpsMode <ModeType>\n"
+         "\t\t\t\t- Used to set agps mode. ModeType can be as follows:\n"
+         "\t\t\t\t\t- alone -----> Standalone agps mode\n"
+         "\t\t\t\t\t- msBase ----> MS-based agps mode\n"
+         "\t\t\t\t\t- msAssist --> MS-assisted agps mode\n\n"
+         "\t\t\tgnss set acqRate <acqRate in milliseconds>\n"
+         "\t\t\t\t- Used to set acquisition rate.\n"
+         "\t\t\t\t  Please note that it is available when the device is 'ready' state.\n\n"
+         "\t\t\tgnss set nmeaSentences <nmeaMask>\n"
+         "\t\t\t\t- Used to set the enabled NMEA sentences. \n"
+         "\t\t\t\t  Bit mask should be set with hexadecimal values, e.g. 7FFF\n\n"
+         "\t\t\t\t- Used to set nmea sentences. Allowed when device in 'ready' state. May require\n"
+         "\t\t\t\t  platform reboot, please look platform documentation for details.\n"
+         "\t\t\t\t  nmeaMask can be as follows (the values are in hexadecimal):\n"
+         "\t\t\t\t\t- 1 ------> GPGGA\n"
+         "\t\t\t\t\t- 2 ------> GPGSA\n"
+         "\t\t\t\t\t- 4 ------> GPGSV\n"
+         "\t\t\t\t\t- 8 ------> GPRMC\n"
+         "\t\t\t\t\t- 10 -----> GPVTG\n"
+         "\t\t\t\t\t- 20 -----> GLGSV\n"
+         "\t\t\t\t\t- 40 -----> GNGNS\n"
+         "\t\t\t\t\t- 80 -----> GNGSA\n"
+         "\t\t\t\t\t- 100 ----> GAGGA\n"
+         "\t\t\t\t\t- 200 ----> GAGSA\n"
+         "\t\t\t\t\t- 400 ----> GAGSV\n"
+         "\t\t\t\t\t- 800 ----> GARMC\n"
+         "\t\t\t\t\t- 1000 ---> GAVTG\n"
+         "\t\t\t\t\t- 2000 ---> PSTIS\n"
+         "\t\t\t\t\t- 4000 ---> PQXFI\n"
+         "\t\t\t\t\t- 8000 ---> PTYPE\n"
+         "\t\t\t\t\t- 10000 --> GPGRS\n"
+         "\t\t\t\t\t- 20000 --> GPGLL\n"
+         "\t\t\t\t\t- 40000 --> DEBUG\n"
+         "\t\t\t\t\t- 80000 --> GPDTM\n"
+         "\t\t\t\t\t- 100000 -> GAGNS\n"
+         "\t\t\tgnss set minElevation <minElevation in degrees>\n"
+         "\t\t\t\t- Used to set the minimum elevation in degrees [range 0..90].\n\n"
+         "\t\t\tgnss watch [WatchPeriod in seconds]\n"
+         "\t\t\t\t- Used to monitor all gnss information(position, speed, satellites used etc).\n"
+         "\t\t\t\t  Here, WatchPeriod is optional. Default time(600s) will be used if not\n"
+         "\t\t\t\t  specified\n\n"
+         "\tPlease note, some commands require gnss device to be in specific state\n"
+         "\t(and platform reboot) to produce valid result. Please look :\n"
+         "\thttps://docs.legato.io/latest/howToGNSS.html,\n"
+         "\thttps://docs.legato.io/latest/c_gnss.html and platform documentation for more\n"
+         "\tdetails.\n"
+         );
 }
 
 
@@ -204,8 +265,7 @@ static int Enable
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -247,8 +307,7 @@ static int Disable
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -289,8 +348,7 @@ static int Start
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -331,8 +389,7 @@ static int Stop
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -395,8 +452,7 @@ static int Restart
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -411,14 +467,13 @@ static int Restart
 //-------------------------------------------------------------------------------------------------
 static int SetAcquisitionRate
 (
-    const char* acqRateStr          ///< [IN] Acquisition rate in milliseconds.
+    const char* acqRateStr          ///< [IN] Acquisition rate in milliseconds
 )
 {
     char *end;
-    errno = 0;
-    uint32_t acqRate = strtoul(acqRateStr, &end, 10);
+    uint32_t acqRate = strtoul(acqRateStr, &end, BASE10);
 
-    if (end[0] != '\0' || errno != 0)
+    if ('\0' != end[0])
     {
         printf("Bad acquisition rate: %s\n", acqRateStr);
         return EXIT_FAILURE;
@@ -448,10 +503,55 @@ static int SetAcquisitionRate
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function sets the GNSS minimum elevation.
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int SetMinElevation
+(
+    const char* minElevationPtr           ///< [IN] Minimum elevation in degrees [range 0..90]
+)
+{
+    char *end;
+    uint32_t minElevation = strtoul(minElevationPtr, &end, BASE10);
+
+    if ('\0' != end[0])
+    {
+        printf("Bad minimum elevation: %s\n", minElevationPtr);
+        return EXIT_FAILURE;
+    }
+
+    le_result_t result = le_gnss_SetMinElevation(minElevation);
+
+    switch (result)
+    {
+        case LE_OK:
+            printf("Success!\n");
+            break;
+        case LE_FAULT:
+            printf("Failed to set the minimum elevation\n");
+            break;
+        case LE_UNSUPPORTED:
+            printf("Setting the minimum elevation is not supported\n");
+            break;
+        case LE_OUT_OF_RANGE:
+            printf("The minimum elevation is above range\n");
+            break;
+        default:
+            printf("Invalid status\n");
+            break;
+    }
+
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -464,10 +564,10 @@ static int SetAcquisitionRate
 //-------------------------------------------------------------------------------------------------
 static int SetConstellation
 (
-    const char* constellationPtr
+    const char* constellationPtr   ///< [IN] GNSS constellation used in solution
 )
 {
-    int32_t constellationMask = 0;
+    uint32_t constellationMask = 0;
 
     char *endPtr;
     errno = 0;
@@ -479,32 +579,39 @@ static int SetConstellation
         exit(EXIT_FAILURE);
     }
 
-    char constellationStr[256] = "[";
+    char constellationStr[CONSTELLATIONS_NAME_LEN] = "[";
+
     if (constellationSum & CONSTELLATION_GPS)
     {
-        constellationMask |= LE_GNSS_CONSTELLATION_GPS;
+        constellationMask |= (uint32_t)LE_GNSS_CONSTELLATION_GPS;
         constellationSum -= CONSTELLATION_GPS;
-        strcat(constellationStr, "GPS ");
+        strncat(constellationStr, "GPS ", sizeof(constellationStr)-strlen(constellationStr)-1);
     }
     if (constellationSum & CONSTELLATION_GLONASS)
     {
-        constellationMask |= LE_GNSS_CONSTELLATION_GLONASS;
+        constellationMask |= (uint32_t)LE_GNSS_CONSTELLATION_GLONASS;
         constellationSum -= CONSTELLATION_GLONASS;
-        strcat(constellationStr, "GLONASS ");
+        strncat(constellationStr, "GLONASS ", sizeof(constellationStr)-strlen(constellationStr)-1);
     }
     if (constellationSum & CONSTELLATION_BEIDOU)
     {
-        constellationMask = LE_GNSS_CONSTELLATION_BEIDOU;
+        constellationMask |= (uint32_t)LE_GNSS_CONSTELLATION_BEIDOU;
         constellationSum -= CONSTELLATION_BEIDOU;
-        strcat(constellationStr, "BEIDOU ");
+        strncat(constellationStr, "BEIDOU ", sizeof(constellationStr)-strlen(constellationStr)-1);
     }
     if (constellationSum & CONSTELLATION_GALILEO)
     {
-        constellationMask = LE_GNSS_CONSTELLATION_GALILEO;
+        constellationMask |= (uint32_t)LE_GNSS_CONSTELLATION_GALILEO;
         constellationSum -= CONSTELLATION_GALILEO;
-        strcat(constellationStr, "GALILEO");
+        strncat(constellationStr, "GALILEO ", sizeof(constellationStr)-strlen(constellationStr)-1);
     }
-    strcat(constellationStr, "]");
+    if (constellationSum & CONSTELLATION_QZSS)
+    {
+        constellationMask |= (uint32_t)LE_GNSS_CONSTELLATION_QZSS;
+        constellationSum -= CONSTELLATION_QZSS;
+        strncat(constellationStr, "QZSS ", sizeof(constellationStr)-strlen(constellationStr)-1);
+    }
+    strncat(constellationStr, "]", sizeof(constellationStr)-strlen(constellationStr)-1);
 
     LE_INFO("Setting constellation %s",constellationStr);
 
@@ -515,9 +622,8 @@ static int SetConstellation
         exit(EXIT_FAILURE);
     }
 
-    le_result_t result = le_gnss_SetConstellation(
-                                                  (le_gnss_ConstellationBitMask_t)constellationMask
-                                                 );
+    le_result_t result =
+       le_gnss_SetConstellation((le_gnss_ConstellationBitMask_t)constellationMask);
 
     switch(result)
     {
@@ -528,7 +634,8 @@ static int SetConstellation
             printf("Setting constellation %s is not supported\n", constellationStr);
             break;
         case LE_NOT_PERMITTED:
-            printf("The GNSS device is not initialized, disabled or active. See logs for details\n");
+            printf("The GNSS device is not initialized, disabled or active. See logs for  \
+                    details\n");
             break;
         case LE_FAULT:
             printf("Failed!\n");
@@ -538,10 +645,64 @@ static int SetConstellation
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function sets the area for a given constellation
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int SetConstellationArea
+(
+    const char* constellationPtr,      ///< [IN] GNSS constellation used in solution
+    const char* constellationAreaPtr   ///< [IN] GNSS constellation area
+)
+{
+    char *endPtr;
+    errno = 0;
+    int constellation = strtoul(constellationPtr, &endPtr, BASE10);
+    int constArea = strtoul(constellationAreaPtr, &endPtr, BASE10);
+
+    if (('\0' != endPtr[0]) || (0 != errno) || (0 == constellation) || (0 == constArea))
+    {
+        fprintf(stderr, "Bad constellation or area parameter: %s %s\n", constellationPtr,
+                                                                        constellationAreaPtr);
+        exit(EXIT_FAILURE);
+    }
+
+    le_result_t result = le_gnss_SetConstellationArea((le_gnss_Constellation_t)constellation,
+                                                      (le_gnss_ConstellationArea_t) constArea);
+    switch(result)
+    {
+        case LE_OK:
+            printf("Success!\n");
+            break;
+        case LE_UNSUPPORTED:
+            printf("Setting area %d for constellation %d is not supported\n",
+                   constArea, constellation);
+            break;
+        case LE_NOT_PERMITTED:
+            printf("The GNSS device is not initialized, disabled or active. See logs for  \
+                    details\n");
+            break;
+        case LE_FAULT:
+            printf("Failed!\n");
+            break;
+        case LE_BAD_PARAMETER:
+            printf("Invalid area\n");
+            break;
+        default:
+            printf("Bad return value: %d\n", result);
+            break;
+    }
+
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -554,7 +715,7 @@ static int SetConstellation
 //-------------------------------------------------------------------------------------------------
 static int SetAgpsMode
 (
-    const char* agpsModePtr
+    const char* agpsModePtr    ///< [IN] agps to set
 )
 {
     le_gnss_AssistedMode_t suplAgpsMode;
@@ -598,8 +759,7 @@ static int SetAgpsMode
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -614,7 +774,7 @@ static int SetAgpsMode
 //-------------------------------------------------------------------------------------------------
 static int SetNmeaSentences
 (
-    const char* nmeaMaskStr     ///< [IN] Enabled NMEA sentences bit mask.
+    const char* nmeaMaskStr     ///< [IN] Enabled NMEA sentences bit mask
 )
 {
     int nmeaMask = le_hex_HexaToInteger(nmeaMaskStr);
@@ -650,14 +810,13 @@ static int SetNmeaSentences
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
 //-------------------------------------------------------------------------------------------------
 /**
- * This function gets ttff(Time to First Fix) value.
+ * This function gets TTFF (Time to First Fix) value.
  *
  * @return
  *     - EXIT_SUCCESS on success.
@@ -666,19 +825,26 @@ static int SetNmeaSentences
 //-------------------------------------------------------------------------------------------------
 static int GetTtff
 (
-    void
+    le_gnss_State_t state    ///< [IN] GNSS state
 )
 {
     uint32_t ttff;
-    le_result_t result = le_gnss_GetTtff(&ttff);
+    le_result_t result;
 
+    if (LE_GNSS_STATE_ACTIVE != state)
+    {
+        printf("GNSS is not in active state!\n");
+        return EXIT_FAILURE;
+    }
+
+    result = le_gnss_GetTtff(&ttff);
     switch (result)
     {
         case LE_OK:
             printf("TTFF(Time to First Fix) = %ums\n", ttff);
             break;
         case LE_BUSY:
-            printf("The position is not fixed and TTFF can't be measured. See logs for details\n");
+            printf("TTFF not calculated (Position not fixed)\n");
             break;
         case LE_NOT_PERMITTED:
             printf("The GNSS device is not started or disabled. See logs for details\n");
@@ -688,8 +854,7 @@ static int GetTtff
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -730,8 +895,7 @@ static int GetAgpsMode
         printf("Failed! See log for details\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -754,32 +918,78 @@ static int GetConstellation
 
     if (result == LE_OK)
     {
-        if (constellationMask & LE_GNSS_CONSTELLATION_GPS)
-        {
-            printf("GPS activated\n");
-        }
-        if (constellationMask & LE_GNSS_CONSTELLATION_GLONASS)
-        {
-            printf("GLONASS activated\n");
-        }
-        if (constellationMask & LE_GNSS_CONSTELLATION_BEIDOU)
-        {
-            printf("BEIDOU activated\n");
-        }
-        if (constellationMask & LE_GNSS_CONSTELLATION_GALILEO)
-        {
-            printf("BEIDOU activated\n");
-        }
+        printf("ConstellationType %d\n", constellationMask);
+
+        (constellationMask & LE_GNSS_CONSTELLATION_GPS)     ? printf("GPS activated\n") :
+                                                              printf("GPS not activated\n");
+        (constellationMask & LE_GNSS_CONSTELLATION_GLONASS) ? printf("GLONASS activated\n") :
+                                                              printf("GLONASS not activated\n");
+        (constellationMask & LE_GNSS_CONSTELLATION_BEIDOU)  ? printf("BEIDOU activated\n") :
+                                                              printf("BEIDOU not activated\n");
+        (constellationMask & LE_GNSS_CONSTELLATION_GALILEO) ? printf("GALILEO activated\n") :
+                                                              printf("GALILEO not activated\n");
+        (constellationMask & LE_GNSS_CONSTELLATION_QZSS)    ? printf("QZSS activated\n") :
+                                                              printf("QZSS not activated\n");
     }
     else
     {
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function gets the area of each constellation of gnss device.
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int GetConstellationArea
+(
+    void
+)
+{
+    le_gnss_ConstellationArea_t constellationArea;
+    le_gnss_Constellation_t constType = LE_GNSS_SV_CONSTELLATION_GPS;
+    le_result_t result;
+    static const char *tabConstellation[] =
+    {
+        "UNDEFINED CONSTELLATION",
+        "GPS CONSTELLATION",
+        "SBAS CONSTELLATION",
+        "GLONASS CONSTELLATION ",
+        "GALILEO CONSTELLATION",
+        "BEIDOU CONSTELLATION",
+        "QZSS CONSTELLATION",
+    };
+
+    do
+    {
+        result = le_gnss_GetConstellationArea(constType, &constellationArea);
+        if (LE_OK == result)
+        {
+            printf("%s area %d\n", tabConstellation[constType], constellationArea);
+        }
+        else if (LE_UNSUPPORTED == result)
+        {
+            printf("%s unsupported area\n", tabConstellation[constType]);
+        }
+        else
+        {
+            printf("Failed! See log for details!\n");
+            return EXIT_FAILURE;
+        }
+        constType++;
+    }
+    while (LE_GNSS_SV_CONSTELLATION_MAX != constType);
+
+    return EXIT_SUCCESS;
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -814,10 +1024,45 @@ static int GetAcquisitionRate
             break;
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function gets the GNSS minimum elevation.
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int GetMinElevation
+(
+    void
+)
+{
+    uint8_t  minElevation;
+    le_result_t result = le_gnss_GetMinElevation(&minElevation);
+
+    switch (result)
+    {
+        case LE_OK:
+            printf("Minimum elevation: %d\n", minElevation);
+            break;
+        case LE_FAULT:
+            printf("Failed to get the minimum elevation. See logs for details\n");
+            break;
+        case LE_UNSUPPORTED:
+            printf("Request not supported\n");
+            break;
+        default:
+            printf("Invalid status\n");
+            break;
+    }
+
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -900,6 +1145,30 @@ static int GetNmeaSentences
             {
                 printf("\tPQXFI (Proprietary Qualcomm eXtended Fix Information) enabled\n");
             }
+            if (nmeaMask & LE_GNSS_NMEA_MASK_PTYPE)
+            {
+                printf("\tPTYPE (Proprietary Type mask) enabled\n");
+            }
+            if (nmeaMask & LE_GNSS_NMEA_MASK_GPGRS)
+            {
+                printf("\tGPGRS (GPS Range residuals) enabled\n");
+            }
+            if (nmeaMask & LE_GNSS_NMEA_MASK_GPGLL)
+            {
+                printf("\tGPGLL (GPS Geographic position, latitude / longitude) enabled\n");
+            }
+            if (nmeaMask & LE_GNSS_NMEA_MASK_DEBUG)
+            {
+               printf("\tDEBUG (Debug NMEA indication) enabled\n");
+            }
+            if (nmeaMask & LE_GNSS_NMEA_MASK_GPDTM)
+            {
+               printf("\tGPDTM (Local geodetic datum and datum offset from a reference) enabled\n");
+            }
+            if (nmeaMask & LE_GNSS_NMEA_MASK_GAGNS)
+            {
+               printf("\tGAGNS (Fix data for Galileo) enabled\n");
+            }
             break;
         case LE_FAULT:
             printf("Failed to get enabled NMEA sentences. See logs for details\n");
@@ -916,8 +1185,7 @@ static int GetNmeaSentences
             break;
     }
 
-    int status = (LE_OK == result) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -951,8 +1219,7 @@ static int GetPosState
         printf("Failed! See log for details\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -983,10 +1250,10 @@ static int Get2Dlocation
     {
         printf("Latitude(positive->north) : %.6f\n"
                "Longitude(positive->east) : %.6f\n"
-               "hAccuracy                 : %.1fm\n",
+               "hAccuracy                 : %.2fm\n",
                 (float)latitude/1e6,
                 (float)longitude/1e6,
-                (float)hAccuracy/10.0);
+                (float)hAccuracy/1e2);
     }
     else if(result == LE_OUT_OF_RANGE)
     {
@@ -1000,8 +1267,7 @@ static int Get2Dlocation
         printf("Failed! See log for details\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1028,24 +1294,57 @@ static int GetAltitude
 
     if(result == LE_OK)
     {
-         printf("Altitude  : %.3fm\n"
-                "vAccuracy : %.1fm\n",
-                (float)altitude/1e3,
-                (float)vAccuracy/10.0);
+        printf("Altitude  : %.3fm\n"
+               "vAccuracy : %.1fm\n",
+               (float)altitude/1e3,
+               (float)vAccuracy/10.0);
     }
     else if (result == LE_OUT_OF_RANGE)
     {
-         printf("Altitude invalid [%d, %d]\n",
-                 altitude,
-                 vAccuracy);
+        printf("Altitude invalid [%d, %d]\n",
+               altitude,
+               vAccuracy);
     }
     else
     {
         printf("Failed! See log for details\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function gets the altitude with respect to the WGS-84 ellipsoid of last updated location.
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int GetAltitudeOnWgs84
+(
+    le_gnss_SampleRef_t positionSampleRef    ///< [IN] Position sample reference
+)
+{
+    int32_t altitudeOnWgs84;
+
+    le_result_t result = le_gnss_GetAltitudeOnWgs84(positionSampleRef, &altitudeOnWgs84);
+
+    if (LE_OK == result)
+    {
+        printf("AltitudeOnWgs84  : %.3fm\n", (float)altitudeOnWgs84/1e3);
+    }
+    else if (LE_OUT_OF_RANGE == result)
+    {
+        printf("AltitudeOnWgs84 invalid [%d]\n", altitudeOnWgs84);
+    }
+    else
+    {
+        printf("Failed! See log for details\n");
+    }
+
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1087,8 +1386,7 @@ static int GetGpsTime
         printf("Failed! See log for details\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1138,10 +1436,43 @@ static int GetTime
         printf("Failed! See log for details\n");
     }
 
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function gets Epoch time of last updated location.
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int GetEpochTime
+(
+    le_gnss_SampleRef_t positionSampleRef    ///< [IN] Position sample reference
+)
+{
+    uint64_t epochTime;          ///< Epoch time in milliseconds since Jan. 1, 1970
+
+    le_result_t result = le_gnss_GetEpochTime( positionSampleRef, &epochTime);
+
+    if (LE_OK == result)
+    {
+        printf("Epoch Time %llu ms\n", (unsigned long long int) epochTime);
+    }
+    else if (LE_OUT_OF_RANGE == result)
+    {
+        printf("Time invalid %llu ms\n", (unsigned long long int) epochTime);
+    }
+    else
+    {
+        printf("Failed! See log for details\n");
+    }
+
     int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
     return status;
 }
-
 
 
 //-------------------------------------------------------------------------------------------------
@@ -1164,7 +1495,7 @@ static int GetTimeAccuracy
 
     if (result == LE_OK)
     {
-        printf("GPS time accuracy %dms\n", timeAccuracy);
+        printf("GPS time accuracy %dns\n", timeAccuracy);
     }
     else if (result == LE_OUT_OF_RANGE)
     {
@@ -1175,8 +1506,40 @@ static int GetTimeAccuracy
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * This function gets the UTC leap seconds in advance of last updated sample.
+ *
+ * @return
+ *     - EXIT_SUCCESS on success.
+ *     - EXIT_FAILURE on failure.
+ */
+//-------------------------------------------------------------------------------------------------
+static int GetLeapSeconds
+(
+    le_gnss_SampleRef_t positionSampleRef    ///< [IN] Position sample reference
+)
+{
+    uint8_t leapSeconds;
+    le_result_t result = le_gnss_GetGpsLeapSeconds(positionSampleRef, &leapSeconds);
+
+    if (result == LE_OK)
+    {
+        printf("UTC leap seconds in advance %ds\n", leapSeconds);
+    }
+    else if (result == LE_OUT_OF_RANGE)
+    {
+        printf("Invalid UTC leap seconds in advance [%d]\n", leapSeconds);
+    }
+    else
+    {
+        printf("Failed! See log for details!\n");
+    }
+
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1223,8 +1586,7 @@ static int GetDate
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1266,8 +1628,7 @@ static int GetHorizontalSpeed
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1309,8 +1670,7 @@ static int GetVerticalSpeed
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1353,14 +1713,12 @@ static int GetDirection
         printf("Failed! See log for details\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-
 
 //-------------------------------------------------------------------------------------------------
 /**
- * This function gets DOP(Dilution of Precision).
+ * This function gets the DOP (Dilution of Precision).
  *
  * @return
  *     - EXIT_SUCCESS on success.
@@ -1372,37 +1730,60 @@ static int GetDop
     le_gnss_SampleRef_t positionSampleRef    ///< [IN] Position sample reference
 )
 {
-    uint16_t hdop;
-    uint16_t vdop;
-    uint16_t pdop;
+    uint16_t dop[LE_GNSS_RES_UNKNOWN];
+    bool err = false;
+    le_result_t result;
+    le_gnss_DopType_t dopType = LE_GNSS_PDOP;
+    le_gnss_Resolution_t DopRes;
 
-    // Get DOP parameter
-    le_result_t result = le_gnss_GetDop( positionSampleRef,
-                                         &hdop,
-                                         &vdop,
-                                         &pdop);
+    static const char *tabDop[] =
+    {
+        "Position dilution of precision (PDOP)",
+        "Horizontal dilution of precision (HDOP)",
+        "Vertical dilution of precision (VDOP)",
+        "Geometric dilution of precision (GDOP)",
+        "Time dilution of precision (TDOP)"
+    };
 
-    if (result == LE_OK)
+    do
     {
-        printf("DOP [H%.1f,V%.1f,P%.1f]\n",
-               (float)(hdop)/100,
-               (float)(vdop)/100,
-               (float)(pdop)/100);
-    }
-    else if (result == LE_OUT_OF_RANGE)
-    {
-        printf("DOP invalid [%d, %d, %d]\n",
-                hdop,
-                vdop,
-                pdop);
-    }
-    else
-    {
-        printf("Failed! See log for details!\n");
-    }
+        // Get DOP parameter in all resolutions
+        for (DopRes=LE_GNSS_RES_ZERO_DECIMAL; DopRes<LE_GNSS_RES_UNKNOWN; DopRes++)
+        {
+            if (LE_OK != le_gnss_SetDopResolution(DopRes))
+            {
+                printf("Failed! See log for details!\n");
+                return EXIT_FAILURE;
+            }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+            result = le_gnss_GetDilutionOfPrecision(positionSampleRef,
+                                                    dopType,
+                                                    &dop[DopRes]);
+            if (LE_OUT_OF_RANGE == result)
+            {
+                printf("%s invalid %d\n", tabDop[dopType], dop[0]);
+                err = true;
+                break;
+            }
+            else if (LE_OK != result)
+            {
+                printf("Failed! See log for details!\n");
+                return EXIT_FAILURE;
+            }
+        }
+        if (LE_OK == result)
+        {
+            printf("%s [%.1f %.1f %.2f %.3f]\n", tabDop[dopType],
+                   (float)dop[LE_GNSS_RES_ZERO_DECIMAL],
+                   (float)dop[LE_GNSS_RES_ONE_DECIMAL]/10,
+                   (float)dop[LE_GNSS_RES_TWO_DECIMAL]/100,
+                   (float)dop[LE_GNSS_RES_THREE_DECIMAL]/1000);
+        }
+        dopType++;
+    }
+    while (dopType != LE_GNSS_DOP_LAST);
+
+    return err ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 
@@ -1422,17 +1803,17 @@ static int GetSatelliteInfo
 {
     // Satellites information
     uint16_t satIdPtr[LE_GNSS_SV_INFO_MAX_LEN];
-    size_t satIdNumElements = sizeof(satIdPtr);
+    size_t satIdNumElements = NUM_ARRAY_MEMBERS(satIdPtr);
     le_gnss_Constellation_t satConstPtr[LE_GNSS_SV_INFO_MAX_LEN];
-    size_t satConstNumElements = sizeof(satConstPtr);
+    size_t satConstNumElements = NUM_ARRAY_MEMBERS(satConstPtr);
     bool satUsedPtr[LE_GNSS_SV_INFO_MAX_LEN];
-    size_t satUsedNumElements = sizeof(satUsedPtr);
+    size_t satUsedNumElements = NUM_ARRAY_MEMBERS(satUsedPtr);
     uint8_t satSnrPtr[LE_GNSS_SV_INFO_MAX_LEN];
-    size_t satSnrNumElements = sizeof(satSnrPtr);
+    size_t satSnrNumElements = NUM_ARRAY_MEMBERS(satSnrPtr);
     uint16_t satAzimPtr[LE_GNSS_SV_INFO_MAX_LEN];
-    size_t satAzimNumElements = sizeof(satAzimPtr);
+    size_t satAzimNumElements = NUM_ARRAY_MEMBERS(satAzimPtr);
     uint8_t satElevPtr[LE_GNSS_SV_INFO_MAX_LEN];
-    size_t satElevNumElements = sizeof(satElevPtr);
+    size_t satElevNumElements = NUM_ARRAY_MEMBERS(satElevPtr);
     int i;
 
     le_result_t result =  le_gnss_GetSatellitesInfo( positionSampleRef,
@@ -1451,10 +1832,6 @@ static int GetSatelliteInfo
 
     if((result == LE_OK)||(result == LE_OUT_OF_RANGE))
     {
-        if (result == LE_OUT_OF_RANGE)
-        {
-            printf("Satellite information invalid\n");
-        }
         // Satellite Vehicle information
         for(i=0; i<satIdNumElements; i++)
         {
@@ -1468,6 +1845,12 @@ static int GetSatelliteInfo
                         , satSnrPtr[i]
                         , satAzimPtr[i]
                         , satElevPtr[i]);
+
+                if (LE_GNSS_SV_CONSTELLATION_SBAS == satConstPtr[i])
+                {
+                    printf("SBAS category : %d\n",
+                           le_gnss_GetSbasConstellationCategory(satIdPtr[i]));
+                }
             }
         }
     }
@@ -1476,8 +1859,7 @@ static int GetSatelliteInfo
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1505,27 +1887,19 @@ static int GetSatelliteStatus
 
     LE_ASSERT((result == LE_OK)||(result == LE_OUT_OF_RANGE));
 
-    if (result == LE_OK)
+    if ((result == LE_OK) || (result == LE_OUT_OF_RANGE))
     {
         printf("satsInView %d - satsTracking %d - satsUsed %d\n",
-                satsInViewCount,
-                satsTrackingCount,
-                satsUsedCount);
-    }
-    else if (result == LE_OUT_OF_RANGE)
-    {
-        printf("Satellite status invalid [%d, %d, %d]\n",
-                satsInViewCount,
-                satsTrackingCount,
-                satsUsedCount);
+               (satsInViewCount == UINT8_MAX) ? 0: satsInViewCount,
+               (satsTrackingCount == UINT8_MAX) ? 0: satsTrackingCount,
+               (satsUsedCount == UINT8_MAX) ? 0: satsUsedCount);
     }
     else
     {
         printf("Failed! See log for details!\n");
     }
 
-    int status = (result == LE_OK) ? EXIT_SUCCESS: EXIT_FAILURE;
-    return status;
+    return (LE_OK == result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 
@@ -1544,18 +1918,21 @@ static int GetPosInfo
 )
 {
     int status = EXIT_SUCCESS;
-    status = (GetTtff() == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetPosState(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (Get2Dlocation(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetAltitude(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetGpsTime(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetTime(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetTimeAccuracy(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetDate(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetDop(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetHorizontalSpeed(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetVerticalSpeed(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
-    status = (GetDirection(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetTtff(le_gnss_GetState())) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetPosState(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == Get2Dlocation(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetAltitude(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetAltitudeOnWgs84(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetGpsTime(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetTime(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetEpochTime(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetTimeAccuracy(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetLeapSeconds(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetDate(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetDop(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetHorizontalSpeed(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetVerticalSpeed(positionSampleRef)) ? EXIT_FAILURE : status;
+    status = (EXIT_FAILURE == GetDirection(positionSampleRef)) ? EXIT_FAILURE : status;
     return status;
 }
 
@@ -1571,7 +1948,7 @@ static int GetPosInfo
 //-------------------------------------------------------------------------------------------------
 static int DoPosFix
 (
-    uint32_t fixVal          ///< [IN] Position fix time in seconds.
+    uint32_t fixVal          ///< [IN] Position fix time in seconds
 )
 {
     uint32_t count = 0;
@@ -1615,7 +1992,7 @@ static int DoPosFix
         else if (result == LE_BUSY)
         {
             count++;
-            printf("TTFF not calculated (Position not fixed) BUSY\n");
+            printf("TTFF not calculated (Position not fixed)\n");
             sleep(1);
         }
         else
@@ -1637,8 +2014,8 @@ static int DoPosFix
 //--------------------------------------------------------------------------------------------------
 static void PositionHandlerFunction
 (
-    le_gnss_SampleRef_t positionSampleRef,
-    void* contextPtr
+    le_gnss_SampleRef_t positionSampleRef,    ///< [IN] Position sample reference
+    void* contextPtr                          ///< [IN] The context pointer
 )
 {
 
@@ -1666,6 +2043,10 @@ static void PositionHandlerFunction
         {
             status = GetAltitude(positionSampleRef);
         }
+        else if (0 == strcmp(ParamsName, "altOnWgs84"))
+        {
+            status = GetAltitudeOnWgs84(positionSampleRef);
+        }
         else if (strcmp(ParamsName, "loc3d") == 0)
         {
             status = EXIT_SUCCESS;
@@ -1680,9 +2061,17 @@ static void PositionHandlerFunction
         {
             status = GetTime(positionSampleRef);
         }
+        else if (strcmp(ParamsName, "epochTime") == 0)
+        {
+            status = GetEpochTime(positionSampleRef);
+        }
         else if (strcmp(ParamsName, "timeAcc") == 0)
         {
             status = GetTimeAccuracy(positionSampleRef);
+        }
+        else if (strcmp(ParamsName, "LeapSeconds") == 0)
+        {
+            status = GetLeapSeconds(positionSampleRef);
         }
         else if (strcmp(ParamsName, "date") == 0)
         {
@@ -1699,7 +2088,8 @@ static void PositionHandlerFunction
         else if (strcmp(ParamsName, "motion") == 0)
         {
             status = EXIT_SUCCESS;
-            status = (GetHorizontalSpeed(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
+            status = (GetHorizontalSpeed(positionSampleRef) == EXIT_FAILURE) ?
+                                                                             EXIT_FAILURE : status;
             status = (GetVerticalSpeed(positionSampleRef) == EXIT_FAILURE) ? EXIT_FAILURE : status;
         }
         else if (strcmp(ParamsName, "direction") == 0)
@@ -1737,7 +2127,7 @@ static void PositionHandlerFunction
 //--------------------------------------------------------------------------------------------------
 static void* PositionThread
 (
-    void* context
+    void* contextPtr             ///< [IN] The context pointer
 )
 {
     le_gnss_ConnectService();
@@ -1760,19 +2150,11 @@ static void* PositionThread
 //--------------------------------------------------------------------------------------------------
 static int WatchGnssInfo
 (
-    uint32_t watchPeriod          ///< [IN] Watch period in seconds.
+    uint32_t watchPeriod          ///< [IN] Watch period in seconds
 )
 {
     le_thread_Ref_t positionThreadRef;
 
-    uint32_t ttff;
-    le_result_t result = le_gnss_GetTtff(&ttff);
-
-    if (result != LE_OK)
-    {
-        printf("Position not fixed. Try 'gnss fix' to fix position\n");
-        return EXIT_FAILURE;
-    }
     // Add Position Handler
     positionThreadRef = le_thread_Create("PositionThread",PositionThread,NULL);
     le_thread_Start(positionThreadRef);
@@ -1791,69 +2173,118 @@ static int WatchGnssInfo
 
 //-------------------------------------------------------------------------------------------------
 /**
+ * This function prints the GNSS device status.
+ */
+//-------------------------------------------------------------------------------------------------
+static int GetGnssDeviceStatus
+(
+void
+)
+{
+    le_gnss_State_t state;
+    const char *status;
+
+    state = le_gnss_GetState();
+
+    switch (state)
+    {
+        case LE_GNSS_STATE_UNINITIALIZED:
+            status = "not initialized";
+            break;
+        case LE_GNSS_STATE_READY:
+            status = "ready";
+            break;
+        case LE_GNSS_STATE_ACTIVE:
+            status = "active";
+            break;
+        case LE_GNSS_STATE_DISABLED:
+            status = "disabled";
+            break;
+        default:
+            status = "unknown";
+            break;
+    }
+
+    fprintf(stdout, "%s\n", status);
+
+    return 0;
+};
+
+//-------------------------------------------------------------------------------------------------
+/**
  * This function gets different gnss parameters.
  */
 //-------------------------------------------------------------------------------------------------
 static void GetGnssParams
 (
-    const char *params
+    const char *params      ///< [IN] gnss parameters
 )
 {
+    le_gnss_State_t state = le_gnss_GetState();
 
-    if (strcmp(params, "ttff") == 0)
+    if (0 == strcmp(params, "ttff"))
     {
-        exit(GetTtff());
+        exit(GetTtff(state));
     }
-    else if (strcmp(params, "acqRate") == 0)
+    else if (0 == strcmp(params, "acqRate"))
     {
         exit(GetAcquisitionRate());
     }
-    else if (strcmp(params, "agpsMode") == 0)
+    else if (0 == strcmp(params, "agpsMode"))
     {
         exit(GetAgpsMode());
     }
-    else if (strcmp(params, "constellation") == 0)
+    else if (0 == strcmp(params, "constellation"))
     {
         exit(GetConstellation());
     }
-    else if (strcmp(params, "nmeaSentences") == 0)
+    else if (0 == strcmp(params, "constArea"))
+    {
+        exit(GetConstellationArea());
+    }
+    else if (0 == strcmp(params, "nmeaSentences"))
     {
         exit(GetNmeaSentences());
     }
-    else if ((strcmp(params, "posState") == 0)  ||
-             (strcmp(params, "loc2d") == 0)     ||
-             (strcmp(params, "alt") == 0)       ||
-             (strcmp(params, "loc3d") == 0)     ||
-             (strcmp(params, "gpsTime") == 0)   ||
-             (strcmp(params, "time") == 0)      ||
-             (strcmp(params, "timeAcc") == 0)   ||
-             (strcmp(params, "date") == 0)      ||
-             (strcmp(params, "hSpeed") == 0)    ||
-             (strcmp(params, "vSpeed") == 0)    ||
-             (strcmp(params, "motion") == 0)    ||
-             (strcmp(params, "direction") == 0) ||
-             (strcmp(params, "satInfo") == 0)   ||
-             (strcmp(params, "satStat") == 0)   ||
-             (strcmp(params, "dop") == 0)       ||
-             (strcmp(params, "posInfo") == 0)
-            )
+    else if (0 == strcmp(params, "minElevation"))
     {
-
-        // TODO: Check whether device is in active state, then check ttff value.
-        uint32_t ttff;
-        le_result_t result = le_gnss_GetTtff(&ttff);
-
-        if (result != LE_OK)
+        exit(GetMinElevation());
+    }
+    else if ((0 == strcmp(params, "posState"))    ||
+             (0 == strcmp(params, "loc2d"))       ||
+             (0 == strcmp(params, "alt"))         ||
+             (0 == strcmp(params, "altOnWgs84"))  ||
+             (0 == strcmp(params, "loc3d"))       ||
+             (0 == strcmp(params, "gpsTime"))     ||
+             (0 == strcmp(params, "time"))        ||
+             (0 == strcmp(params, "epochTime"))   ||
+             (0 == strcmp(params, "timeAcc"))     ||
+             (0 == strcmp(params, "LeapSeconds")) ||
+             (0 == strcmp(params, "date"))        ||
+             (0 == strcmp(params, "hSpeed"))      ||
+             (0 == strcmp(params, "vSpeed"))      ||
+             (0 == strcmp(params, "motion"))      ||
+             (0 == strcmp(params, "direction"))   ||
+             (0 == strcmp(params, "satInfo"))     ||
+             (0 == strcmp(params, "satStat"))     ||
+             (0 == strcmp(params, "dop"))         ||
+             (0 == strcmp(params, "posInfo")))
+    {
+        if (LE_GNSS_STATE_ACTIVE != state)
         {
-            printf("Position not fixed. Try 'gnss fix' to fix position\n");
+            printf("GNSS is not in active state!\n");
             exit(EXIT_FAILURE);
         }
 
         // Copy the param
-        strcpy(ParamsName, params);
+        le_utf8_Copy(ParamsName, params, sizeof(ParamsName), NULL);
 
         PositionHandlerRef = le_gnss_AddPositionHandler(PositionHandlerFunction, NULL);
         LE_ASSERT((PositionHandlerRef != NULL));
+    }
+    else if (strcmp(params, "status") == 0)
+    {
+        exit(GetGnssDeviceStatus());
     }
     else
     {
@@ -1871,8 +2302,9 @@ static void GetGnssParams
 //-------------------------------------------------------------------------------------------------
 static int SetGnssParams
 (
-    const char * argNamePtr,
-    const char * argValPtr
+    const char * argNamePtr,    ///< [IN] gnss parameters
+    const char * argValPtr,     ///< [IN] gnss parameters
+    const char * arg2ValPtr     ///< [IN] gnss parameters
 )
 {
     int status = EXIT_FAILURE;
@@ -1880,6 +2312,15 @@ static int SetGnssParams
     if (strcmp(argNamePtr, "constellation") == 0)
     {
         status = SetConstellation(argValPtr);
+    }
+    else if (strcmp(argNamePtr, "constArea") == 0)
+    {
+        if (NULL == arg2ValPtr)
+        {
+            LE_ERROR("arg2ValPtr is NULL");
+            exit(EXIT_FAILURE);
+        }
+        status = SetConstellationArea(argValPtr, arg2ValPtr);
     }
     else if (strcmp(argNamePtr, "acqRate") == 0)
     {
@@ -1892,6 +2333,10 @@ static int SetGnssParams
     else if (strcmp(argNamePtr, "nmeaSentences") == 0)
     {
         status = SetNmeaSentences(argValPtr);
+    }
+    else if (0 == strcmp(argNamePtr, "minElevation"))
+    {
+        status = SetMinElevation(argValPtr);
     }
     else
     {
@@ -1942,6 +2387,11 @@ COMPONENT_INIT
     }
 
     const char* commandPtr = le_arg_GetArg(0);
+    if(NULL == commandPtr)
+    {
+        LE_ERROR("commandPtr is NULL");
+        exit(EXIT_FAILURE);
+    }
     size_t numArgs = le_arg_NumArgs();
 
     if (strcmp(commandPtr, "help") == 0)
@@ -1967,26 +2417,28 @@ COMPONENT_INIT
     }
     else if (strcmp(commandPtr, "restart") == 0)
     {
+        const char* restartTypePtr = le_arg_GetArg(1);
         // Following function exit on failure, so no need to check return code.
         CheckEnoughParams( 1,
                            numArgs,
                           "Restart type missing");
-        exit(Restart(le_arg_GetArg(1)));
+        exit(Restart(restartTypePtr));
 
     }
     else if (strcmp(commandPtr, "fix") == 0)
     {
+        const char* fixPeriodPtr = le_arg_GetArg(1);
         uint32_t fixPeriod = DEFAULT_3D_FIX_TIME;
         //Check whether any watch period value is specified.
-        if (le_arg_GetArg(1) != NULL)
+        if (NULL != fixPeriodPtr)
         {
             char *endPtr;
             errno = 0;
-            fixPeriod = strtoul(le_arg_GetArg(1), &endPtr, 10);
+            fixPeriod = strtoul(fixPeriodPtr, &endPtr, 10);
 
             if (endPtr[0] != '\0' || errno != 0)
             {
-                fprintf(stderr, "Bad fix period value: %s\n", le_arg_GetArg(1));
+                fprintf(stderr, "Bad fix period value: %s\n", fixPeriodPtr);
                 exit(EXIT_FAILURE);
             }
         }
@@ -1994,37 +2446,63 @@ COMPONENT_INIT
     }
     else if (strcmp(commandPtr, "get") == 0)
     {
+        const char* paramsPtr = le_arg_GetArg(1);
+        if (NULL == paramsPtr)
+        {
+            LE_ERROR("paramsPtr is NULL");
+            exit(EXIT_FAILURE);
+        }
         CheckEnoughParams( 1,
                            numArgs,
                            "Missing arguments");
-        GetGnssParams(le_arg_GetArg(1));
+        GetGnssParams(paramsPtr);
     }
     else if (strcmp(commandPtr, "set") == 0)
     {
+        const char* argNamePtr = le_arg_GetArg(1);
+        const char* argValPtr = le_arg_GetArg(2);
+        const char* arg2ValPtr = le_arg_GetArg(3);
+        if (NULL == argNamePtr)
+        {
+            LE_ERROR("argNamePtr is NULL");
+            exit(EXIT_FAILURE);
+        }
+        if (NULL == argValPtr)
+        {
+            LE_ERROR("argValPtr is NULL");
+            exit(EXIT_FAILURE);
+        }
         CheckEnoughParams( 2,
                            numArgs,
                            "Missing arguments");
-        exit(SetGnssParams(le_arg_GetArg(1), le_arg_GetArg(2)));
+        exit(SetGnssParams(argNamePtr, argValPtr, arg2ValPtr));
     }
     else if (strcmp(commandPtr, "watch") == 0)
     {
+        if (LE_GNSS_STATE_ACTIVE != le_gnss_GetState())
+        {
+            printf("GNSS is not in active state!\n");
+            exit(EXIT_FAILURE);
+        }
 
+        const char* watchPeriodPtr = le_arg_GetArg(1);
         uint32_t watchPeriod = DEFAULT_WATCH_PERIOD;
         //Check whether any watch period value is specified.
-        if (le_arg_GetArg(1) != NULL)
+        if (NULL != watchPeriodPtr)
         {
             char *endPtr;
             errno = 0;
-            watchPeriod = strtoul(le_arg_GetArg(1), &endPtr, 10);
+            watchPeriod = strtoul(watchPeriodPtr, &endPtr, 10);
 
             if (endPtr[0] != '\0' || errno != 0)
             {
-                fprintf(stderr, "Bad watch period value: %s\n", le_arg_GetArg(1));
+                fprintf(stderr, "Bad watch period value: %s\n", watchPeriodPtr);
                 exit(EXIT_FAILURE);
             }
         }
+
         // Copy the command
-        strcpy(ParamsName, commandPtr);
+        le_utf8_Copy(ParamsName, commandPtr, sizeof(ParamsName), NULL);
         exit(WatchGnssInfo(watchPeriod));
     }
     else

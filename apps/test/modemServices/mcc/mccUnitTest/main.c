@@ -4,7 +4,7 @@
  * @warning ! IMPORTANT ! We need to simulate a different session ref for each thread: 1 for the
  *          main thread, and 2 for the 2 threads created for call handler installation.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -15,7 +15,6 @@
 #include "log.h"
 #include "pa_mcc.h"
 #include "pa_mcc_simu.h"
-#include "args.h"
 
 
 //--------------------------------------------------------------------------------------------------
@@ -86,12 +85,12 @@ le_msg_SessionEventHandlerRef_t le_msg_AddServiceCloseHandler
  *
  */
 //--------------------------------------------------------------------------------------------------
-void le_pm_StayAwake
+le_result_t le_pm_StayAwake
 (
     le_pm_WakeupSourceRef_t w
 )
 {
-    return;
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -100,12 +99,12 @@ void le_pm_StayAwake
  *
  */
 //--------------------------------------------------------------------------------------------------
-void le_pm_Relax
+le_result_t le_pm_Relax
 (
     le_pm_WakeupSourceRef_t w
 )
 {
-    return;
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -598,6 +597,7 @@ static void Testle_mcc_SetClir
     _ClientSessionRef = (le_msg_SessionRef_t)(tempSessionRef);
 
     LE_ASSERT((CurrentCallRef = le_mcc_Create(DESTINATION_NUMBER)) != NULL);
+    LE_ASSERT(le_mcc_GetCallerIdRestrict(CurrentCallRef, &localClirStatus) == LE_UNAVAILABLE);
     LE_ASSERT(le_mcc_SetCallerIdRestrict(CurrentCallRef, ClirStatus) == LE_OK);
     LE_ASSERT(le_mcc_GetCallerIdRestrict(CurrentCallRef, &localClirStatus) == LE_OK);
     LE_ASSERT(localClirStatus ==  ClirStatus);
@@ -892,6 +892,36 @@ static void* UnitTestInit
     le_event_RunLoop();
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Test: enable/disable the audio AMR Wideband capability.
+ *
+ * API tested:
+ * - le_mcc_SetAmrWbCapability
+ * - le_mcc_GetAmrWbCapability
+ *
+ * Exit if failed
+ */
+//--------------------------------------------------------------------------------------------------
+static void Testle_mcc_SetGetAmrWbCapability
+(
+    void
+)
+{
+    bool  AmrWbCapState;
+
+    LE_ASSERT_OK(le_mcc_SetAmrWbCapability(false));
+    LE_ASSERT_OK(le_mcc_GetAmrWbCapability(&AmrWbCapState));
+
+    LE_ASSERT(false == AmrWbCapState);
+
+    LE_ASSERT_OK(le_mcc_SetAmrWbCapability(true));
+    LE_ASSERT_OK(le_mcc_GetAmrWbCapability(&AmrWbCapState));
+
+    LE_ASSERT(true == AmrWbCapState);
+}
+
 //--------------------------------------------------------------------------------------------------
 /**
  * main of the test
@@ -910,6 +940,8 @@ COMPONENT_INIT
 
     LE_INFO("======== Start UnitTest of MCC API ========");
 
+    LE_INFO("======== SetGetAmrWbCapability Test  ========");
+    Testle_mcc_SetGetAmrWbCapability();
     LE_INFO("======== SetClir Test  ========");
     Testle_mcc_SetClir();
     LE_INFO("======== AddHandlers Test  ========");

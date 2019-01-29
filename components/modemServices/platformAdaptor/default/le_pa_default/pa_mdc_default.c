@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_mdc.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -204,7 +204,7 @@ le_result_t pa_mdc_StopSession
  *
  * @return
  *      - LE_OK on success
- *      - LE_BAD_PARAMETER if the input parameter is not valid
+ *      - LE_UNSUPPORTED if not supported by the target
  *      - LE_FAULT for other failures
  */
 //--------------------------------------------------------------------------------------------------
@@ -214,7 +214,7 @@ le_result_t pa_mdc_RejectMtPdpSession
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -441,6 +441,63 @@ le_result_t pa_mdc_GetDataFlowStatistics
 le_result_t pa_mdc_ResetDataFlowStatistics
 (
     void
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Stop collecting data flow statistics
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mdc_StopDataFlowStatistics
+(
+    void
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Start collecting data flow statistics
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mdc_StartDataFlowStatistics
+(
+    void
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Map a profile on a network interface
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_UNSUPPORTED if not supported by the target
+ *      - LE_FAULT for all other errors
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mdc_MapProfileOnNetworkInterface
+(
+    uint32_t         profileIndex,         ///< [IN] The profile to use
+    const char*      interfaceNamePtr      ///< [IN] Network interface name
 )
 {
     LE_ERROR("Unsupported function called");

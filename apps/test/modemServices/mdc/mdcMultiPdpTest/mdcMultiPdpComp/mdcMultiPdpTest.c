@@ -2,7 +2,7 @@
  * This module is for unit testing of the modemServices MDC component.
  *
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -412,7 +412,7 @@ static void* TestThreadMtPdp(void* contextPtr)
 
     LE_INFO("MT-PDP APN: %s", apn);
     LE_INFO("MT-PDP PDP type: %d", pdp);
-    LE_INFO("MT-PDP Authentification: %d", auth);
+    LE_INFO("MT-PDP Authentication: %d", auth);
     LE_INFO("MT-PDP userName: %s", userName);
     LE_INFO("MT-PDP password: %s", password);
 
@@ -553,7 +553,13 @@ COMPONENT_INIT
 
     if (le_arg_NumArgs() > 0)
     {
-        NbConnection = atoi(le_arg_GetArg(0));
+        const char* nbConnectionPtr = le_arg_GetArg(0);
+        if (NULL == nbConnectionPtr)
+        {
+            LE_ERROR("nbConnectionPtr is NULL");
+            exit(EXIT_FAILURE);
+        }
+        NbConnection = atoi(nbConnectionPtr);
     }
 
     LE_INFO("Nb connection %d", NbConnection);

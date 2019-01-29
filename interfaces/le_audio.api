@@ -3,8 +3,7 @@
  * @page c_audio Audio
  *
  * @ref le_audio_interface.h "API Reference" <br>
- * @ref platformConstraintsAudio Constraints 
- * <HR>
+ * @ref platformConstraintsAudio Constraints
  *
  * The Audio API handles audio interfaces including play and record supported formats.
  *
@@ -24,6 +23,10 @@
  *
  * All the functions of this API are provided by the @b audioService.
  *
+ * @note The functions that are highly dependent on the initialization of the lower layers of the
+ * @b audioService will return LE_UNAVAILABLE error code if those layers failed to initialize.
+ * Recovery can be attempted by restarting the service.
+ *
  * Here's a code sample binding to audio services:
  * @verbatim
    bindings:
@@ -34,9 +37,9 @@
  *
  * @section le_audio_configuration Configure the Audio
  *
- * The audio profile can be set with the le_audio_SetProfile() function. 
+ * The audio profile can be set with the le_audio_SetProfile() function.
  *
- * @warning Ensure to check the number of supported audio profiles for your specific platform. 
+ * @warning Ensure to check the number of supported audio profiles for your specific platform.
  *
  * An audio profile can be retrieved with le_audio_GetProfile() and set with le_audio_SetProfile().
  *
@@ -118,7 +121,7 @@
  * @note Opening a Legato audio stream doesn’t necessarily interact with the audio HW interface.
  * On most platforms, it only allocates a context in memory. The audio path becomes active when the
  * streams are plugged into a connector.
- * 
+ *
  *
  * @section le_audio_streams Control an Audio Stream
  *
@@ -131,10 +134,10 @@
  * - le_audio_Mute(): mute an audio stream.
  * - le_audio_Unmute(): unmute an audio stream.
  *
- * @note Multimedia (playback and recording) must be controled separatly from the main audio path
+ * @note Multimedia (playback and recording) must be controlled separately from the main audio path
  * (Microphone/Speaker, I2S, PCM, USB).  Muting/Unmuting a multimedia is done by
  * muting/unmuting the multimedia stream, and not the other connected stream. For example, in case
- * of playback + voice on the speaker, if the user wants to mute all the audio outcoming to the
+ * of playback + voice on the speaker, if the user wants to mute all the audio coming out of the
  * speaker, it must mute both the Speaker stream and the playback stream.
  *
  * @warning Ensure to check the list of supported audio streams for these functions on your
@@ -195,9 +198,11 @@
  * wider speech bandwidth of 50–7000 Hz.
  *
  * - le_audio_PlaySamples(): initiates a playback using an audio flow. A pipe has
- * to be opened first, then the PCM samples are sent throught the opened pipe.
+ * to be opened first, then the PCM samples are sent through the opened pipe.
  * A play can be done only on a connected stream. For instance, the
  * "I2S Tx", "Modem Voice Rx" and "Player" must be previously connected before playing a file.
+ * If there are no more PCM samples to be played, the playback must be stopped by calling
+ * le_audio_Stop().
  *
  * @section le_audio_pb_rec Record
  *
@@ -213,10 +218,12 @@
  * - le_audio_SetEncodingFormat(): sets the encoding format. The same formats as the
  * player are supported.
  * - le_audio_GetEncodingFormat(): gets the encoding format.
- * - le_audio_GetSamples(): gets the audio PCM samples.  A pipe has
- * to be opened first, then the PCM samples are sent throught the opened pipe.
+ * - le_audio_GetSamples(): records the audio PCM samples.  A pipe has
+ * to be opened first, then the PCM samples are sent through the opened pipe.
  * Recording can only be done on a connected stream. For example, the
  * "I2S Rx", "Modem Voice Tx" and "Recorder" must be previously connected before recording a file.
+ * If there are no more PCM samples to be retrieved, the recording must be stopped by calling
+ * le_audio_Stop().
  *
  * A PCM configuration must be set with:
  * - le_audio_SetSamplePcmChannelNumber(): sets the channel number of a PCM
@@ -264,7 +271,7 @@
  * le_audio_RemoveMediaHandler() function removes the player/recorder handler function.
  *
  * @note The @c LE_AUDIO_MEDIA_NO_MORE_SAMPLES event indicates when all samples put into the pipe
- * by the user's app have been sent to the audio driver (see le_audio_PlaySamples()).
+ * by the user's App have been sent to the audio driver (see le_audio_PlaySamples()).
  *
  * A sample code that implements audio playback and capture can be found in \b audioPlaybackRec.c
  * file (please refer to @ref c_audioCapturePlayback page).
@@ -294,7 +301,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -304,7 +311,7 @@
  *
  * Legato @ref c_audio include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -429,14 +436,14 @@ DEFINE NO_FD = (-1);
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Maximum gain's name string length.
+ * Maximum gain name string length.
  */
 //--------------------------------------------------------------------------------------------------
 DEFINE GAIN_NAME_MAX_LEN   = (100);
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Maximum gain's name string length.
+ * Maximum gain name string length.
  * One extra byte is added for the null character.
  */
 //--------------------------------------------------------------------------------------------------
@@ -469,7 +476,7 @@ FUNCTION Stream OpenMic
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Open the Speakerphone.
+ * Open the Speaker-phone.
  *
  * @return Reference to the output audio stream, NULL if the function fails.
  */
@@ -635,10 +642,11 @@ FUNCTION Close
 /**
  * Set the Gain value of an input or output stream.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER Audio stream reference is invalid.
- * @return LE_OUT_OF_RANGE  Gain value is out of range
- * @return LE_OK            Function succeeded.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_OUT_OF_RANGE  The gain value is out of range.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
+ * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
  *       function will not return.
@@ -654,9 +662,10 @@ FUNCTION le_result_t SetGain
 /**
  * Get the Gain value of an input or output stream.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER Audio stream reference is invalid.
- * @return LE_OK            Function succeeded.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
+ * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
  *       function will not return.
@@ -672,9 +681,10 @@ FUNCTION le_result_t GetGain
 /**
  * Mute an audio stream.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER Audio stream reference is invalid.
- * @return LE_OK            Function succeeded.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
+ * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
  *       function will not return.
@@ -689,9 +699,10 @@ FUNCTION le_result_t Mute
 /**
  * Unmute an audio stream.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER Audio stream reference is invalid.
- * @return LE_OK            Function succeeded.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
+ * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
  *       function will not return.
@@ -730,10 +741,11 @@ FUNCTION DeleteConnector
 /**
  * Connect an audio stream to the connector reference.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BUSY          Insufficient DSP resources available.
- * @return LE_BAD_PARAMETER Connector and/or the audio stream references are invalid.
- * @return LE_OK            Function succeeded.
+ * @return LE_BUSY          There are insufficient DSP resources available.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_BAD_PARAMETER The connector and/or the audio stream references are invalid.
+ * @return LE_FAULT         On any other failure.
+ * @return LE_OK            The function succeeded.
  *
  * @note If the caller is passing a bad reference into this function, it is a fatal error, the
  *       function will not return.
@@ -787,7 +799,9 @@ EVENT DtmfDetector
 /**
  * This function must be called to enable the Noise Suppressor.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -802,7 +816,9 @@ FUNCTION le_result_t EnableNoiseSuppressor
 /**
  * This function must be called to disable the Noise Suppressor.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -817,7 +833,9 @@ FUNCTION le_result_t DisableNoiseSuppressor
 /**
  * This function must be called to enable the Echo Canceller.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -832,7 +850,9 @@ FUNCTION le_result_t EnableEchoCanceller
 /**
  * This function must be called to disable the Echo Canceller.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -847,8 +867,9 @@ FUNCTION le_result_t DisableEchoCanceller
 /**
  * This function must be called to get the status of Noise Suppressor.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -864,8 +885,9 @@ FUNCTION le_result_t IsNoiseSuppressorEnabled
 /**
  * This function must be called to get the status of Echo Canceller.
  *
- * @return LE_FAULT         Function failed.
- * @return LE_BAD_PARAMETER If streamRef contains an invalid audioInterface.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -881,7 +903,9 @@ FUNCTION le_result_t IsEchoCancellerEnabled
 /**
  * This function must be called to enable the FIR (Finite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -896,7 +920,9 @@ FUNCTION le_result_t EnableFirFilter
 /**
  * This function must be called to disable the FIR (Finite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -911,7 +937,9 @@ FUNCTION le_result_t DisableFirFilter
 /**
  * This function must be called to enable the IIR (Infinite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -926,7 +954,9 @@ FUNCTION le_result_t EnableIirFilter
 /**
  * This function must be called to disable the IIR (Infinite Impulse Response) filter.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -941,7 +971,9 @@ FUNCTION le_result_t DisableIirFilter
 /**
  * This function must be called to enable the automatic gain control on the selected audio stream.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -956,7 +988,9 @@ FUNCTION le_result_t EnableAutomaticGainControl
 /**
  * This function must be called to disable the automatic gain control on the selected audio stream.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_BAD_PARAMETER The audio stream reference is invalid.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  * @note The process exits, if an invalid audio stream reference is given.
@@ -971,7 +1005,8 @@ FUNCTION le_result_t DisableAutomaticGainControl
 /**
  * This function must be called to set the audio profile.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  */
@@ -985,7 +1020,8 @@ FUNCTION le_result_t SetProfile
 /**
  * This function must be called to get the audio profile in use.
  *
- * @return LE_FAULT         Function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            Function succeeded.
  *
  */
@@ -1135,11 +1171,12 @@ FUNCTION le_result_t PlayFile
  * @return LE_BUSY          Player interface is already active.
  * @return LE_OK            Function succeeded.
  *
- * @note the fd is closed by the IPC API. To use again the same pipe, the fd parameter can be set
+ * @note The fd is closed by the IPC API. To use again the same pipe, the fd parameter can be set
  * to LE_AUDIO_NO_FD: in this case, the previous file descriptor is re-used.
  * If the fd as to be kept on its side, the application should duplicate the fd (e.g., using dup() )
  * before calling the API.
  *
+ * @note Playback initiated with this function must be stopped by calling le_audio_Stop().
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t PlaySamples
@@ -1178,10 +1215,12 @@ FUNCTION le_result_t RecordFile
  * @return LE_BUSY          Recorder interface is already active.
  * @return LE_OK            Function succeeded.
  *
- * @note the fd is closed by the API. To use again the same pipe, the fd parameter can be set to
+ * @note The fd is closed by the API. To use again the same pipe, the fd parameter can be set to
  * LE_AUDIO_NO_FD: in this case, the previous file descriptor is re-used.
  * If the fd as to be kept on its side, the application should duplicate the fd (e.g., using dup() )
  * before calling the API.
+ *
+ * @note When using this function recording must be stopped by calling le_audio_Stop().
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetSamples
@@ -1347,7 +1386,7 @@ FUNCTION le_result_t GetSamplePcmSamplingResolution
  * @return LE_FORMAT_ERROR  The DTMF characters are invalid.
  * @return LE_BUSY          A DTMF playback is already in progress on the playback stream.
  * @return LE_FAULT         Function failed to play the DTMFs.
- * @return LE_OK            Funtion succeeded.
+ * @return LE_OK            Function succeeded.
  *
  * @note If the DTMF string is too long (max DTMF_MAX_LEN characters), it is a fatal
  *       error, the function will not return.
@@ -1370,7 +1409,7 @@ FUNCTION le_result_t PlayDtmf
  * @return LE_FORMAT_ERROR  The DTMF characters are invalid.
  * @return LE_BUSY          A DTMF playback is in progress.
  * @return LE_FAULT         Function failed.
- * @return LE_OK            Funtion succeeded.
+ * @return LE_OK            Function succeeded.
  *
  * @note If the DTMF string is too long (max DTMF_MAX_LEN characters), it is a fatal
  *       error, the function will not return.
@@ -1405,6 +1444,9 @@ FUNCTION le_result_t SetEncodingFormat
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note A client calling this function with either an invalid
+ * streamRef or null out pointer parameter will be killed and the
+ * function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetEncodingFormat
@@ -1435,6 +1477,8 @@ FUNCTION le_result_t SetSampleAmrMode
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note A client calling this function with a null out pointer
+ * parameter will be killed and the function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetSampleAmrMode
@@ -1450,6 +1494,8 @@ FUNCTION le_result_t GetSampleAmrMode
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetSampleAmrDtx
@@ -1465,6 +1511,8 @@ FUNCTION le_result_t SetSampleAmrDtx
  * @return LE_FAULT         Function failed.
  * @return LE_OK            Function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetSampleAmrDtx
@@ -1477,11 +1525,15 @@ FUNCTION le_result_t GetSampleAmrDtx
 /**
  * Set the value of a platform specific gain in the audio subsystem.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_BAD_PARAMETER The pointer to the name of the platform specific gain is invalid.
  * @return LE_NOT_FOUND     The specified gain's name is not recognized in your audio subsystem.
- * @return LE_OUT_OF_RANGE  The gain parameter is out of range
+ * @return LE_OUT_OF_RANGE  The gain parameter is out of range.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  * @warning Ensure to check the names of supported gains for your specific platform.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1495,10 +1547,14 @@ FUNCTION le_result_t SetPlatformSpecificGain
 /**
  * Get the value of a platform specific gain in the audio subsystem.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_BAD_PARAMETER The pointer to the name of the platform specific gain is invalid.
  * @return LE_NOT_FOUND     The specified gain's name is not recognized in your audio subsystem.
+ * @return LE_UNAVAILABLE   The audio service initialization failed.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  *
+ * @note If the caller is passing a bad reference into this function, it is a fatal error, the
+ *       function will not return.
  * @warning Ensure to check the names of supported gains for your specific platform.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1512,7 +1568,8 @@ FUNCTION le_result_t GetPlatformSpecificGain
 /**
  * Mute the Call Waiting Tone.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1524,7 +1581,8 @@ FUNCTION le_result_t MuteCallWaitingTone
 /**
  * Unmute the Call Waiting Tone.
  *
- * @return LE_FAULT         The function failed.
+ * @return LE_UNAVAILABLE   On audio service initialization failure.
+ * @return LE_FAULT         On any other failure.
  * @return LE_OK            The function succeeded.
  */
 //--------------------------------------------------------------------------------------------------

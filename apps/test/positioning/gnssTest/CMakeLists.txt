@@ -1,7 +1,7 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
-# Use of this work is subject to license.
+#
 #*******************************************************************************
 
 # Creates application from the gnssTest.adef
@@ -27,3 +27,6 @@ mkapp(gnssTest.adef
 )
 
 endif()
+
+# This is a C test
+add_dependencies(tests_c gnssTest)

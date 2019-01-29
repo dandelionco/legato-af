@@ -2,7 +2,7 @@
 /**
  *  Implementation of the Positive Integer Limit class.
  *
- *  Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -28,7 +28,7 @@ PositiveIntLimit_t::PositiveIntLimit_t
 {
     if (defaultValue == 0)
     {
-        throw mk::Exception_t("Default value must be positive. Set to zero.");
+        throw mk::Exception_t(LE_I18N("Default value must be positive. Set to zero."));
     }
 }
 
@@ -39,9 +39,11 @@ PositiveIntLimit_t::PositiveIntLimit_t
  * Validates and stores the limit value.
  *
  *  @throws mk::Exception_t if value out of range.
+ *
+ *  @return reference of this object.
  */
 //--------------------------------------------------------------------------------------------------
-void PositiveIntLimit_t::operator =
+PositiveIntLimit_t& PositiveIntLimit_t::operator =
 (
     int value
 )
@@ -49,12 +51,14 @@ void PositiveIntLimit_t::operator =
 {
     if (value <= 0)
     {
-        throw mk::Exception_t("Limit must be greater than zero.");
+        throw mk::Exception_t(LE_I18N("Limit must be greater than zero."));
     }
     else
     {
         NonNegativeIntLimit_t::operator =((size_t)value);
     }
+
+    return *this;
 }
 
 
@@ -63,9 +67,11 @@ void PositiveIntLimit_t::operator =
  * Validates and stores the limit value.
  *
  *  @throws mk::Exception_t if value out of range.
+ *
+ *  @return reference of this object.
  */
 //--------------------------------------------------------------------------------------------------
-void PositiveIntLimit_t::operator =
+PositiveIntLimit_t& PositiveIntLimit_t::operator =
 (
     size_t value
 )
@@ -77,8 +83,10 @@ void PositiveIntLimit_t::operator =
     }
     else
     {
-        throw mk::Exception_t("Limit must be greater than zero.");
+        throw mk::Exception_t(LE_I18N("Limit must be greater than zero."));
     }
+
+    return *this;
 }
 
 

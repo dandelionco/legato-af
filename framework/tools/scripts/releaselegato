@@ -1,6 +1,6 @@
 #!/bin/bash
 copyright="
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 "
 
 if ! [ $LEGATO_ROOT ]; then echo "Run bin/legs first" >&2; exit 1; fi
@@ -24,7 +24,7 @@ help_long_description=(
 "        for all supported targets."
 )
 
-TARGETS="ar7,ar758x,ar759x,wp85,wp750x,wp76xx"
+TARGETS="ar7,ar758x,ar759x,wp85,wp750x,wp76xx,wp77xx"
 
 CheckForHelp $@
 
@@ -41,7 +41,7 @@ do
     esac
 done
 
-REPO_EXCLUDE_PATTERN='(legato|qmi/src|proprietary|docManagement)'
+REPO_EXCLUDE_PATTERN='(legato|qmi/src|proprietary/qct|proprietary/.*/src|docManagement)'
 
 RELEASE_DIR=$LEGATO_ROOT/releases
 VERSION=$(cat $LEGATO_ROOT/version)
@@ -59,11 +59,11 @@ mkdir -p $STAGE_DIR
 CopyRepo() {
     local path=$1
 
+    set -e
+
     cd $LEGATO_ROOT/$path
 
     mkdir -p $STAGE_DIR/$path
-
-    set -e
 
     # Copy files managed by git, except the ones that match exclude_pattern
     git ls-tree -r --name-only HEAD | while read LINE; do
@@ -88,7 +88,7 @@ CopyRepo() {
 CopyRepo ""
 
 # Copy other repositories
-for repo in $(repo list | awk '{print $1}' | sed 's^legato/^^g' | grep -Ev "$REPO_EXCLUDE_PATTERN"); do
+for repo in $(repo list | awk '{print $1}' | grep 'legato/' | sed 's^legato/^^g' | grep -Ev "$REPO_EXCLUDE_PATTERN"); do
     CopyRepo $repo
 done
 
@@ -98,6 +98,7 @@ cd $LEGATO_ROOT
 StageComponent() {
     local comp_name=$1
     local comp_src=$2
+    local target
 
     echo "Staging ${comp_name}:"
 
@@ -106,8 +107,8 @@ StageComponent() {
             continue
         fi
 
-        src="build/${target}/${comp_src}"
-        dst="platformAdaptor/qmi/bin/${target}/components/${comp_name}/"
+        local src="build/${target}/${comp_src}"
+        local dst="platformAdaptor/qmi/bin/${target}/components/${comp_name}/"
 
         if ! [ -e "$LEGATO_ROOT/$src" ]; then
             echo "$src doesn't exist"
@@ -148,28 +149,109 @@ StagePaComponent() {
     local comp_name=$1
     local service=$2
 
-    comp_src="system/app/$service/staging/read-only/lib/libComponent_$comp_name.so"
+    local comp_src="system/app/$service/staging/read-only/lib/libComponent_$comp_name.so"
 
     StageComponent $comp_name $comp_src "${@:3}"
 }
 
-StagePaComponent swiQmi          modemService        ar7 wp85 wp750x ar758x ar759x wp76xx
-StagePaComponent le_pa_audio     audioService        ar7 wp85 wp750x ar758x ar759x wp76xx
-StagePaComponent le_pa           modemService        ar7 wp85 wp750x ar758x ar759x wp76xx
-StagePaComponent le_pa_ecall     modemService        ar7 wp85 wp750x ar758x ar759x wp76xx
-StagePaComponent le_pa_gnss      positioningService  ar7 wp85 wp750x ar758x ar759x wp76xx
-StagePaComponent le_pa_avc       avcService          ar7 wp85 wp750x
-StagePaComponent le_pa_secStore  secStore            ar7 wp85 wp750x
-StagePaComponent le_pa_fwupdate  fwupdateService     ar7 wp85 wp750x
-StagePaComponent le_pa_uartMode  tools               ar7 wp85 wp750x ar758x ar759x wp76xx
+StageProprietaryApp() {
+    local app_name=$1
+    local target
+
+    echo "Staging app ${app_name}:"
+
+    for target in "${@:2}"; do
+        if ! echo "$TARGETS" | grep -E $target'(,|$)' > /dev/null; then
+            continue
+        fi
+
+        local src="build/${target}/proprietary/${app_name}/${app_name}.${target}.app"
+        local dst="apps/proprietary/${app_name}/bin/${target}/${app_name}.${target}.app"
+
+        echo -n "        (target $target) = $src -> $dst"
+
+        # If package is already available, do not replace the .app file unless
+        # the content has changed.
+        if [ -e "$dst" ]; then
+            # Creates a temporary directory in which both tarball are extracted.
+            local tmpdir=$(mktemp -d --suffix="releaselegato")
+            mkdir "$tmpdir/src" "$tmpdir/dst"
+
+            if ! tar jxf $src -C "$tmpdir/src" ||
+               ! tar jxf $dst -C "$tmpdir/dst"; then
+                rm -rf $tmpdir
+                ExitWithError "Error while extracting $app_name"
+            fi
+
+            # The content of the directory is then compared.
+            diff -r "$tmpdir/src" "$tmpdir/dst" >/dev/null 2>&1
+            local diffret=$?
+            #rm -rf "$tmpdir"
+
+            if [ $diffret -eq 0 ]; then
+                echo " (skipped)"
+                continue
+            fi
+        fi
+
+        echo
+        install -D $LEGATO_ROOT/$src $STAGE_DIR/$dst
+        if [ $? -ne 0 ]; then
+            ExitWithError "Unable to copy '$src'"
+        fi
+    done
+}
+
+StagePaComponent swiQmi          modemService        ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa_audio     audioService        ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa           modemService        ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa_ecall     modemService        ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa_remotesim modemService        ar758x ar759x
+StagePaComponent le_pa_gnss      positioningService  ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa_avc       avcService          ar7
+StagePaComponent le_pa_secStore  secStore            ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa_fwupdate  fwupdateService     ar7 wp85 ar758x ar759x wp76xx
+StagePaComponent le_pa_uartMode  tools               ar7 wp85 ar758x ar759x wp76xx
+
+if [ -e "$LEGATO_ROOT/build/wp85/system/app/avcCompat" ]; then
+    StagePaComponent le_pa_avc       avcCompat           wp85
+elif [ -e "$LEGATO_ROOT/build/wp85/system/app/avcService" ]; then
+    StagePaComponent le_pa_avc       avcService          wp85
+fi
+
+if [ -e "$LEGATO_ROOT/apps/proprietary/atQmiLinker" ]; then
+    StageProprietaryApp atQmiLinker     wp85 wp76xx
+fi
+if [ -e "$LEGATO_ROOT/apps/proprietary/atAirVantage" ]; then
+    StageProprietaryApp atAirVantage    wp85 wp76xx
+fi
+if [ -e "$LEGATO_ROOT/apps/proprietary/qmiAirVantage" ]; then
+    StageProprietaryApp qmiAirVantage   wp85 wp76xx
+fi
 
 cp version $STAGE_DIR
 cp package.properties $STAGE_DIR
 
 # Target aliases
-if [[ $TARGETS = *ar86* ]]; then
-    ln -s ar7 $STAGE_DIR/platformAdaptor/qmi/bin/ar86
-fi
+for alias in $(echo $TARGETS | tr ',' ' '); do
+    unset target
+    case $alias in
+        ar86)           target=ar7 ;;
+        wp750x)         target=wp85 ;;
+        wp77xx)         target=wp76xx ;;
+    esac
+
+    if [ -n "$target" ]; then
+        echo "Aliasing $alias to $target"
+        ln -s "$target" "$STAGE_DIR/platformAdaptor/qmi/bin/$alias"
+
+        for app in $(ls -1 "$STAGE_DIR/apps/proprietary"); do
+            if [ -e "$STAGE_DIR/apps/proprietary/$app/bin/$target" ]; then
+                ln -s "$target" "$STAGE_DIR/apps/proprietary/$app/bin/$alias"
+            fi
+        done
+    fi
+done
 
 # Remove existing git folders
 for gitdir in $(find $STAGE_DIR -name ".git"); do

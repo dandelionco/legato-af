@@ -4,7 +4,7 @@
  *
  * This file contains the source code of the high level MCC (Modem Call Control) API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -55,6 +55,7 @@ typedef struct le_mcc_Call
     char                            telNumber[LE_MDMDEFS_PHONE_NUM_MAX_BYTES]; ///< Telephone number
     int16_t                         callId;            ///< Outgoing call ID
     le_mcc_Event_t                  event;             ///< Last Call event
+    le_mcc_Event_t                  lastEvent;         ///< Backup of last Call event
     le_mcc_TerminationReason_t      termination;       ///< Call termination reason
     int32_t                         terminationCode;   ///< Platform specific termination code
     pa_mcc_clir_t                   clirStatus;        ///< Call CLIR status
@@ -311,9 +312,10 @@ static le_mcc_Call_t* CreateCallObject
     le_utf8_Copy(callPtr->telNumber, destinationPtr, sizeof(callPtr->telNumber), NULL);
     callPtr->callId = id;
     callPtr->event = event;
+    callPtr->lastEvent = event;
     callPtr->termination = termination;
     callPtr->terminationCode = terminationCode;
-    callPtr->clirStatus = PA_MCC_DEACTIVATE_CLIR;
+    callPtr->clirStatus = PA_MCC_NO_CLIR;
     callPtr->inProgress = false;
     callPtr->refCount = 1;
     callPtr->creatorList=LE_DLS_LIST_INIT;
@@ -433,7 +435,9 @@ static le_mcc_CallRef_t GetCallRefFromSessionCtx
 
     if (sessionCtxPtr)
     {
-        linkPtr = le_dls_Peek(&sessionCtxPtr->callRefList);
+        // Search from the tail, in order to always get the latest created callRef,
+        // as the latest created callRef is the correct one for the latest call
+        linkPtr = le_dls_PeekTail(&sessionCtxPtr->callRefList);
     }
 
     while( linkPtr )
@@ -442,7 +446,7 @@ static le_mcc_CallRef_t GetCallRefFromSessionCtx
                                                     CallRefNode_t,
                                                     link );
 
-        linkPtr = le_dls_PeekNext(&sessionCtxPtr->callRefList, linkPtr);
+        linkPtr = le_dls_PeekPrev(&sessionCtxPtr->callRefList, linkPtr);
 
         le_mcc_Call_t* callTmpPtr = le_ref_Lookup(MccCallRefMap, callRefPtr->callRef);
 
@@ -586,6 +590,18 @@ static void CallHandlers
                     LE_DEBUG("callRef created %p for call %p, count = %d",
                                                                callRef, callPtr, callPtr->refCount);
                 }
+            }
+            else if ((callPtr->lastEvent == LE_MCC_EVENT_TERMINATED) &&
+                     (IsCallCreatedByClient(callPtr, sessionCtxPtr->sessionRef) == false))
+            {
+                // This call was already used for an incoming call, but not deleted yet:
+                // create a new callRef for the current call but not to reuse the previous
+                // one, because the previous callRef is expected to be deleted soon.
+                callRef = SetCallRefForSessionCtx(callPtr, sessionCtxPtr);
+                callPtr->refCount++;
+                le_mem_AddRef(callPtr);
+                LE_DEBUG("callRef created %p for call %p, count = %d",
+                                                               callRef, callPtr, callPtr->refCount);
             }
             else
             {
@@ -770,6 +786,7 @@ static void NewCallEventHandler
         }
 
         callPtr->inProgress = true;
+        callPtr->lastEvent = callPtr->event;
         callPtr->event = dataPtr->event;
         callPtr->termination = dataPtr->terminationEvent;
         callPtr->terminationCode = dataPtr->terminationCode;
@@ -791,6 +808,7 @@ static void NewCallEventHandler
             }
             return;
         }
+        callPtr->lastEvent = callPtr->event;
         callPtr->event = dataPtr->event;
         callPtr->termination = dataPtr->terminationEvent;
         callPtr->terminationCode = dataPtr->terminationCode;
@@ -862,6 +880,11 @@ static void CloseSessionEventHandler
                                                       link);
 
             le_mcc_Call_t* callPtr = le_ref_Lookup(MccCallRefMap, CallRefPtr->callRef);
+            if (NULL == callPtr)
+            {
+                LE_ERROR("Invalid reference (%p) provided!", CallRefPtr->callRef);
+                return;
+            }
 
             le_ref_DeleteRef(MccCallRefMap, CallRefPtr->callRef);
             le_mem_Release(CallRefPtr);
@@ -973,12 +996,6 @@ le_mcc_CallRef_t le_mcc_Create
         ///< call.
 )
 {
-    if (phoneNumPtr == NULL)
-    {
-        LE_KILL_CLIENT("phoneNumPtr is NULL !");
-        return NULL;
-    }
-
     if(strlen(phoneNumPtr) > (LE_MDMDEFS_PHONE_NUM_MAX_BYTES-1))
     {
         LE_KILL_CLIENT("strlen(phoneNumPtr) > %d", (LE_MDMDEFS_PHONE_NUM_MAX_BYTES-1));
@@ -1071,22 +1088,27 @@ le_result_t le_mcc_Delete
         return LE_NOT_FOUND;
     }
 
+    SessionCtxNode_t* sessionCtxPtr = GetSessionCtxFromCallRef(callRef);
+
+    if ( !sessionCtxPtr )
+    {
+        LE_ERROR("No sessionCtx found for callRef %p !!!", callRef);
+        return LE_FAULT;
+    }
+
     LE_DEBUG("Delete callRef %p callPtr %p", callRef, callPtr);
 
-    if (callPtr->inProgress)
+    // Delete the callRef when the corresponding call is not in progress,
+    // or this callRef is for a previously ended but not yet deleted call
+    // (sometimes the delete event may delay).
+    if ((callPtr->inProgress) &&
+        (callRef == GetCallRefFromSessionCtx(callPtr, sessionCtxPtr)))
     {
+        LE_ERROR("Call in progress !!");
         return LE_FAULT;
     }
     else
     {
-        SessionCtxNode_t* sessionCtxPtr = GetSessionCtxFromCallRef(callRef);
-
-        if ( !sessionCtxPtr )
-        {
-            LE_ERROR("No sessionCtx found for callRef %p !!!", callRef);
-            return LE_FAULT;
-        }
-
         // Remove corresponding node from the creatorList
         RemoveCreatorFromCall(callPtr, sessionCtxPtr->sessionRef);
 
@@ -1162,7 +1184,7 @@ le_result_t le_mcc_Start
 
     res = pa_mcc_VoiceDial(callPtr->telNumber,
                           callPtr->clirStatus,
-                          PA_MCC_ACTIVATE_CUG,
+                          PA_MCC_NO_CUG,
                           &callId,
                           &callPtr->termination);
 
@@ -1281,6 +1303,9 @@ le_mcc_TerminationReason_t le_mcc_GetTerminationReason
 /**
  * Called to get the platform specific termination code.
  *
+ * Refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * termination code description.
+ *
  * @return The platform specific termination code.
  *
  * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
@@ -1395,8 +1420,9 @@ le_result_t le_mcc_HangUpAll
  *    - LE_OFF Enable presentation of own phone number to remote.
  *
  * @return
- *    - LE_OK        The function succeed.
- *    - LE_NOT_FOUND The call reference was not found.
+ *    - LE_OK          The function succeed.
+ *    - LE_NOT_FOUND   The call reference was not found.
+ *    - LE_UNAVAILABLE CLIR status was not set.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_mcc_GetCallerIdRestrict
@@ -1411,6 +1437,12 @@ le_result_t le_mcc_GetCallerIdRestrict
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", callRef);
         return LE_NOT_FOUND;
+    }
+
+    if (callPtr->clirStatus == PA_MCC_NO_CLIR)
+    {
+        LE_INFO("CLIR field was not set");
+        return LE_UNAVAILABLE;
     }
 
     if (clirStatusPtr == NULL)
@@ -1435,7 +1467,7 @@ le_result_t le_mcc_GetCallerIdRestrict
 //--------------------------------------------------------------------------------------------------
 /**
  * This function set the Calling Line Identification Restriction (CLIR) status on the specific call.
- * Default value is LE_OFF (Enable presentation of own phone number to remote).
+ * By default the CLIR status is not set.
  *
  * @return
  *     - LE_OK        The function succeed.
@@ -1707,4 +1739,48 @@ le_result_t le_mcc_ActivateCall
     }
 
     return pa_mcc_ActivateCall(callPtr->callId);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function enables/disables the audio AMR Wideband capability.
+ *
+ * @return
+ *     - LE_OK             The function succeeded.
+ *     - LE_UNAVAILABLE    The service is not available.
+ *     - LE_FAULT          On any other failure.
+ *
+ * @note The capability setting takes effect immediately and is not persistent to reset.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_mcc_SetAmrWbCapability
+(
+    bool  enable   ///< [IN] True enables the AMR Wideband capability, false disables it.
+)
+{
+    return pa_mcc_SetAmrWbCapability(enable);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function gets the audio AMR Wideband capability.
+ *
+ * @return
+ *     - LE_OK            The function succeeded.
+ *     - LE_UNAVAILABLE   The service is not available.
+ *     - LE_FAULT         On any other failure.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_mcc_GetAmrWbCapability
+(
+    bool*  enabledPtr   ///< [OUT] True if AMR Wideband capability is enabled, false otherwise.
+)
+{
+    if (NULL == enabledPtr)
+    {
+        LE_ERROR("enabledPtr is Null");
+        return LE_FAULT;
+    }
+
+    return pa_mcc_GetAmrWbCapability(enabledPtr);
 }

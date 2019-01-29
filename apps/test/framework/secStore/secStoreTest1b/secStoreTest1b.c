@@ -1,6 +1,6 @@
 //--------------------------------------------------------------------------------------------------
 /**
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -35,6 +35,7 @@ COMPONENT_INIT
     LE_INFO("Done writing secret.");
 
     // Read SECRET_ITEM.
+    bufSize = sizeof(buf);
     result = le_secStore_Read(SECRET_ITEM, (uint8_t*)buf, &bufSize);
     LE_FATAL_IF(result != LE_OK,
                 "Could not read from sec store.  %s.", LE_RESULT_TXT(result));

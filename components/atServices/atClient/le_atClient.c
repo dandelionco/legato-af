@@ -2,7 +2,7 @@
  *
  * Implementation of AT commands client API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 /*
@@ -62,6 +62,14 @@
 #include "legato.h"
 #include "interfaces.h"
 #include "le_dev.h"
+#include "watchdogChain.h"
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Max length for error string
+ */
+//--------------------------------------------------------------------------------------------------
+#define ERR_MSG_MAX 256
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -104,6 +112,13 @@
  */
 //--------------------------------------------------------------------------------------------------
 #define PARSER_BUFFER_MAX_BYTES 1024
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * The timer interval to kick the watchdog chain.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MS_WDOG_INTERVAL 8
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -415,11 +430,11 @@ static void CheckUnsolicited
             }
             else
             {
-                if (LE_ATDEFS_UNSOLICITED_MAX_LEN - strlen(unsolPtr->unsolBuffer) >= 2)
+                if (LE_ATDEFS_UNSOLICITED_MAX_BYTES - strlen(unsolPtr->unsolBuffer) > sizeof("\r\n"))
                 {
-                    snprintf( unsolPtr->unsolBuffer+strlen(unsolPtr->unsolBuffer),
-                   LE_ATDEFS_UNSOLICITED_MAX_BYTES,
-                    "\r\n" );
+                    snprintf(unsolPtr->unsolBuffer+strlen(unsolPtr->unsolBuffer),
+                             sizeof("\r\n") + 1,    // +1 for Null terminator
+                             "\r\n" );
                 }
 
                 unsolPtr->lineCounter++;
@@ -612,17 +627,20 @@ static void RxNewData
     LE_DEBUG("Start read");
 
     /* Read RX data on uart */
+    // PARSER_BUFFER_MAX_BYTES length is including '\0' character.
     size = le_dev_Read(&interfacePtr->device,
                          (uint8_t *)(&interfacePtr->rxParser.rxData.buffer) +
                          interfacePtr->rxParser.rxData.idx,
-                         (PARSER_BUFFER_MAX_BYTES - interfacePtr->rxParser.rxData.idx));
+                         (PARSER_BUFFER_MAX_BYTES - interfacePtr->rxParser.rxData.idx - 1));
 
     /* Start the parsing only if we have read some bytes */
     if (size > 0)
     {
+        interfacePtr->rxParser.rxData.buffer[interfacePtr->rxParser.rxData.idx + size] = '\0';
         interfacePtr->rxParser.rxData.endBuffer += size;
 
         /* Call the parser */
+        LE_DEBUG("Parsing received data: %s", interfacePtr->rxParser.rxData.buffer);
         ParseRxBuffer(&interfacePtr->rxParser);
         ResetRxBuffer(&interfacePtr->rxParser);
     }
@@ -817,64 +835,75 @@ static void StartTimer
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function is used to check if the line match any of final string of the command
+ * This function is used to check if the line matches any of response strings of the command
  *
+ * @return
+ *      - TRUE if the line matches a response string of the command
+ *      - FALSE otherwise
  */
 //--------------------------------------------------------------------------------------------------
 static bool CheckResponse
 (
-    char*          receivedRspPtr,
-    size_t         lineSize,
-    le_dls_List_t* responseListPtr,
-    le_dls_List_t* resultListPtr
+    char*          receivedRspPtr,   ///< [IN] Received line pointer
+    size_t         lineSize,         ///< [IN] Received line size
+    le_dls_List_t* responseListPtr,  ///< [IN] List of response strings of the command
+    le_dls_List_t* resultListPtr,    ///< [OUT] List of matched strings after comparison
+    char*          cmdNamePtr        ///< [IN] Command name pointer
 )
 {
-    bool result = false;
     LE_DEBUG("Start checking response");
 
-    if (lineSize == 0)
+    if (!lineSize)
     {
         return false;
     }
 
     le_dls_Link_t* linkPtr = le_dls_Peek(responseListPtr);
+
+    LE_DEBUG("Command: %s, size: %zu", cmdNamePtr, strlen(cmdNamePtr));
+    LE_DEBUG("Received response: %s, size: %zu", receivedRspPtr, lineSize);
+
+    if (strncmp(cmdNamePtr, receivedRspPtr, strlen(cmdNamePtr)) == 0)
+    {
+        LE_DEBUG("Found command echo in response");
+        return false;
+    }
+
     /* Browse all the queue while the string is not found */
     while (linkPtr != NULL)
     {
-        RspString_t *currStringPtr = CONTAINER_OF(linkPtr,
-                                                 RspString_t,
-                                                 link);
+        RspString_t* currStringPtr = CONTAINER_OF(linkPtr,
+                                                  RspString_t,
+                                                  link);
+        LE_DEBUG("Item: %s, size: %zu", currStringPtr->line, strlen(currStringPtr->line));
 
         if ((strlen(currStringPtr->line) == 0) ||
            ((lineSize >= strlen(currStringPtr->line)) &&
-           (strncmp(currStringPtr->line,receivedRspPtr,strlen(currStringPtr->line)) == 0)))
+           (strncmp(currStringPtr->line, receivedRspPtr, strlen(currStringPtr->line)) == 0)))
         {
-            LE_DEBUG("rsp matched, size = %d", (int) lineSize);
+            LE_DEBUG("Rsp matched, size: %zu", lineSize);
 
             RspString_t* newStringPtr = le_mem_ForceAlloc(RspStringPool);
-            memset(newStringPtr,0,sizeof(RspString_t));
+            memset(newStringPtr, 0, sizeof(RspString_t));
 
             if(lineSize>LE_ATDEFS_RESPONSE_MAX_BYTES)
             {
-                LE_ERROR("string too long");
+                LE_ERROR("String too long");
+                le_mem_Release(newStringPtr);
                 return false;
             }
 
-            strncpy(newStringPtr->line,receivedRspPtr,lineSize);
-
+            strncpy(newStringPtr->line, receivedRspPtr, lineSize);
             newStringPtr->link = LE_DLS_LINK_INIT;
-
-            le_dls_Queue(resultListPtr,&(newStringPtr->link));
-
+            le_dls_Queue(resultListPtr, &(newStringPtr->link));
             return true;
         }
 
         linkPtr = le_dls_PeekNext(responseListPtr, linkPtr);
     }
 
-    return false;
     LE_DEBUG("Stop checking response");
-    return result;
+    return false;
 }
 
 
@@ -932,7 +961,8 @@ static void SendingState
             size_t lineSize = newCRLF - parserPtr->idxLastCrLf;
 
             if (CheckResponse((char*)&(parserPtr->buffer[parserPtr->idxLastCrLf]), lineSize,
-                                    &(cmdPtr->expectResponseList), &(cmdPtr->responseList)))
+                              &(cmdPtr->expectResponseList), &(cmdPtr->responseList),
+                              cmdPtr->cmd))
             {
                 LE_DEBUG("Final command found");
 
@@ -949,8 +979,8 @@ static void SendingState
             }
 
             CheckResponse((char*)&(parserPtr->buffer[parserPtr->idxLastCrLf]), lineSize,
-                                    &(cmdPtr->ExpectintermediateResponseList),
-                                    &(cmdPtr->responseList));
+                          &(cmdPtr->ExpectintermediateResponseList), &(cmdPtr->responseList),
+                          cmdPtr->cmd);
             break;
         }
         default:
@@ -1249,19 +1279,20 @@ static void UnsolicitedPoolDestructor
 )
 {
     Unsolicited_t* unsolicitedPtr = ptr;
-    le_dls_List_t list;
-    le_dls_Link_t link;
+    le_dls_List_t* listPtr;
+    le_dls_Link_t* linkPtr;
 
-    list = unsolicitedPtr->interfacePtr->unsolicitedList;
-    link = unsolicitedPtr->link;
+    listPtr = &unsolicitedPtr->interfacePtr->unsolicitedList;
+    linkPtr = &unsolicitedPtr->link;
 
     LE_DEBUG("Destroy unsolicited %s", unsolicitedPtr->unsolRsp);
 
-    if ( le_dls_IsInList(&list, &link) )
+    if ( le_dls_IsInList(listPtr, linkPtr) )
     {
-        le_dls_Remove(&list, &link);
+        le_dls_Remove(listPtr, linkPtr);
     }
 
+    // Delete the reference for unsolicited structure pointer.
     le_ref_DeleteRef(UnsolRefMap, unsolicitedPtr->ref);
 }
 
@@ -1446,7 +1477,7 @@ le_result_t le_atClient_SetCommand
         return LE_BAD_PARAMETER;
     }
 
-    strncpy(cmdPtr->cmd, commandPtr, sizeof(cmdPtr->cmd));
+    le_utf8_Copy(cmdPtr->cmd, commandPtr, sizeof(cmdPtr->cmd), NULL);
     return LE_OK;
 }
 
@@ -1461,7 +1492,7 @@ le_result_t le_atClient_SetCommand
  *      - LE_FAULT when function failed
  *      - LE_OK when function succeed
  *
- * @note If the AT Command reference is invalid, a fatal error occurs,
+ * @note If the AT Command reference or set intermediate response is invalid, a fatal error occurs,
  *       the function won't return.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1481,30 +1512,31 @@ le_result_t le_atClient_SetIntermediateResponse
         return LE_BAD_PARAMETER;
     }
 
-    char *interPtr = strdup(intermediatePtr);
-
-    if (strcmp(interPtr, "\0") != 0)
+    if (intermediatePtr == NULL)
     {
-        char *savePtr;
-        interPtr = strtok_r(interPtr,"|", &savePtr);
+        LE_KILL_CLIENT("Invalid intermediatePtr (%p) provided!", intermediatePtr);
+        return LE_BAD_PARAMETER;
+    }
+
+    if (strcmp(intermediatePtr, "\0") != 0)
+    {
+        size_t len = strlen(intermediatePtr) + 1;
+        char tmpIntermediate[len];
+        memset(tmpIntermediate, 0, len);
+        strncpy(tmpIntermediate, intermediatePtr, len);
+        char *savePtr = (char*) tmpIntermediate;
+        char *interPtr = strtok_r((char*) tmpIntermediate, "|", &savePtr);
 
         while(interPtr != NULL)
         {
             RspString_t* newStringPtr = le_mem_ForceAlloc(RspStringPool);
-            memset(newStringPtr,0,sizeof(RspString_t));
+            memset(newStringPtr, 0, sizeof(RspString_t));
 
-            if(strlen(interPtr)>LE_ATDEFS_RESPONSE_MAX_BYTES)
-            {
-                LE_DEBUG("%s is too long (%zd): Max size %d",interPtr,strlen(interPtr),
-                         LE_ATDEFS_RESPONSE_MAX_BYTES);
-                return LE_FAULT;
-            }
-
-            strncpy(newStringPtr->line,interPtr,LE_ATDEFS_RESPONSE_MAX_BYTES);
+            le_utf8_Copy(newStringPtr->line, interPtr, LE_ATDEFS_RESPONSE_MAX_BYTES, NULL);
 
             newStringPtr->link = LE_DLS_LINK_INIT;
 
-            le_dls_Queue(&(cmdPtr->ExpectintermediateResponseList),&(newStringPtr->link));
+            le_dls_Queue(&(cmdPtr->ExpectintermediateResponseList), &(newStringPtr->link));
 
             interPtr = strtok_r(NULL, "|", &savePtr);
         }
@@ -1512,9 +1544,9 @@ le_result_t le_atClient_SetIntermediateResponse
     else
     {
         RspString_t* newStringPtr = le_mem_ForceAlloc(RspStringPool);
-        memset(newStringPtr,0,sizeof(RspString_t));
+        memset(newStringPtr, 0, sizeof(RspString_t));
         newStringPtr->link = LE_DLS_LINK_INIT;
-        le_dls_Queue(&(cmdPtr->ExpectintermediateResponseList),&(newStringPtr->link));
+        le_dls_Queue(&(cmdPtr->ExpectintermediateResponseList), &(newStringPtr->link));
 
     }
 
@@ -1531,7 +1563,7 @@ le_result_t le_atClient_SetIntermediateResponse
  *      - LE_FAULT when function failed
  *      - LE_OK when function succeed
  *
- * @note If the AT Command reference is invalid, a fatal error occurs,
+ * @note If the AT Command reference or set response is invalid, a fatal error occurs,
  *       the function won't return.
  */
 //--------------------------------------------------------------------------------------------------
@@ -1551,25 +1583,28 @@ le_result_t le_atClient_SetFinalResponse
         return LE_BAD_PARAMETER;
     }
 
-    char *respPtr = strdup(responsePtr);
-    if (strcmp(respPtr, "\0") != 0)
+    if (responsePtr == NULL)
     {
-        char *savePtr;
-        respPtr = strtok_r(respPtr,"|", &savePtr);
+        LE_KILL_CLIENT("Invalid responsePtr (%p) provided!", responsePtr);
+        return LE_BAD_PARAMETER;
+    }
+
+
+    if (strcmp(responsePtr, "\0") != 0)
+    {
+        size_t len = strlen(responsePtr) + 1;
+        char tmpResponse[len];
+        memset(tmpResponse, 0, len);
+        strncpy(tmpResponse, responsePtr, len);
+        char *savePtr = (char*) tmpResponse;
+        char *respPtr = strtok_r((char*) tmpResponse, "|", &savePtr);
 
         while(respPtr != NULL)
         {
             RspString_t* newStringPtr = le_mem_ForceAlloc(RspStringPool);
             memset(newStringPtr,0,sizeof(RspString_t));
 
-            if(strlen(respPtr)>LE_ATDEFS_RESPONSE_MAX_BYTES)
-            {
-                LE_DEBUG("%s is too long (%zd): Max size %d",respPtr,strlen(respPtr),
-                            LE_ATDEFS_RESPONSE_MAX_BYTES);
-                return LE_FAULT;
-            }
-
-            strncpy(newStringPtr->line,respPtr,LE_ATDEFS_RESPONSE_MAX_BYTES);
+            le_utf8_Copy(newStringPtr->line,respPtr,LE_ATDEFS_RESPONSE_MAX_BYTES, NULL);
 
             newStringPtr->link = LE_DLS_LINK_INIT;
 
@@ -1610,23 +1645,15 @@ le_result_t le_atClient_SetText
         return LE_BAD_PARAMETER;
     }
 
-    if (textPtr)
+    if(strlen(textPtr)>LE_ATDEFS_TEXT_MAX_LEN)
     {
-        if(strlen(textPtr)>LE_ATDEFS_TEXT_MAX_LEN)
-        {
-            LE_ERROR("Text is too long! (%zd>%d)",strlen(textPtr),LE_ATDEFS_TEXT_MAX_LEN);
-            return LE_FAULT;
-        }
-
-        memcpy(cmdPtr->text, textPtr, strlen(textPtr));
-        cmdPtr->textSize = strlen(textPtr);
-        return LE_OK;
-    }
-    else
-    {
-        LE_DEBUG("No data to set");
+        LE_ERROR("Text is too long! (%zd>%d)",strlen(textPtr),LE_ATDEFS_TEXT_MAX_LEN);
         return LE_FAULT;
     }
+
+    memcpy(cmdPtr->text, textPtr, strlen(textPtr));
+    cmdPtr->textSize = strlen(textPtr);
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1913,13 +1940,13 @@ le_result_t le_atClient_SetCommandAndSend
         ///< [IN] Timeout
 )
 {
-    le_result_t res = LE_FAULT;
-
-    if (commandPtr == NULL)
+    if (cmdRefPtr  == NULL)
     {
-        LE_KILL_CLIENT("commandPtr is NULL !");
-        return res;
+        LE_KILL_CLIENT("cmdRefPtr is NULL.");
+        return LE_FAULT;
     }
+
+    le_result_t res = LE_FAULT;
 
     *cmdRefPtr = le_atClient_Create();
     LE_DEBUG("New command ref (%p) created",*cmdRefPtr);
@@ -2017,7 +2044,7 @@ le_atClient_UnsolicitedResponseHandlerRef_t le_atClient_AddUnsolicitedResponseHa
     Unsolicited_t* unsolicitedPtr = le_mem_ForceAlloc(UnsolicitedPool);
 
     memset(unsolicitedPtr, 0 ,sizeof(Unsolicited_t));
-    strncpy(unsolicitedPtr->unsolRsp, unsolRsp, strlen(unsolRsp));
+    le_utf8_Copy(unsolicitedPtr->unsolRsp, unsolRsp, LE_ATDEFS_UNSOLICITED_MAX_BYTES, NULL);
     unsolicitedPtr->lineCount    = lineCount;
     unsolicitedPtr->handlerPtr = handlerPtr;
     unsolicitedPtr->contextPtr = contextPtr;
@@ -2051,6 +2078,8 @@ void le_atClient_RemoveUnsolicitedResponseHandler
                                    RemoveUnsolicited,
                                    (void*) unsolicitedPtr,
                                    (void*) NULL);
+
+        le_ref_DeleteRef(UnsolRefMap, addHandlerRef);
     }
 }
 
@@ -2125,6 +2154,14 @@ le_atClient_DeviceRef_t le_atClient_Start
 {
     char name[THREAD_NAME_MAX_LENGTH];
     static uint32_t threatCounter = 1;
+    char errMsg[ERR_MSG_MAX] = {0};
+
+    // check if the file descriptor is valid
+    if (fcntl(fd, F_GETFD) == -1)
+    {
+        LE_ERROR("%s", strerror_r(errno, errMsg, ERR_MSG_MAX));
+        return NULL;
+    }
 
     DeviceContext_t* newInterfacePtr = le_mem_ForceAlloc(DevicesPool);
 
@@ -2153,15 +2190,8 @@ le_atClient_DeviceRef_t le_atClient_Start
     le_thread_Start(newInterfacePtr->threadRef);
     le_sem_Wait(newInterfacePtr->waitingSemaphore);
 
-    if (newInterfacePtr != NULL)
-    {
-        newInterfacePtr->ref = le_ref_CreateRef(DevicesRefMap, newInterfacePtr);
-        return newInterfacePtr->ref;
-    }
-    else
-    {
-        return NULL;
-    }
+    newInterfacePtr->ref = le_ref_CreateRef(DevicesRefMap, newInterfacePtr);
+    return newInterfacePtr->ref;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2224,4 +2254,9 @@ COMPONENT_INIT
     // Add a handler to the close session service
     le_msg_AddServiceCloseHandler(
         le_atClient_GetServiceRef(), CloseSessionEventHandler, NULL);
+
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_Init(1);
+    le_wdogChain_MonitorEventLoop(0, watchdogInterval);
 }

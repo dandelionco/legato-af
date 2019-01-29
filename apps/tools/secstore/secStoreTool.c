@@ -1,8 +1,8 @@
-/** @file appCtrl.c
+/** @file secStoreTool.c
  *
- * Control Legato applications.
+ * Secure storage command line tool
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -66,7 +66,16 @@ static void PrintHelp
         "NAME:\n"
         "    secstore - Used to perform administrative functions on secure storage.\n"
         "\n"
+        "AVAILABILITY:\n"
+#if (SECSTOREADMIN == 1)
+        "    secstore commands are fully available\n"
+#else
+        "    secstore administrative commands are disabled. Only commands to retrieve non\n"
+        "    sensitive info are available. Refer to the API documentation for further details\n"
+#endif
+        "\n"
         "DESCRIPTION:\n"
+#if (SECSTOREADMIN == 1)
         "    secstore ls [OPTIONS] <path>\n"
         "       List all the secure storage entries under <path>.  <path> is assumed to be absolute.\n"
         "\n"
@@ -81,20 +90,22 @@ static void PrintHelp
         "       Writes the data from <inputFile> into the item specified by <path>.  <path> is\n"
         "       assumed to be absolute and must not end with a separator '/'.  Writing will stop once the end of\n"
         "       the <inputFile> is reached or the maximum secure storage item size is reached.\n"
+        "       <path> can eventually be '-' to capture the standard input.\n"
         "       Note that this write will not respect an application's secure storage limit.\n"
         "\n"
         "    secstore rm <path>\n"
         "       Deletes <path> and all items under it.  <path> is assumed to be absolute.\n"
         "\n"
+        "\n"
+        "    secstore readmeta\n"
+        "       Prints the contents of the meta file.\n"
+        "\n"
+#endif
         "    secstore size <path>\n"
         "       Gets the size of all items under <path>.  <path> is assumed to be absolute.\n"
         "\n"
         "    secstore total\n"
         "       Gets the total space and free space, in bytes, for all of secure storage.\n"
-        "\n"
-        "    secstore readmeta\n"
-        "       Prints the contents of the meta file.\n"
-        "\n"
         );
 
     exit(EXIT_SUCCESS);
@@ -242,7 +253,7 @@ static void PrintEntry
     // Print entry.
     if (result == LE_OK)
     {
-        printf("%s", (char*)buf);
+        fwrite(buf, 1, bufSize, stdout);
     }
     else if (result == LE_NOT_FOUND)
     {
@@ -278,18 +289,29 @@ static void WriteEntry
 
     do
     {
-        fd = open(InputFilePtr, O_RDONLY);
+        if((InputFilePtr[0] == '-') &&
+           (InputFilePtr[1] == '\0'))
+        {
+            fd = 0; // STDIN
+        }
+        else
+        {
+            fd = open(InputFilePtr, O_RDONLY);
+        }
     }
     while ( (fd == -1) && (errno == EINTR) );
 
     if (fd == -1)
     {
-        fprintf(stderr, "Could not open file %s.  %m.\n", Path);
+        fprintf(stderr, "Could not open file '%s'.  %m.\n", InputFilePtr);
         exit(EXIT_FAILURE);
     }
 
     // Read the contents of the input file.
-    uint8_t buf[LE_SECSTORE_MAX_ITEM_SIZE];
+    // Add A byte more and try to read over the LE_SECSTORE_MAX_ITEM_SIZE limit.
+    // If something is read over this limit, the input file is assumed to be too large and
+    // the write will be rejected.
+    uint8_t buf[LE_SECSTORE_MAX_ITEM_SIZE + 1];
     ssize_t numBytes;
 
     do
@@ -297,6 +319,15 @@ static void WriteEntry
         numBytes = read(fd, buf, sizeof(buf));
     }
     while ( (numBytes == -1) && (errno == EINTR) );
+
+    close(fd);
+
+    if (LE_SECSTORE_MAX_ITEM_SIZE < numBytes)
+    {
+        fprintf(stderr, "The file '%s' is too large. Size is > %u\n",
+                InputFilePtr, LE_SECSTORE_MAX_ITEM_SIZE);
+        exit(EXIT_FAILURE);
+    }
 
     if (numBytes >= 0)
     {
@@ -500,14 +531,8 @@ static void ReadMeta
     }
 
     /* Close the temp file. */
-    int r;
-    do
-    {
-        r = fclose(tmpFilePtr);
-    }
-    while ( (r != 0) && (errno == EINTR) );
 
-    if (r != 0)
+    if (fclose(tmpFilePtr) != 0)
     {
         LE_EMERG("Could not close %s. %m.", tmpFilePath);
 

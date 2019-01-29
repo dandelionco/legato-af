@@ -4,7 +4,7 @@
  *
  *  Run 'mkapp --help' for command-line options and usage help.
  *
- *  Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -29,9 +29,6 @@ namespace cli
 /// Object that stores build parameters that we gather.
 static mk::BuildParams_t BuildParams;
 
-/// Path to the directory into which the final, built application file should be placed.
-static std::string OutputDir;
-
 /// Suffix to append to the application version.
 static std::string VersionSuffix;
 
@@ -45,6 +42,21 @@ static std::string AppName;
 /// a new build.ninja.
 static bool DontRunNinja = false;
 
+/// Steps to run to generate a Linux app
+static const generator::AppGenerator_t LinuxSteps[] =
+{
+    generator::ForAllComponents<GenerateCode>,
+    GenerateCode,
+    ninja::Generate,
+    [](model::App_t* appPtr, const mk::BuildParams_t& buildParams)
+    {
+        if (buildParams.binPack)
+        {
+            adefGen::GenerateExportedAdef(appPtr, buildParams);
+        }
+    },
+    NULL
+};
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -60,14 +72,14 @@ static void GetCommandLineArgs
 )
 //--------------------------------------------------------------------------------------------------
 {
-    // Lambda function that gets called once for each occurence of the --append-to-version (or -a)
+    // Lambda function that gets called once for each occurrence of the --append-to-version (or -a)
     // argument on the command line.
     auto versionPush = [&](const char* arg)
         {
             VersionSuffix += arg;
         };
 
-    // Lambda function that gets called once for each occurence of the --cflags (or -C)
+    // Lambda function that gets called once for each occurrence of the --cflags (or -C)
     // argument on the command line.
     auto cFlagsPush = [&](const char* arg)
         {
@@ -75,7 +87,7 @@ static void GetCommandLineArgs
             BuildParams.cFlags += arg;
         };
 
-    // Lambda function that gets called for each occurence of the --cxxflags, (or -X) argument on
+    // Lambda function that gets called for each occurrence of the --cxxflags, (or -X) argument on
     // the command line.
     auto cxxFlagsPush = [&](const char* arg)
         {
@@ -83,7 +95,7 @@ static void GetCommandLineArgs
             BuildParams.cxxFlags += arg;
         };
 
-    // Lambda function that gets called once for each occurence of the --ldflags (or -L)
+    // Lambda function that gets called once for each occurrence of the --ldflags (or -L)
     // argument on the command line.
     auto ldFlagsPush = [&](const char* arg)
         {
@@ -91,122 +103,183 @@ static void GetCommandLineArgs
             BuildParams.ldFlags += arg;
         };
 
-    // Lambda function that gets called once for each occurence of the interface search path
+    // Lambda function that gets called once for each occurrence of the interface search path
     // argument on the command line.
     auto ifPathPush = [&](const char* path)
         {
             BuildParams.interfaceDirs.push_back(path);
         };
 
-    // Lambda function that gets called once for each occurence of the source search path
+    // Lambda function that gets called once for each occurrence of the source search path
     // argument on the command line.
     auto sourcePathPush = [&](const char* path)
         {
+            // In order to preserve original command line functionality, we push this new path into
+            // all of the various search paths.
+            BuildParams.moduleDirs.push_back(path);
+            BuildParams.appDirs.push_back(path);
+            BuildParams.componentDirs.push_back(path);
             BuildParams.sourceDirs.push_back(path);
         };
 
-    // Lambda function that gets called once for each occurence of a .adef file name on the
+    // Lambda function that gets called once for each occurrence of a .adef file name on the
     // command line.
     auto adefFileNameSet = [&](const char* param)
         {
             if (AdefFilePath != "")
             {
-                throw mk::Exception_t("Only one app definition (.adef) file allowed.");
+                throw mk::Exception_t(LE_I18N("Only one app definition (.adef) file allowed."));
             }
             AdefFilePath = param;
         };
 
     args::AddMultipleString('a',
                             "append-to-version",
-                            "Specify a suffix to append to the application version specified"
-                            " in the .adef file.  Will automatically insert a '.' between the"
-                            " .adef's version string and any version strings specified on the"
-                            " command-line.  Multiple occurences of this argument will be"
-                            " combined into a single string.",
+                            LE_I18N("Specify a suffix to append to the application version"
+                                    " specified in the .adef file."
+                                    "  Will automatically insert a '.' between the .adef's version"
+                                    " string and any version strings specified on the command-line."
+                                    "  Multiple occurences of this argument will be combined into"
+                                    " a single string."),
                             versionPush);
 
-    args::AddOptionalString(&OutputDir,
+    args::AddOptionalString(&BuildParams.outputDir,
                             ".",
                             'o',
                             "output-dir",
-                            "Specify the directory into which the final, built application file"
-                            "(ready to be installed on the target) should be put.");
+                            LE_I18N("Specify the directory into which the final, built application"
+                                    " file (ready to be installed on the target) should be put."));
 
     args::AddOptionalString(&BuildParams.workingDir,
                             "",
                             'w',
                             "object-dir",
-                            "Specify the directory into which any intermediate build artifacts"
-                            " (such as .o files and generated source code files) should be put.");
+                            LE_I18N("Specify the directory into which any intermediate build"
+                                    " artifacts (such as .o files and generated source code files)"
+                                    " should be put."));
+
+    args::AddOptionalString(&BuildParams.debugDir,
+                            "",
+                            'd',
+                            "debug-dir",
+                            LE_I18N("Generate debug symbols and place them in the specified"
+                                    " directory.  Debug symbol files will be named with build-id"));
 
     args::AddMultipleString('i',
                             "interface-search",
-                            "Add a directory to the interface search path.",
+                            LE_I18N("Add a directory to the interface search path."),
                             ifPathPush);
 
     args::AddMultipleString('c',
                             "component-search",
-                            "(DEPRECATED) Add a directory to the source search path (same as -s).",
+                            LE_I18N("(DEPRECATED) Add a directory to the source search path"
+                                    " (same as -s)."),
                             sourcePathPush);
 
     args::AddMultipleString('s',
                             "source-search",
-                            "Add a directory to the source search path.",
+                            LE_I18N("Add a directory to the source search path."),
                             sourcePathPush);
 
     args::AddOptionalString(&BuildParams.target,
                             "localhost",
                             't',
                             "target",
-                            "Set the compile target (localhost|ar7).");
+                            LE_I18N("Set the compile target (localhost|ar7)."));
 
     args::AddOptionalFlag(&BuildParams.beVerbose,
                           'v',
                           "verbose",
-                          "Set into verbose mode for extra diagnostic information.");
+                          LE_I18N("Set into verbose mode for extra diagnostic information."));
+
+    args::AddOptionalInt(&BuildParams.jobCount,
+                         0,
+                         'j',
+                         "jobs",
+                         LE_I18N("Run N jobs in parallel (default derived from CPUs available)"));
 
     args::AddMultipleString('C',
                             "cflags",
-                            "Specify extra flags to be passed to the C compiler.",
+                            LE_I18N("Specify extra flags to be passed to the C compiler."),
                             cFlagsPush);
 
     args::AddMultipleString('X',
                             "cxxflags",
-                            "Specify extra flags to be passed to the C++ compiler.",
+                            LE_I18N("Specify extra flags to be passed to the C++ compiler."),
                             cxxFlagsPush);
 
     args::AddMultipleString('L',
                             "ldflags",
-                            "Specify extra flags to be passed to the linker when linking "
-                            "executables.",
+                            LE_I18N("Specify extra flags to be passed to the linker when linking "
+                                    "executables."),
                             ldFlagsPush);
+
+    args::AddOptionalFlag(&BuildParams.signPkg,
+                            'S',
+                            "ima-sign",
+                            LE_I18N("Sign the package with IMA key. If this option specified, "
+                                    "it will first look for IMA private key and public certificate"
+                                    "in command line parameter. If nothing specified in command "
+                                    "line it will look for environment variable IMA_PRIVATE_KEY ("
+                                    "private key path) and IMA_PUBLIC_CERT (public certificate "
+                                    "signed by system private key)."));
+
+    args::AddOptionalString(&BuildParams.privKey,
+                            "",
+                            'K',
+                            "key",
+                            LE_I18N("Specify the private key path which should be used to sign "
+                                    "update package. Once specified, corresponding public "
+                                    "certificate path must be specified to verify update package "
+                                    "on target."
+                                    )
+                            );
+
+    args::AddOptionalString(&BuildParams.pubCert,
+                            "",
+                            'P',
+                            "pub-cert",
+                            LE_I18N("Specify the public certificate path which should be used to "
+                                    "verify update package on target. Once specified, "
+                                    "corresponding private key path must be specified to sign "
+                                    "update package on host."
+                                    )
+                            );
 
     args::AddOptionalFlag(&DontRunNinja,
                            'n',
                            "dont-run-ninja",
-                           "Even if a build.ninja file exists, ignore it, delete the staging area,"
-                           " parse all inputs, and generate all output files, including a new copy"
-                           " of the build.ninja, then exit without running ninja.  This is used by"
-                           " the build.ninja to to regenerate itself and any other files that need"
-                           " to be regenerated when the build.ninja finds itself out of date.");
+                          LE_I18N("Even if a build.ninja file exists, ignore it, delete the"
+                                  " staging area, parse all inputs, and generate all output files,"
+                                  " including a new copy of the build.ninja, then exit without"
+                                  " running ninja.  This is used by the build.ninja to to"
+                                  " regenerate itself and any other files that need to be"
+                                  " regenerated when the build.ninja finds itself out of date."));
 
     args::AddOptionalFlag(&BuildParams.codeGenOnly,
                           'g',
                           "generate-code",
-                          "Only generate code, but don't compile, link, or bundle anything."
-                          " The interface definition (include) files will be generated, along"
-                          " with component and executable main files and configuration files."
-                          " This is useful for supporting context-sensitive auto-complete and"
-                          " related features in source code editors, for example.");
+                          LE_I18N("Only generate code, but don't compile, link, or bundle anything."
+                                  " The interface definition (include) files will be generated,"
+                                  " along with component and executable main files and"
+                                  " configuration files."
+                                  " This is useful for supporting context-sensitive auto-complete"
+                                  " and related features in source code editors, for example."));
 
     args::AddOptionalFlag(&BuildParams.binPack,
                           'b',
                           "bin-pack",
-                          "Generate a binary-app package instead of a .update file."
-                          " Binary-app packages can be used to distribute an application"
-                          " without its original source code.  This binary app package file"
-                          " is intended to be included in a system definition (.sdef) "
-                          " file's 'apps:' section in place of a .adef file.");
+                          LE_I18N("Generate a binary-app package instead of a .update file."
+                                  " Binary-app packages can be used to distribute an application"
+                                  " without its original source code.  This binary app package file"
+                                  " is intended to be included in a system definition (.sdef) "
+                                  " file's 'apps:' section in place of a .adef file."));
+
+    args::AddOptionalFlag(&BuildParams.noPie,
+                          'p',
+                          "no-pie",
+                          LE_I18N("Do not build application executable as a position independent"
+                                  " executable."));
 
     // Any remaining parameters on the command-line are treated as the .adef file path.
     // Note: there should only be one parameter not prefixed by an argument identifier.
@@ -217,8 +290,11 @@ static void GetCommandLineArgs
     // Were we given an application definition file path?
     if (AdefFilePath == "")
     {
-        throw std::runtime_error("An application definition must be supplied.");
+        throw mk::Exception_t(LE_I18N("An application definition must be supplied."));
     }
+
+    // Now check for IMA signing
+    CheckForIMASigning(BuildParams);
 
     // Make sure we have the .adef file's absolute path (for improved error reporting).
     AdefFilePath = path::MakeAbsolute(AdefFilePath);
@@ -246,6 +322,9 @@ static void GetCommandLineArgs
     // Add the directory containing the .adef file to the list of source search directories
     // and the list of interface search directories.
     std::string aDefFileDir = path::GetContainingDir(AdefFilePath);
+    BuildParams.moduleDirs.push_back(aDefFileDir);
+    BuildParams.appDirs.push_back(aDefFileDir);
+    BuildParams.componentDirs.push_back(aDefFileDir);
     BuildParams.sourceDirs.push_back(aDefFileDir);
     BuildParams.interfaceDirs.push_back(aDefFileDir);
 }
@@ -265,8 +344,14 @@ void MakeApp
 {
     GetCommandLineArgs(argc, argv);
 
+    BuildParams.argc = argc;
+    BuildParams.argv = argv;
+    // Get tool chain info from environment variables.
+    // (Must be done after command-line args parsing and before setting target-specific env vars.)
+    FindToolChain(BuildParams);
+
     // Set the target-specific environment variables (e.g., LEGATO_TARGET).
-    envVars::SetTargetSpecific(BuildParams.target);
+    envVars::SetTargetSpecific(BuildParams);
 
     // If we have been asked not to run Ninja, then delete the staging area because it probably
     // will contain some of the wrong files now that .Xdef file have changed.
@@ -276,7 +361,7 @@ void MakeApp
     }
     // If we have not been asked to ignore any already existing build.ninja, and the command-line
     // arguments and environment variables we were given are the same as last time, just run ninja.
-    else if (args::MatchesSaved(BuildParams, argc, argv) && envVars::MatchesSaved(BuildParams))
+    else if (args::MatchesSaved(BuildParams) && envVars::MatchesSaved(BuildParams))
     {
         RunNinja(BuildParams);
         // NOTE: If build.ninja exists, RunNinja() will not return.  If it doesn't it will.
@@ -290,7 +375,7 @@ void MakeApp
     else
     {
         // Save the command line arguments.
-        args::Save(BuildParams, argc, argv);
+        args::Save(BuildParams);
 
         // Save the environment variables.
         // Note: we must do this before we parse the definition file, because parsing the file
@@ -312,6 +397,12 @@ void MakeApp
         appPtr->version += '.' + VersionSuffix;
     }
 
+    if (!appPtr->requiredModules.empty())
+    {
+        throw mk::Exception_t(
+                    LE_I18N("Kernel modules cannot be added to an application without a system."));
+    }
+
     // Ensure that all client-side interfaces have either been bound to something or declared
     // external.
     modeller::EnsureClientInterfacesSatisfied(appPtr);
@@ -322,21 +413,11 @@ void MakeApp
         modeller::PrintSummary(appPtr);
     }
 
-    // Generate app-specific code and configuration files.
-    GenerateCode(appPtr, BuildParams);
+    // Run appropriate generator
+    generator::RunAllGenerators(LinuxSteps, appPtr, BuildParams);
 
-    // Generate code for all the components in the app.
-    GenerateCode(appPtr->components, BuildParams);
-
-    // If we're building for binary distribution, then generate the redistributable .adef file to
-    // go with the app.
-    if (BuildParams.binPack)
-    {
-        adefGen::GenerateExportedAdef(appPtr, BuildParams);
-    }
-
-    // Generate the build script for the application.
-    ninja::Generate(appPtr, BuildParams, OutputDir, argc, argv);
+    // Now delete the appPtr
+    delete appPtr;
 
     // If we haven't been asked not to, run ninja.
     if (!DontRunNinja)

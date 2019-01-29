@@ -1,5 +1,5 @@
 #---------------------------------------------------------------------------------------------------
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #---------------------------------------------------------------------------------------------------
 
 ### Copy test setup script to test program output directory.
@@ -17,6 +17,9 @@ mkexe(  ${TEST_NAME} -v
 
 add_test(${TEST_NAME} ${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME})
 
+# This is a C test
+add_dependencies(tests_c ${TEST_NAME})
+
 
 ### TEST 2
 
@@ -28,6 +31,9 @@ mkexe(  ${TEST_NAME}
         )
 
 add_test(${TEST_NAME} ${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME})
+
+# This is a C test
+add_dependencies(tests_c ${TEST_NAME})
 
 
 ### TEST 3
@@ -48,3 +54,7 @@ mkexe(  ${TEST_NAME}
 
 add_test(${TEST_NAME} ${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME})
 
+# This is a C test
+add_dependencies(tests_c ${TEST_NAME}
+                         ${TEST_NAME}-client
+                         ${TEST_NAME}-server)

@@ -11,7 +11,7 @@
  *
  * Legato @ref ifgentest include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -66,7 +66,7 @@ FUNCTION allParameters
     uint32 output[TEN] OUT,   ///< some more comments here
     ///< and some comments here as well
 
-    string label [common.TEN..20] IN,
+    string label [20] IN,
     string response [TWENTY] OUT,
     ///< comments on final parameter, first line
     ///< and more comments

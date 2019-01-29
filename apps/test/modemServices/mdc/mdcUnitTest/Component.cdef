@@ -6,16 +6,25 @@ requires:
         modemServices/le_mdmDefs.api     [types-only]
         modemServices/le_mrc.api         [types-only]
         modemServices/le_sim.api         [types-only]
+        le_cfg.api                       [types-only]
     }
+}
+
+cflags:
+{
+    -Dle_msg_AddServiceCloseHandler=MyAddServiceCloseHandler
+    -I${LEGATO_ROOT}/components/watchdogChain
 }
 
 sources:
 {
     main.c
+    mdc_stubs.c
     ${LEGATO_ROOT}/components/modemServices/modemDaemon/le_mdc.c
     ${LEGATO_ROOT}/components/modemServices/modemDaemon/le_mrc.c
     ${LEGATO_ROOT}/components/modemServices/modemDaemon/le_sim.c
-    ${PA_DIR}/simu/components/le_pa/pa_mrc_simu.c
-    ${PA_DIR}/simu/components/le_pa/pa_mdc_simu.c
-    ${PA_DIR}/simu/components/le_pa/pa_sim_simu.c
+    simu/components/le_pa/pa_mrc_simu.c
+    simu/components/le_pa/pa_mdc_simu.c
+    simu/components/le_pa/pa_sim_simu.c
+    simu/le_cfg_simu.c
 }

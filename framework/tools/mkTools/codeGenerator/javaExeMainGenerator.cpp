@@ -2,7 +2,7 @@
 /**
  * @file javaExeMainGenerator.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -33,7 +33,9 @@ void GenerateJavaExeMain
     std::ofstream outputFile(sourceFile);
     if (outputFile.is_open() == false)
     {
-        throw mk::Exception_t("Could not open, '" + sourceFile + ",' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Could not open '%s' for writing."), sourceFile)
+        );
     }
 
     auto& exeName = exePtr->name;
@@ -99,9 +101,8 @@ void GenerateJavaExeMain
                            << "\";\n";
             }
 
-            outputFile << "            Object "
-                       << name << "Instance = io.legato.generated.component."
-                       << name << ".Factory.CreateComponent(logger);\n"
+            outputFile << "            io.legato.generated.component."
+                       << name << ".Factory.createComponent(logger);\n"
                           "\n";
         }
     }

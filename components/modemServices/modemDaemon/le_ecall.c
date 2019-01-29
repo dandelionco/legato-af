@@ -7,7 +7,7 @@
  * - if builtMsdSize > 1, the MSD has been already encoded or imported;
  * - if builtMsdSize <= 1, the MSD is not yet encoded nor imported.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -17,6 +17,8 @@
 #include "asn1Msd.h"
 #include "pa_ecall.h"
 #include "le_mcc_local.h"
+#include "le_ms_local.h"
+#include "watchdogChain.h"
 
 //--------------------------------------------------------------------------------------------------
 // Symbol and Enum definitions.
@@ -111,6 +113,27 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Minimum value of ERA GLONASS Call Cleardown Fallback Timer (CCFT) expressed in minutes
+ */
+//--------------------------------------------------------------------------------------------------
+#define ERA_GLONASS_CCFT_MIN              1
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum value of ERA GLONASS Call Cleardown Fallback Timer (CCFT) expressed in minutes
+ */
+//--------------------------------------------------------------------------------------------------
+#define ERA_GLONASS_CCFT_MAX             720
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum value of ERA GLONASS eCall auto answer timer expressed in minutes
+ */
+//--------------------------------------------------------------------------------------------------
+#define ERA_GLONASS_AUTOANSTIME_MAX      720
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Size of eCall events memory pool
  */
 //--------------------------------------------------------------------------------------------------
@@ -144,13 +167,14 @@ ECallSessionState_t;
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    uint16_t        manualDialAttempts;     ///< Manual dial attempts
-    uint16_t        autoDialAttempts;       ///< Automatic dial attempts
-    uint16_t        dialDuration;           ///< Dial duration value
-    uint16_t        nadDeregistrationTime;  ///< NAD deregistration time
-    bool            pullModeSwitch;         ///< AL ack received positive has been reported or T7
-                                            ///< timer has expired, Pull mode must be selected on
-                                            ///< next redials
+    uint16_t        manualDialAttempts;        ///< Manual dial attempts
+    uint16_t        autoDialAttempts;          ///< Automatic dial attempts
+    uint16_t        dialDuration;              ///< Dial duration value
+    uint16_t        nadDeregistrationTime;     ///< NAD deregistration time
+    uint16_t        postTestRegistrationTime;  ///< Post test registration time
+    bool            pullModeSwitch;            ///< AL ack received positive has been reported or T7
+                                               ///< timer has expired, Pull mode must be selected on
+                                               ///< next redials
 }
 EraGlonassContext_t;
 
@@ -243,9 +267,9 @@ typedef struct
     le_mcc_TerminationReason_t termination;                             ///< Call termination reason
     int32_t                 specificTerm;                               ///< specific call
                                                                         ///< termination reason
-    bool                    ackOrT5OrT7Received;                        ///< LL-ACK, HL-ACK,
-                                                                        ///< T5 timeout or
+    bool                    ackOrT7Received;                            ///< LL-ACK, HL-ACK,
                                                                         ///< T7 timeout received
+    bool                    t5Received;                                 ///< T5 timeout received
 }
 ECall_t;
 
@@ -369,8 +393,8 @@ static int32_t ConvertDdToDms
 {
     int32_t  deg;
     float    degMod;
-    float    minAbs=0.0;
-    float    secDec=0.0;
+    float    minAbs;
+    float    secDec;
     float    sec;
 
     // compute degrees
@@ -476,6 +500,9 @@ static void RedialStart
     void
 )
 {
+    LE_DEBUG("Start redial: state %d, isPush %d, SystemStandard %d",
+             ECallObj.redial.state, ECallObj.isPushed, SystemStandard);
+
     // Check redial state
     switch(ECallObj.redial.state)
     {
@@ -490,8 +517,6 @@ static void RedialStart
             return;
     }
 
-    LE_DEBUG("Start redial: state %d", ECallObj.redial.state);
-
     // Update redial state machine
     ECallObj.redial.state = ECALL_REDIAL_ACTIVE;
 
@@ -499,7 +524,7 @@ static void RedialStart
     {
         if (!ECallObj.isPushed)
         {
-            if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
+            if (le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
             {
                 LE_WARN("Unable to set the Push mode!");
             }
@@ -552,7 +577,6 @@ static void RedialClear
     void
 )
 {
-
     // Check redial state
     switch(ECallObj.redial.state)
     {
@@ -577,6 +601,7 @@ static void RedialClear
 
     // Initialize dial attempt counter
     ECallObj.redial.dialAttemptsCount = 0;
+
     // Initialize max dial attempt
     if (SystemStandard == PA_ECALL_PAN_EUROPEAN)
     {
@@ -608,7 +633,6 @@ static void RedialStop
     RedialStopCause_t stopCause
 )
 {
-
     LE_DEBUG("Stop redial: cause %d, state %d", stopCause, ECallObj.redial.state);
 
     // Check redial state
@@ -636,13 +660,7 @@ static void RedialStop
             // Redial state machine should be ECALL_REDIAL_STOPPED. Nothing else to do.
             break;
         }
-        case ECALL_REDIAL_STOP_NO_REDIAL_CONDITION:
-        {
-            StopTimers();
-            // Send End of redial event
-            ReportState(LE_ECALL_STATE_END_OF_REDIAL_PERIOD);
-            break;
-        }
+        case ECALL_REDIAL_STOP_MAX_DIAL_ATTEMPT:
         case ECALL_REDIAL_DURATION_EXPIRED:
         {
             StopTimers();
@@ -650,20 +668,8 @@ static void RedialStop
             ReportState(LE_ECALL_STATE_END_OF_REDIAL_PERIOD);
             break;
         }
-        case ECALL_REDIAL_STOP_MAX_DIAL_ATTEMPT:
-        {
-            StopTimers();
-            // Send End of redial event
-            ReportState(LE_ECALL_STATE_END_OF_REDIAL_PERIOD);
-            break;
-        }
+        case ECALL_REDIAL_STOP_NO_REDIAL_CONDITION:
         case ECALL_REDIAL_STOP_FROM_PSAP:
-        {
-            StopTimers();
-            // Send End of redial event
-            ReportState(LE_ECALL_STATE_END_OF_REDIAL_PERIOD);
-            break;
-        }
         case ECALL_REDIAL_STOP_FROM_USER:
         {
             StopTimers();
@@ -688,7 +694,7 @@ static le_result_t DialAttempt
     void
 )
 {
-    le_result_t result = LE_OK;
+    le_result_t result;
 
     // Check redial state
     switch(ECallObj.redial.state)
@@ -703,13 +709,15 @@ static le_result_t DialAttempt
             return LE_FAULT;
     }
 
+    LE_DEBUG("isPush %d, SystemStandard %d", ECallObj.isPushed, SystemStandard);
+
     // Management of PUSH/PULL mode
     if (SystemStandard == PA_ECALL_ERA_GLONASS)
     {
         // Cf. ERA-GLONASS GOST R 54620-2011, 7.5.1.2
         if ((ECallObj.eraGlonass.pullModeSwitch) && (ECallObj.isPushed))
         {
-            if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PULL) != LE_OK)
+            if (LE_OK != le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PULL))
             {
                 LE_WARN("Unable to set the Pull mode!");
             }
@@ -723,7 +731,7 @@ static le_result_t DialAttempt
     {
         if (!ECallObj.isPushed)
         {
-            if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
+            if (LE_OK != le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH))
             {
                 LE_WARN("Unable to set the Push mode!");
             }
@@ -739,15 +747,14 @@ static le_result_t DialAttempt
     {
         LE_INFO("Start dial attempt #%d",
                 ECallObj.redial.dialAttemptsCount+1);
-        if(pa_ecall_Start(ECallObj.startType) == LE_OK)
+        result = pa_ecall_Start(ECallObj.startType);
+        if (LE_OK == result)
         {
             ECallObj.redial.dialAttemptsCount++;
-            result = LE_OK;
         }
         else
         {
             LE_ERROR("Dial attempt failed!");
-            result = LE_FAULT;
         }
     }
     else
@@ -757,15 +764,14 @@ static le_result_t DialAttempt
             LE_INFO("Start dial attempt %d of %d",
                     ECallObj.redial.dialAttemptsCount+1,
                     ECallObj.redial.maxDialAttempts);
-            if(pa_ecall_Start(ECallObj.startType) == LE_OK)
+            result = pa_ecall_Start(ECallObj.startType);
+            if (LE_OK == result)
             {
                 ECallObj.redial.dialAttemptsCount++;
-                result = LE_OK;
             }
             else
             {
                 LE_ERROR("Dial attempt failed!");
-                result = LE_FAULT;
             }
         }
         else
@@ -907,6 +913,7 @@ static msd_VehicleType_t VehicleTypeEnumToEnumAsn1
             return MSD_VEHICLE_PASSENGER_M1;
     }
 }
+
 //--------------------------------------------------------------------------------------------------
 /**
  * Map the vehicle type string to enum.
@@ -922,7 +929,7 @@ static le_result_t VehicleTypeStringToEnum
     le_ecall_MsdVehicleType_t* vehType // OUT
 )
 {
-    le_result_t result = LE_OK;
+    le_result_t result;
     LE_FATAL_IF((vehStr == NULL), "vehStr is NULL !");
 
     if (!strcmp(vehStr, "Passenger-M1"))
@@ -1126,22 +1133,15 @@ static le_result_t ParseAndSetVehicleType
 )
 {
     LE_FATAL_IF((vehStr == NULL), "vehStr is NULL !");
-    if (NULL != vehStr)
-    {
-        le_ecall_MsdVehicleType_t vehType;
-        le_result_t result = VehicleTypeStringToEnum( vehStr, &vehType);
-        if(result == LE_OK)
-        {
-            ECallObj.msd.msdMsg.msdStruct.control.vehType = VehicleTypeEnumToEnumAsn1(vehType);
-        }
-        return result;
-    }
-    else
-    {
-        return LE_FAULT;
-    }
-}
 
+    le_ecall_MsdVehicleType_t vehType;
+    le_result_t result = VehicleTypeStringToEnum( vehStr, &vehType);
+    if (LE_OK == result)
+    {
+        ECallObj.msd.msdMsg.msdStruct.control.vehType = VehicleTypeEnumToEnumAsn1(vehType);
+    }
+    return result;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1220,7 +1220,7 @@ static le_result_t GetPropulsionType
     snprintf(configPath, sizeof(configPath), "%s/%s", CFG_MODEMSERVICE_ECALL_PATH, CFG_NODE_PROP);
     le_cfg_IteratorRef_t propCfg = le_cfg_CreateReadTxn(configPath);
 
-    sprintf (cfgNodeLoc, "%d", i);
+    snprintf(cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
 
     // Init propulsion type bitmask
     memset(&vehPropulsionStorageType, 0, sizeof(vehPropulsionStorageType));
@@ -1256,11 +1256,38 @@ static le_result_t GetPropulsionType
         }
 
         i++;
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf(cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
     }
     le_cfg_CancelTxn(propCfg);
 
     return res;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Map the coordinate system type APIs enum to the asn1Msd.h enum
+ */
+//--------------------------------------------------------------------------------------------------
+static msd_CoordinateSystemType_t CoordinateSystemTypeEnumToEnumAsn1
+(
+    le_ecall_MsdCoordinateType_t coordinateType ///< [IN] Coordinate system type
+)
+{
+    switch (coordinateType)
+    {
+        case LE_ECALL_MSD_COORDINATE_SYSTEM_TYPE_ABSENT:
+            return MSD_COORDINATE_SYSTEM_TYPE_ABSENT;
+
+        case LE_ECALL_MSD_COORDINATE_SYSTEM_TYPE_WGS84:
+            return MSD_COORDINATE_SYSTEM_TYPE_WGS84;
+
+        case LE_ECALL_MSD_COORDINATE_SYSTEM_TYPE_PZ90:
+            return MSD_COORDINATE_SYSTEM_TYPE_PZ90;
+
+        default:
+            LE_ERROR( "coordinateType outside enum range");
+            return MSD_COORDINATE_SYSTEM_TYPE_ABSENT;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1277,7 +1304,6 @@ static le_result_t LoadECallSettings
     ECall_t* eCallPtr
 )
 {
-    le_result_t res = LE_OK;
     char configPath[LE_CFG_STR_LEN_BYTES];
     snprintf(configPath, sizeof(configPath), "%s", CFG_MODEMSERVICE_ECALL_PATH);
 
@@ -1318,7 +1344,7 @@ static le_result_t LoadECallSettings
             else if (strlen(vehStr) > 0)
             {
                 LE_DEBUG("eCall settings, vehicle is %s", vehStr);
-                if ((res = ParseAndSetVehicleType(vehStr)) != LE_OK)
+                if (LE_OK != ParseAndSetVehicleType(vehStr))
                 {
                     LE_WARN("Bad vehicle type!");
                 }
@@ -1394,6 +1420,11 @@ static le_result_t LoadECallSettings
                 SystemStandard = PA_ECALL_PAN_EUROPEAN;
             }
             LE_INFO("Selected standard is %s (%d)", sysStr, SystemStandard);
+
+            if ( LE_OK != pa_ecall_UpdateSystemStandard(SystemStandard))
+            {
+               LE_INFO("Update PA system standard (%d) failed!", SystemStandard);
+            }
         }
     }
 
@@ -1429,7 +1460,8 @@ static le_result_t EncodeMsd
 {
     uint8_t outOptionalDataForEraGlonass[160]={0}; ///< 160 Bytes is guaranteed enough
                                                    ///< for the data part
-    uint8_t oid[] = {1,4,1}; ///< OID version supported
+    uint8_t oid[] = {1,4,1}; ///< OID version for MSD version 1
+    uint8_t oidV2[] = {1,4,2}; ///< OID version for MSD version 2
 
     LE_FATAL_IF((eCallPtr == NULL), "eCallPtr is NULL !");
 
@@ -1458,18 +1490,22 @@ static le_result_t EncodeMsd
                 eCallPtr->msd.msdMsg.msdStruct.numberOfPassengersPres,
                 eCallPtr->msd.msdMsg.msdStruct.numberOfPassengers);
 
+        LE_DEBUG("isPush %d, SystemStandard %d", ECallObj.isPushed, SystemStandard);
+
         // Encode optional Data for ERA GLONASS if any
         if(SystemStandard == PA_ECALL_ERA_GLONASS)
         {
+            EraGlonassDataObj.msdVersion = eCallPtr->msd.version;
 
             if (EraGlonassDataObj.presentCrashInfo ||
                 EraGlonassDataObj.presentCrashSeverity ||
-                EraGlonassDataObj.presentDiagnosticResult)
+                EraGlonassDataObj.presentDiagnosticResult ||
+                EraGlonassDataObj.presentCoordinateSystemTypeInfo)
             {
                 if ((eCallPtr->msd.msdMsg.optionalData.dataLen =
                     msd_EncodeOptionalDataForEraGlonass(
                         &EraGlonassDataObj, outOptionalDataForEraGlonass))
-                    < 0)
+                    <= 0)
                 {
                     LE_ERROR("Unable to encode optional Data for ERA GLONASS!");
                     return LE_FAULT;
@@ -1477,8 +1513,17 @@ static le_result_t EncodeMsd
 
                 if( 0 < eCallPtr->msd.msdMsg.optionalData.dataLen )
                 {
-                    eCallPtr->msd.msdMsg.optionalData.oid = oid;
-                    eCallPtr->msd.msdMsg.optionalData.oidlen = sizeof( oid );
+                    if (eCallPtr->msd.version == 1)
+                    {
+                        eCallPtr->msd.msdMsg.optionalData.oid = oid;
+                        eCallPtr->msd.msdMsg.optionalData.oidlen = sizeof(oid);
+                    }
+                    else if (eCallPtr->msd.version == 2)
+                    {
+                        eCallPtr->msd.msdMsg.optionalData.oid = oidV2;
+                        eCallPtr->msd.msdMsg.optionalData.oidlen = sizeof(oidV2);
+                    }
+
                     eCallPtr->msd.msdMsg.optionalDataPres = true;
                     eCallPtr->msd.msdMsg.optionalData.data = outOptionalDataForEraGlonass;
                 }
@@ -1563,6 +1608,7 @@ static void ProcessECallState
 )
 {
     bool endOfRedialPeriod = false;
+    le_ecall_MsdTxMode_t msdTxMode = LE_ECALL_TX_MODE_PUSH;
     ECallEventData_t* eCallEventDataPtr = (ECallEventData_t*) param1Ptr;
 
     LE_DEBUG("Process new eCall state %d (sessionState %d)",
@@ -1578,16 +1624,26 @@ static void ProcessECallState
             ECallObj.redial.startTentativeTime = le_clk_GetRelativeTime();
             ECallObj.termination = LE_MCC_TERM_UNDEFINED;
             ECallObj.specificTerm = 0;
-            ECallObj.ackOrT5OrT7Received = false;
+            ECallObj.ackOrT7Received = false;
+            ECallObj.t5Received = false;
             break;
         }
 
         case LE_ECALL_STATE_DISCONNECTED: /* Emergency call is disconnected */
         {
-            LE_DEBUG("Termination reason: %d, ackOrT5OrT7Received: %d, terminationReceived: %d",
+            if (LE_OK != le_ecall_GetMsdTxMode(&msdTxMode))
+            {
+                LE_ERROR("Unable to get MSD transfer mode of Operation");
+            }
+
+            LE_DEBUG("Termination %d, ackOrT7Received %d, t5Received %d, terminationReceived %d",
                      ECallObj.termination,
-                     ECallObj.ackOrT5OrT7Received,
+                     ECallObj.ackOrT7Received,
+                     ECallObj.t5Received,
                      eCallEventDataPtr->terminationReceived);
+
+            LE_DEBUG("msdTxMode %d, isPush %d, SystemStandard %d, pullMode %d",
+                  msdTxMode, ECallObj.isPushed, SystemStandard, ECallObj.eraGlonass.pullModeSwitch);
 
             // Update eCall session state
             switch(ECallObj.sessionState)
@@ -1596,17 +1652,27 @@ static void ProcessECallState
                 {
                     // Check redial condition (cf N16062:2014 7.9)
                     if (   (true == eCallEventDataPtr->terminationReceived)
-                        && (ECallObj.ackOrT5OrT7Received)
+                        && ((ECallObj.ackOrT7Received) || (ECallObj.t5Received))
                         && (LE_MCC_TERM_REMOTE_ENDED == ECallObj.termination)
+                        && (PA_ECALL_PAN_EUROPEAN == SystemStandard)
                        )
                     {
                         // After the IVS has received an LL-ACK or AL-ACK
-                        // or T5 – IVS wait for SEND MSD period
-                        // or T7 – IVS MSD maximum transmission time ends,
-                        // the IVS shall recognize a normal hang-up from the network.
-                        // The IVS shall not attempt an automatic redial following
-                        // a call clear-down.
+                        // or T7-IVS MSD maximum transmission time ends or T5-IVS waits
+                        // for SEND MSD period ends, the IVS shall recognize a normal
+                        // hang-up from the network. The IVS shall not attempt an
+                        // automatic redial following a call clear-down.
 
+                        // End Of Redial Period
+                        endOfRedialPeriod = true;
+                    }
+                    // End of Redial if call drop due to Normal Clear in Pull mode
+                    else if (    ((true == ECallObj.eraGlonass.pullModeSwitch)
+                              || (LE_ECALL_TX_MODE_PULL == msdTxMode))
+                              && (true == eCallEventDataPtr->terminationReceived)
+                              && (LE_MCC_TERM_REMOTE_ENDED == ECallObj.termination)
+                            )
+                    {
                         // End Of Redial Period
                         endOfRedialPeriod = true;
                     }
@@ -1666,6 +1732,7 @@ static void ProcessECallState
                 case ECALL_SESSION_STOPPED:
                     // Session stopped: no redial
                     // No need to update eCall session state, already stopped
+                    endOfRedialPeriod = true;
                     break;
 
                 case ECALL_SESSION_INIT:
@@ -1695,15 +1762,11 @@ static void ProcessECallState
 
             // Cf. ERA-GLONASS GOST R 54620-2011, 7.5.1.2:
             // IVS should be able to redial if connection is lost: MSD is still necessary.
-            // No redial is necessary for PAN EU, MSD can be invalidated in this case.
+            // No redial is necessary for PAN EU.
             if (PA_ECALL_ERA_GLONASS != SystemStandard)
             {
                 // The Modem successfully completed the MSD transmission
                 // and received two AL-ACKs (positive)
-
-                // Invalidate MSD
-                InvalidateMsd();
-
                 // Clear the redial mechanism
                 RedialStop(ECALL_REDIAL_STOP_COMPLETE);
             }
@@ -1712,8 +1775,8 @@ static void ProcessECallState
 
         case LE_ECALL_STATE_ALACK_RECEIVED_POSITIVE: /* eCall session completed */
         {
-            // To check redial condition (cf N16062:2014 7.9)
-            ECallObj.ackOrT5OrT7Received = true;
+            // Redial condition (cf N16062:2014 7.9)
+            ECallObj.ackOrT7Received = true;
 
             if (PA_ECALL_ERA_GLONASS == SystemStandard)
             {
@@ -1747,13 +1810,8 @@ static void ProcessECallState
         case LE_ECALL_STATE_STOPPED: /* eCall session has been stopped by PSAP
                                         or IVS le_ecall_End() */
         {
-            if (PA_ECALL_ERA_GLONASS == SystemStandard)
-            {
-                // The eCall is now correctly closed, the MSD can be invalidated.
-                // Note that MSD is already invalidated after reception of
-                // COMPLETED event for the PAN EU standard.
-                InvalidateMsd();
-            }
+            // The eCall is now correctly closed, the MSD can be invalidated.
+            InvalidateMsd();
 
             // Update eCall session state
             ECallObj.sessionState = ECALL_SESSION_STOPPED;
@@ -1770,15 +1828,33 @@ static void ProcessECallState
         case LE_ECALL_STATE_RESET: /* eCall session has lost synchronization and starts over */
         case LE_ECALL_STATE_MSD_TX_FAILED: /* MSD transmission has failed */
         case LE_ECALL_STATE_FAILED: /* Unsuccessful eCall session */
+        case LE_ECALL_STATE_TIMEOUT_T3: /* Timeout for T3 */
+        case LE_ECALL_STATE_TIMEOUT_T9: /* Timeout for T9 */
+        case LE_ECALL_STATE_TIMEOUT_T10: /* Timeout for T10 */
         {
             // Nothing to do, just report the event
              break;
         }
 
+        case LE_ECALL_STATE_TIMEOUT_T5: /* Timeout for T5 */
+        {
+            // Redial condition (cf N16062:2014 7.9)
+            LE_DEBUG("STATE_TIMEOUT_T5");
+            ECallObj.t5Received = true;
+            break;
+        }
+
+        case LE_ECALL_STATE_TIMEOUT_T2: /* Timeout for T2 */
+        {
+            // End Of Redial Period
+            endOfRedialPeriod = true;
+            break;
+        }
+
         case LE_ECALL_STATE_LLACK_RECEIVED: /* LL-ACK received */
         {
             // To check redial condition (cf N16062:2014 7.9)
-            ECallObj.ackOrT5OrT7Received = true;
+            ECallObj.ackOrT7Received = true;
 
             // After LL-ACK reception, MSD is considered as received
             // and eCall successful. No need to redial if the connection
@@ -1791,20 +1867,25 @@ static void ProcessECallState
         }
         break;
 
-        case LE_ECALL_STATE_TIMEOUT_T5: /* Timeout for T5 */
-        {
-            // To check redial condition (cf N16062:2014 7.9)
-            ECallObj.ackOrT5OrT7Received = true;
-        }
-        break;
-
         case LE_ECALL_STATE_TIMEOUT_T7: /* Timeout for T7 */
         {
             // To check redial condition (cf N16062:2014 7.9)
-            ECallObj.ackOrT5OrT7Received = true;
+            ECallObj.ackOrT7Received = true;
 
             // Cf. ERA-GLONASS GOST R 54620-2011, 7.5.1.2:
             // After T7 timeout, IVS should redial in pull
+            // mode if the connection is lost.
+            if (PA_ECALL_ERA_GLONASS == SystemStandard)
+            {
+                ECallObj.eraGlonass.pullModeSwitch = true;
+            }
+            break;
+        }
+
+        case LE_ECALL_STATE_TIMEOUT_T6: /* Timeout for T6 */
+        {
+            // Cf. ERA-GLONASS GOST R 54620-2011, 7.5.1.2:
+            // After T6 timeout, IVS should redial in pull
             // mode if the connection is lost.
             if (PA_ECALL_ERA_GLONASS == SystemStandard)
             {
@@ -1856,13 +1937,14 @@ static void ECallStateHandler
 
     LE_DEBUG("Received new eCall state %d", eCallEventDataPtr->state);
 
-    // Disconnection of eCall notified, wait for the call
-    // termination reason notified by MCC
-    if (LE_ECALL_STATE_DISCONNECTED == *statePtr)
+    // When eCall notification DISCONNECTED or STOPPED is received, the termination reason
+    // should be retrieved in order to decide whether to perform or not a redial after T5 timer
+    // expiration.
+    if ((LE_ECALL_STATE_DISCONNECTED == *statePtr) || (LE_ECALL_STATE_STOPPED == *statePtr))
     {
         le_clk_Time_t timer = { .sec=LE_ECALL_SEM_TIMEOUT_SEC,
                                 .usec=LE_ECALL_SEM_TIMEOUT_USEC };
-        le_result_t semTerminationResult = LE_FAULT;
+        le_result_t semTerminationResult;
 
         // Get call termination result
         semTerminationResult = le_sem_WaitWithTimeOut(SemaphoreRef, timer);
@@ -1915,47 +1997,54 @@ static void CallEventHandler
 
     LE_DEBUG("session state %d, event %d", ECallObj.sessionState, event);
 
-    if (   (ECALL_SESSION_NOT_CONNECTED == eCallPtr->sessionState)
-        || (ECALL_SESSION_CONNECTED == eCallPtr->sessionState)
-        || (ECALL_SESSION_COMPLETED == eCallPtr->sessionState)
-        || (ECALL_SESSION_STOPPED == eCallPtr->sessionState)
-       )
+    // Check if an eCall session is active
+    if ( (eCallPtr->sessionState < ECALL_SESSION_NOT_CONNECTED) ||
+         (eCallPtr->sessionState == ECALL_SESSION_STOPPED) )
     {
-        le_result_t res = le_mcc_GetCallIdentifier(callRef, &callId);
+        // The call is not an eCall, no treatment necessary
+        LE_DEBUG("No active eCall session, MCC event ignored");
+        return;
+    }
 
-        if (res != LE_OK)
-        {
-            LE_ERROR("Error in GetCallIdentifier %d", res);
-            return;
-        }
+    le_result_t res = le_mcc_GetCallIdentifier(callRef, &callId);
+    if (res != LE_OK)
+    {
+        LE_ERROR("Error in GetCallIdentifier %d", res);
+        return;
+    }
 
-        LE_DEBUG("callId %d eCallPtr->callId %d", callId, eCallPtr->callId);
+    LE_DEBUG("callId %d eCallPtr->callId %d", callId, eCallPtr->callId);
 
-        if (LE_MCC_EVENT_CONNECTED == event)
-        {
-
-            LE_DEBUG("Updating callid: eCallPtr->callId %d = callId %d. sessionState %d",
-                    eCallPtr->callId,
-                    callId,
-                    ECallObj.sessionState);
-            // When a call, either outgoing or incoming connects in session, it's considered a eCall
-            // Then the CallId is set.
+    switch (event)
+    {
+        case LE_MCC_EVENT_INCOMING:
+        case LE_MCC_EVENT_ORIGINATING:
+            LE_DEBUG("Updating callId: eCallPtr->callId %d = callId %d. sessionState %d",
+                     eCallPtr->callId, callId, ECallObj.sessionState);
+            // An incoming or outgoing call is being established while an eCall session is active:
+            // it is an eCall, update the eCall id with this call identifier
             eCallPtr->callId = callId;
-        }
+            break;
 
-        if ((callId == eCallPtr->callId) && (event == LE_MCC_EVENT_TERMINATED))
-        {
-            eCallPtr->termination = le_mcc_GetTerminationReason(callRef);
-            eCallPtr->specificTerm = le_mcc_GetPlatformSpecificTerminationCode(callRef);
-            eCallPtr->callId = -1;
+        case LE_MCC_EVENT_TERMINATED:
+            if (callId == eCallPtr->callId)
+            {
+                eCallPtr->termination = le_mcc_GetTerminationReason(callRef);
+                eCallPtr->specificTerm = le_mcc_GetPlatformSpecificTerminationCode(callRef);
+                eCallPtr->callId = -1;
 
-            LE_DEBUG("Call termination status available: termination %d, specificTerm %d",
-                    eCallPtr->termination, eCallPtr->specificTerm);
-            // Synchronize eCall handler with MCC notification
-            le_sem_Post(SemaphoreRef);
-        }
+                LE_DEBUG("Call termination status available: termination %d, specificTerm %d",
+                        eCallPtr->termination, eCallPtr->specificTerm);
+                // Synchronize eCall handler with MCC notification
+                le_sem_Post(SemaphoreRef);
+            }
+            break;
+
+        default:
+            break;
     }
 }
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1967,6 +2056,8 @@ static void* ECallThread
     void* contextPtr
 )
 {
+    le_sem_Ref_t initSemaphore = (le_sem_Ref_t)contextPtr;
+
     LE_INFO("ECall event thread started");
 
     // Register a handler function for eCall state indications
@@ -1975,6 +2066,17 @@ static void* ECallThread
         LE_ERROR("Add pa_ecall_AddEventHandler failed");
         return NULL;
     }
+
+    le_sem_Post(initSemaphore);
+
+#if INCLUDE_ECALL
+    // Watchdog eCall event loop.
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_MonitorEventLoop(MS_WDOG_ECALL_LOOP, watchdogInterval);
+#else
+    LE_FATAL("ECall started but was disabled at compile time.");
+#endif
 
     // Run the event loop
     le_event_RunLoop();
@@ -2050,7 +2152,8 @@ le_result_t le_ecall_Init
     ECallObj.redial.intervalTimer = le_timer_Create("Interval");
     ECallObj.redial.intervalBetweenAttempts = 30; // 30 seconds
     ECallObj.redial.dialDurationTimer = le_timer_Create("dialDurationTimer");
-    ECallObj.ackOrT5OrT7Received = false;
+    ECallObj.ackOrT7Received = false;
+    ECallObj.t5Received = false;
 
     ECallObj.eraGlonass.manualDialAttempts = 10;
     ECallObj.eraGlonass.autoDialAttempts = 10;
@@ -2088,13 +2191,14 @@ le_result_t le_ecall_Init
     EraGlonassDataObj.presentCrashSeverity = false;
     EraGlonassDataObj.presentDiagnosticResult = false;
     EraGlonassDataObj.presentCrashInfo = false;
+    EraGlonassDataObj.presentCoordinateSystemTypeInfo = false;
 
-    if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
+    if (le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
     {
         LE_WARN("Unable to set the Push mode!");
     }
 
-    if (pa_ecall_GetMsdTxMode(&msdTxMode) != LE_OK)
+    if (le_ecall_GetMsdTxMode(&msdTxMode) != LE_OK)
     {
         LE_WARN("Unable to retrieve the configured Push/Pull mode!");
     }
@@ -2137,7 +2241,10 @@ le_result_t le_ecall_Init
     le_mem_ExpandPool(ECallEventsPool, ECALL_EVENTS_POOL_SIZE);
 
     // Start ECall thread
-    le_thread_Start(le_thread_Create("ECallThread", ECallThread, NULL));
+    le_sem_Ref_t initSemaphore = le_sem_Create("InitSem",0);
+    le_thread_Start(le_thread_Create("ECallThread", ECallThread, (void*)initSemaphore));
+    le_sem_Wait(initSemaphore);
+    le_sem_Delete(initSemaphore);
 
     // Init semaphore to synchronize eCall handler with MCC notification
     SemaphoreRef = le_sem_Create("MccNotificationSem",0);
@@ -2156,6 +2263,7 @@ le_result_t le_ecall_Init
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_ForceOnlyMode
@@ -2173,6 +2281,7 @@ le_result_t le_ecall_ForceOnlyMode
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_ForcePersistentOnlyMode
@@ -2193,6 +2302,7 @@ le_result_t le_ecall_ForcePersistentOnlyMode
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_ExitOnlyMode
@@ -2208,8 +2318,12 @@ le_result_t le_ecall_ExitOnlyMode
  * Get the configured Operation mode.
  *
  * @return
- *      - LE_OK on success
- *      - LE_FAULT for other failures
+ *      - LE_OK     on success
+ *      - LE_FAULT  for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetConfiguredOperationMode
@@ -2217,6 +2331,12 @@ le_result_t le_ecall_GetConfiguredOperationMode
     le_ecall_OpMode_t *opModePtr    ///< [OUT] Operation mode
 )
 {
+    if (NULL == opModePtr)
+    {
+        LE_KILL_CLIENT("opModePtr is NULL!");
+        return LE_FAULT;
+    }
+
     return (pa_ecall_GetOperationMode(opModePtr));
 }
 
@@ -2539,6 +2659,7 @@ le_result_t le_ecall_ImportMsd
  *      - LE_OK on success
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note On failure, the process exits, so you don't have to worry about checking the returned
  *       reference for validity.
@@ -2590,6 +2711,12 @@ le_result_t le_ecall_ExportMsd
     size_t*             msdNumElementsPtr   ///< [IN,OUT] Ecoded MSD size in bytes
 )
 {
+    if (msdPtr == NULL)
+    {
+        LE_KILL_CLIENT("msdPtr is NULL.");
+        return LE_FAULT;
+    }
+
     ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
     if (eCallPtr == NULL)
     {
@@ -2628,6 +2755,7 @@ le_result_t le_ecall_ExportMsd
  *      - LE_BUSY an eCall session is already in progress
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note The process exits, if an invalid eCall reference is given
  */
@@ -2637,7 +2765,6 @@ le_result_t le_ecall_StartAutomatic
     le_ecall_CallRef_t    ecallRef   ///< [IN] eCall reference
 )
 {
-    le_result_t result = LE_FAULT;
     ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
 
     if (eCallPtr == NULL)
@@ -2675,6 +2802,9 @@ le_result_t le_ecall_StartAutomatic
         return LE_FAULT;
     }
 
+    // Update eCall start type
+    ECallObj.startType = PA_ECALL_START_AUTO;
+
     // Initialize redial state machine
     RedialInit();
     // Start redial period for ERA GLONASS system standard
@@ -2686,12 +2816,9 @@ le_result_t le_ecall_StartAutomatic
         RedialStart();
     }
 
-    // Update eCall start type
-    ECallObj.startType = PA_ECALL_START_AUTO;
-
     if (!ECallObj.isPushed)
     {
-        if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
+        if (le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
         {
             LE_WARN("Unable to set the Push mode!");
         }
@@ -2701,16 +2828,7 @@ le_result_t le_ecall_StartAutomatic
         }
     }
 
-    if (DialAttempt() == LE_OK)
-    {
-        result = LE_OK;
-    }
-    else
-    {
-        result = LE_FAULT;
-    }
-
-    return result;
+    return DialAttempt();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2722,6 +2840,7 @@ le_result_t le_ecall_StartAutomatic
  *      - LE_BUSY an eCall session is already in progress
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  *
  * @note The process exits, if an invalid eCall reference is given
  */
@@ -2731,7 +2850,6 @@ le_result_t le_ecall_StartManual
     le_ecall_CallRef_t    ecallRef   ///< [IN] eCall reference
 )
 {
-    le_result_t result = LE_FAULT;
     ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
 
     if (eCallPtr == NULL)
@@ -2769,6 +2887,9 @@ le_result_t le_ecall_StartManual
         return LE_FAULT;
     }
 
+    // Update eCall start type
+    ECallObj.startType = PA_ECALL_START_MANUAL;
+
     // Initialize redial state machine
     RedialInit();
     // Start redial period for ERA GLONASS system standard
@@ -2780,12 +2901,9 @@ le_result_t le_ecall_StartManual
         RedialStart();
     }
 
-    // Update eCall start type
-    ECallObj.startType = PA_ECALL_START_MANUAL;
-
     if (!ECallObj.isPushed)
     {
-        if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
+        if (le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
         {
             LE_WARN("Unable to set the Push mode!");
         }
@@ -2795,16 +2913,7 @@ le_result_t le_ecall_StartManual
         }
     }
 
-    if (DialAttempt() == LE_OK)
-    {
-        result = LE_OK;
-    }
-    else
-    {
-        result = LE_FAULT;
-    }
-
-    return result;
+    return DialAttempt();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2816,6 +2925,7 @@ le_result_t le_ecall_StartManual
  *       - LE_BUSY an eCall session is already in progress
  *       - LE_BAD_PARAMETER bad eCall reference
  *       - LE_FAULT for other failures
+ *       - LE_UNSUPPORTED Not supported on this platform
  *
  * @note The process exits, if an invalid eCall reference is given
  */
@@ -2826,7 +2936,6 @@ le_result_t le_ecall_StartTest
 )
 {
     ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
-    le_result_t result = LE_FAULT;
 
     if (eCallPtr == NULL)
     {
@@ -2863,6 +2972,9 @@ le_result_t le_ecall_StartTest
         return LE_FAULT;
     }
 
+    // Update eCall start type
+    ECallObj.startType = PA_ECALL_START_TEST;
+
     // Initialize redial state machine
     RedialInit();
     // Start redial period for ERA GLONASS system standard
@@ -2874,12 +2986,9 @@ le_result_t le_ecall_StartTest
         RedialStart();
     }
 
-    // Update eCall start type
-    ECallObj.startType = PA_ECALL_START_TEST;
-
     if (!ECallObj.isPushed)
     {
-        if (pa_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
+        if (le_ecall_SetMsdTxMode(LE_ECALL_TX_MODE_PUSH) != LE_OK)
         {
             LE_WARN("Unable to set the Push mode!");
         }
@@ -2889,16 +2998,7 @@ le_result_t le_ecall_StartTest
         }
     }
 
-    if (DialAttempt() == LE_OK)
-    {
-        result = LE_OK;
-    }
-    else
-    {
-        result = LE_FAULT;
-    }
-
-    return result;
+    return DialAttempt();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2909,6 +3009,7 @@ le_result_t le_ecall_StartTest
  *      - LE_OK on success
  *      - LE_BAD_PARAMETER bad eCall reference
  *      - LE_FAULT for other failures
+ *      - LE_UNSUPPORTED Not supported on this platform
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_End
@@ -2919,10 +3020,30 @@ le_result_t le_ecall_End
     ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
     le_result_t result;
 
-    if (eCallPtr == NULL)
+    if (NULL == eCallPtr)
     {
         LE_KILL_CLIENT("Invalid reference (%p) provided!", ecallRef);
         return LE_BAD_PARAMETER;
+    }
+
+    // Automatic eCall session:
+    // don't end current eCall session unless ECALL_SESSION_STOPPED state is reached.
+    if ((PA_ECALL_START_AUTO == eCallPtr->startType) &&
+        (ECALL_SESSION_STOPPED != eCallPtr->sessionState))
+    {
+        LE_ERROR("An automatic Ecall cannot be terminated");
+        return LE_FAULT;
+    }
+
+    // Manual eCall session:
+    // don't end current eCall session if eCall session state is ECALL_SESSION_CONNECTED or
+    // ECALL_SESSION_COMPLETED.
+    if ((PA_ECALL_START_MANUAL == eCallPtr->startType) &&
+        ((ECALL_SESSION_CONNECTED == eCallPtr->sessionState) ||
+         (ECALL_SESSION_COMPLETED == eCallPtr->sessionState)))
+    {
+        LE_ERROR("Ecall transaction cannot be terminated, Ecall in progress");
+        return LE_FAULT;
     }
 
     // Invalidate MSD
@@ -2931,7 +3052,7 @@ le_result_t le_ecall_End
     result = pa_ecall_End();
 
     // Stop redial
-    if(result == LE_OK)
+    if (LE_OK == result)
     {
         // Update eCall session state
         ECallObj.sessionState = ECALL_SESSION_STOPPED;
@@ -3015,14 +3136,15 @@ void le_ecall_RemoveStateChangeHandler
  * @note That PSAP number is not applied to Manually or Automatically initiated eCall. For those
  *       modes, an emergency call is launched.
  *
- * @warning This function doesn't modified the U/SIM content.
+ * @warning This function doesn't modify the U/SIM content.
  *
  * @return
- *  - LE_OK on success
- *  - LE_FAULT for other failures
+ *  - LE_OK           On success
+ *  - LE_FAULT        For other failures
+ *  - LE_UNSUPPORTED  Not supported on this platform
  *
- * @note If PSAP number is too long (max LE_MDMDEFS_PHONE_NUM_MAX_LEN digits), it is a fatal error,
- *       the function will not return.
+ * @note If PSAP number is empty or too long (max LE_MDMDEFS_PHONE_NUM_MAX_LEN digits), it is a
+ *       fatal error, the function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_SetPsapNumber
@@ -3030,42 +3152,30 @@ le_result_t le_ecall_SetPsapNumber
     const char* psapPtr    ///< [IN] Public Safely Answering Point number
 )
 {
-    le_result_t res;
+    size_t length;
 
     if (psapPtr == NULL)
     {
-        LE_KILL_CLIENT("psapPtr is NULL !");
+        LE_KILL_CLIENT("Null argument provided");
         return LE_FAULT;
     }
 
-    if(strlen(psapPtr) > LE_MDMDEFS_PHONE_NUM_MAX_LEN)
+    length = strlen(psapPtr);
+
+    if ((length == 0) || (length > LE_MDMDEFS_PHONE_NUM_MAX_LEN))
     {
-        LE_KILL_CLIENT( "strlen(psapPtr) > %d", LE_MDMDEFS_PHONE_NUM_MAX_LEN);
+        LE_KILL_CLIENT( "PSAP number length (%zu) should not be empty or greater than %d",
+                         length,
+                         LE_MDMDEFS_PHONE_NUM_MAX_LEN);
         return LE_FAULT;
     }
 
-    if(!strlen(psapPtr))
+    if(le_utf8_Copy(ECallObj.psapNumber, psapPtr, sizeof(ECallObj.psapNumber), NULL) != LE_OK)
     {
-        return LE_BAD_PARAMETER;
-    }
-
-    if((res = le_utf8_Copy(ECallObj.psapNumber,
-                           psapPtr,
-                           sizeof(ECallObj.psapNumber),
-                           NULL)) != LE_OK)
-    {
-        return res;
-    }
-
-    if (pa_ecall_SetPsapNumber(ECallObj.psapNumber) != LE_OK)
-    {
-        LE_ERROR("Unable to set the desired PSAP number!");
         return LE_FAULT;
     }
-    else
-    {
-        return LE_OK;
-    }
+
+    return (pa_ecall_SetPsapNumber(ECallObj.psapNumber));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -3079,14 +3189,19 @@ le_result_t le_ecall_SetPsapNumber
  * @warning This function doesn't read the U/SIM content.
  *
  * @return
- *  - LE_OK on success
- *  - LE_FAULT on failures or if le_ecall_SetPsapNumber() has never been called before.
+ *  - LE_OK           On success
+ *  - LE_FAULT        On failures or if le_ecall_SetPsapNumber() has never been called before
+  * - LE_OVERFLOW     Retrieved PSAP number is too long for the out parameter
+ *  - LE_UNSUPPORTED  Not supported on this platform
+ *
+ * @note If the passed PSAP pointer is NULL, a fatal error is raised and the function will not
+ *       return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetPsapNumber
 (
     char   *psapPtr,           ///< [OUT] Public Safely Answering Point number
-    size_t  len  ///< [IN] maximum length of PSAP number.
+    size_t  len                ///< [IN] maximum length of PSAP number.
 )
 {
     if (psapPtr == NULL)
@@ -3101,8 +3216,10 @@ le_result_t le_ecall_GetPsapNumber
 
 //--------------------------------------------------------------------------------------------------
 /**
- * This function can be recalled to indicate the modem to read the number to dial from the FDN/SDN
- * of the U/SIM, depending upon the eCall operating mode.
+ * When modem is in ECALL_FORCED_PERSISTENT_ONLY_MODE or ECALL_ONLY_MODE, this function
+ * can be called to request the modem to read the number to dial from the FDN/SDN of the U/SIM.
+ *
+ * @note If FDN directory is updated with new dial numbers, be sure that the SIM card is refreshed.
  *
  * @return
  *  - LE_OK on success
@@ -3119,18 +3236,21 @@ le_result_t le_ecall_UseUSimNumbers
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the NAD_DEREGISTRATION_TIME value. After termination of an emergency call the in-vehicle
- * system remains registered on the network for the period of time, defined by the installation
- * parameter NAD_DEREGISTRATION_TIME.
+ * Set the NAD (network access device) deregistration time value. After termination of an emergency
+ * call the in-vehicle system remains registered on the network for the period of time, defined by
+ * the installation parameter NAD (network access device) deregistration time.
  *
  * @return
  *  - LE_OK on success
  *  - LE_FAULT on failure
+ *
+ * @note The formula to calculate NAD deregistration time for PAN_EUROPEAN is as below:
+ *       ECallConfiguration.nad_deregistration_time = (deregTime+59)/60;
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_SetNadDeregistrationTime
 (
-    uint16_t    deregTime  ///< [IN] NAD_DEREGISTRATION_TIME value (in minutes).
+    uint16_t deregTime ///< [IN] NAD (network access device) deregistration time value (in minutes).
 )
 {
     ECallObj.eraGlonass.nadDeregistrationTime = deregTime;
@@ -3139,7 +3259,7 @@ le_result_t le_ecall_SetNadDeregistrationTime
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the NAD_DEREGISTRATION_TIME value.
+ * Get the NAD (network access device) deregistration time value.
  *
  * @return
  *  - LE_OK on success
@@ -3148,7 +3268,8 @@ le_result_t le_ecall_SetNadDeregistrationTime
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetNadDeregistrationTime
 (
-    uint16_t*    deregTimePtr  ///< [OUT] NAD_DEREGISTRATION_TIME value (in minutes).
+    uint16_t* deregTimePtr ///< [OUT] NAD (network access device) deregistration time value
+                           /// (in minutes).
 )
 {
     le_result_t result;
@@ -3177,6 +3298,7 @@ le_result_t le_ecall_SetMsdTxMode
     le_ecall_MsdTxMode_t mode   ///< [IN] Transmission mode
 )
 {
+    LE_DEBUG("set MsdTx %d", mode);
     return (pa_ecall_SetMsdTxMode(mode));
 }
 
@@ -3185,8 +3307,11 @@ le_result_t le_ecall_SetMsdTxMode
  * Get the push/pull transmission mode.
  *
  * @return
- *  - LE_OK on success
- *  - LE_FAULT for other failures
+ *      - LE_OK     on success
+ *      - LE_FAULT  for other failures
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetMsdTxMode
@@ -3194,6 +3319,12 @@ le_result_t le_ecall_GetMsdTxMode
     le_ecall_MsdTxMode_t* modePtr   ///< [OUT] Transmission mode
 )
 {
+    if (NULL == modePtr)
+    {
+        LE_KILL_CLIENT("modePtr is NULL!");
+        return LE_FAULT;
+    }
+
     return (pa_ecall_GetMsdTxMode(modePtr));
 }
 
@@ -3241,9 +3372,9 @@ le_result_t le_ecall_GetIntervalBetweenDialAttempts
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the MANUAL_DIAL_ATTEMPTS value. If a dial attempt under manual emergency call initiation
- * failed, it should be repeated maximally ECALL_MANUAL_DIAL_ATTEMPTS-1 times within the maximal
- * time limit of ECALL_DIAL_DURATION. The default value is 10.
+ * Set the ECALL_MANUAL_DIAL_ATTEMPTS value. If a dial attempt under manual emergency call
+ * initiation failed, it should be repeated maximally ECALL_MANUAL_DIAL_ATTEMPTS-1 times within
+ * the maximal time limit of ECALL_DIAL_DURATION. The default value is 10.
  * Redial attempts stop once the call has been cleared down correctly, or if counter/timer reached
  * their limits. Available for both manual and test modes.
  *
@@ -3254,7 +3385,7 @@ le_result_t le_ecall_GetIntervalBetweenDialAttempts
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_SetEraGlonassManualDialAttempts
 (
-    uint16_t    attempts  ///< [IN] MANUAL_DIAL_ATTEMPTS value
+    uint16_t    attempts  ///< [IN] ECALL_MANUAL_DIAL_ATTEMPTS value
 )
 {
     ECallObj.eraGlonass.manualDialAttempts = attempts;
@@ -3263,9 +3394,9 @@ le_result_t le_ecall_SetEraGlonassManualDialAttempts
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set tthe AUTO_DIAL_ATTEMPTS value. If a dial attempt under automatic emergency call initiation
- * failed, it should be repeated maximally ECALL_AUTO_DIAL_ATTEMPTS-1 times within the maximal time
- * limit of ECALL_DIAL_DURATION. The default value is 10.
+ * Set tthe ECALL_AUTO_DIAL_ATTEMPTS value. If a dial attempt under automatic emergency call
+ * initiation failed, it should be repeated maximally ECALL_AUTO_DIAL_ATTEMPTS-1 times within
+ * the maximal time limit of ECALL_DIAL_DURATION. The default value is 10.
  * Redial attempts stop once the call has been cleared down correctly, or if counter/timer reached
  * their limits.
  *
@@ -3276,7 +3407,7 @@ le_result_t le_ecall_SetEraGlonassManualDialAttempts
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_SetEraGlonassAutoDialAttempts
 (
-    uint16_t    attempts  ///< [IN] AUTO_DIAL_ATTEMPTS value
+    uint16_t    attempts  ///< [IN] ECALL_AUTO_DIAL_ATTEMPTS value
 )
 {
     ECallObj.eraGlonass.autoDialAttempts = attempts;
@@ -3318,16 +3449,122 @@ le_result_t le_ecall_SetEraGlonassDialDuration
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the MANUAL_DIAL_ATTEMPTS value.
+ * Set the ECALL_CCFT time which is the maximum delay before initiating an automatic call
+ * termination. When the delay is reached and IVS NAD didn't receive a call clear-down indication
+ * is immediatly terminated.
+ *
+ * @note Allowed range of values is 1 to 720 minutes.
  *
  * @return
  *  - LE_OK on success
  *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_SetEraGlonassFallbackTime
+(
+    uint16_t    duration   ///< [IN] ECALL_CCFT time value (in minutes)
+)
+{
+    if ((duration < ERA_GLONASS_CCFT_MIN) || (duration > ERA_GLONASS_CCFT_MAX))
+    {
+        LE_ERROR("Allowed range of values for CCFT timer is %d to %d minutes. %d given",
+                 ERA_GLONASS_CCFT_MIN, ERA_GLONASS_CCFT_MAX, duration);
+        return LE_FAULT;
+    }
+
+    return pa_ecall_SetEraGlonassFallbackTime(duration);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ECALL_AUTO_ANSWER_TIME time. It is a time interval wherein IVDS responds to incoming
+ * calls automatically after emergency call completion.
+ *
+ * @note Default value of auto answer time is 20 minutes. Maximum value is 720 minutes.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_SetEraGlonassAutoAnswerTime
+(
+    uint16_t autoAnswerTime ///< [IN] ECALL_AUTO_ANSWER_TIME time value (in minutes)
+)
+{
+    if (autoAnswerTime > ERA_GLONASS_AUTOANSTIME_MAX)
+    {
+        LE_ERROR("Maximum value for auto answer time is %d minutes", ERA_GLONASS_AUTOANSTIME_MAX);
+        return LE_FAULT;
+    }
+
+    return pa_ecall_SetEraGlonassAutoAnswerTime(autoAnswerTime);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ECALL_MSD_MAX_TRANSMISSION_TIME time. It is a time period for MSD transmission.
+ *
+ * @note Default value of MSD transmission time is 20 seconds.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_SetEraGlonassMSDMaxTransmissionTime
+(
+    uint16_t msdMaxTransTime ///< [IN] ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+)
+{
+    return pa_ecall_SetEraGlonassMSDMaxTransmissionTime(msdMaxTransTime);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the ERA-GLONASS ECALL_POST_TEST_REGISTRATION_TIME time.
+ *
+ * After completion of transmission of test diagnostics results in a test eCall session, the
+ * in-vehicle system remains registered on the network for the period of time defined by the
+ * ECALL_POST_TEST_REGISTRATION_TIME value.
+ *
+ * @note The ECALL_POST_TEST_REGISTRATION_TIME setting takes effect immediately and is persistent to
+ * reset.
+ *
+ * @note An ECALL_POST_TEST_REGISTRATION_TIME value of zero means the IVS doesn't remain registered
+ * after completion of transmission of test (diagnostics) results.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_SetEraGlonassPostTestRegistrationTime
+(
+    uint16_t postTestRegTime ///< [IN] ECALL_POST_TEST_REGISTRATION_TIME time value (in seconds).
+)
+{
+    ECallObj.eraGlonass.postTestRegistrationTime = postTestRegTime;
+    return pa_ecall_SetEraGlonassPostTestRegistrationTime(postTestRegTime);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_MANUAL_DIAL_ATTEMPTS value.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetEraGlonassManualDialAttempts
 (
-    uint16_t*    attemptsPtr  ///< [OUT] MANUAL_DIAL_ATTEMPTS value
+    uint16_t*    attemptsPtr  ///< [OUT] ECALL_MANUAL_DIAL_ATTEMPTS value
 )
 {
     if (attemptsPtr == NULL)
@@ -3344,7 +3581,7 @@ le_result_t le_ecall_GetEraGlonassManualDialAttempts
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the AUTO_DIAL_ATTEMPTS value.
+ * Get the ECALL_AUTO_DIAL_ATTEMPTS value.
  *
  * @return
  *  - LE_OK on success
@@ -3353,7 +3590,7 @@ le_result_t le_ecall_GetEraGlonassManualDialAttempts
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetEraGlonassAutoDialAttempts
 (
-    uint16_t*    attemptsPtr  ///< [OUT] AUTO_DIAL_ATTEMPTS value
+    uint16_t*    attemptsPtr  ///< [OUT] ECALL_AUTO_DIAL_ATTEMPTS value
 )
 {
     if (attemptsPtr == NULL)
@@ -3392,6 +3629,112 @@ le_result_t le_ecall_GetEraGlonassDialDuration
 
     *durationPtr = ECallObj.eraGlonass.dialDuration;
     return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_CCFT time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on execution failure
+ *
+ * @warning Introducing a NULL pointer as argument of this function leads to a client kill.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_GetEraGlonassFallbackTime
+(
+    uint16_t*    durationPtr  ///< [OUT] ECALL_CCFT time value (in minutes)
+)
+{
+    if (durationPtr == NULL)
+    {
+        LE_KILL_CLIENT("durationPtr is NULL !");
+        return LE_FAULT;
+    }
+
+    return pa_ecall_GetEraGlonassFallbackTime(durationPtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_AUTO_ANSWER_TIME time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on execution failure
+ *
+ * @warning Introducing a NULL pointer as argument of this function leads to a client kill.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_GetEraGlonassAutoAnswerTime
+(
+    uint16_t* autoAnswerTimePtr ///< [OUT] ECALL_AUTO_ANSWER_TIME time value (in minutes)
+)
+{
+    if (NULL == autoAnswerTimePtr)
+    {
+        LE_KILL_CLIENT("autoAnswerTimePtr is NULL!");
+        return LE_FAULT;
+    }
+
+    return pa_ecall_GetEraGlonassAutoAnswerTime(autoAnswerTimePtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ECALL_MSD_MAX_TRANSMISSION_TIME time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_GetEraGlonassMSDMaxTransmissionTime
+(
+    uint16_t* msdMaxTransTimePtr ///< [OUT] ECALL_MSD_MAX_TRANSMISSION_TIME time value (in seconds)
+)
+{
+    if (NULL == msdMaxTransTimePtr)
+    {
+        LE_KILL_CLIENT("msdMaxTransTimePtr is NULL!");
+        return LE_FAULT;
+    }
+
+    return pa_ecall_GetEraGlonassMSDMaxTransmissionTime(msdMaxTransTimePtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the ERA-GLONASS ECALL_POST_TEST_REGISTRATION_TIME time.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED if the function is not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_GetEraGlonassPostTestRegistrationTime
+(
+    uint16_t* postTestRegTimePtr  ///< [OUT] ECALL_POST_TEST_REGISTRATION_TIME time value (in
+                                  ///< seconds).
+)
+{
+    if (NULL == postTestRegTimePtr)
+    {
+        LE_ERROR("postTestRegTimePtr is NULL!");
+        return LE_FAULT;
+    }
+
+    le_result_t result = pa_ecall_GetEraGlonassPostTestRegistrationTime(postTestRegTimePtr);
+    if (LE_OK == result)
+    {
+        // Update eCall Context value
+        ECallObj.eraGlonass.postTestRegistrationTime = *postTestRegTimePtr;
+    }
+
+    return result;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -3789,6 +4132,84 @@ le_result_t le_ecall_ResetMsdEraGlonassCrashInfo
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Set the ERA-GLONASS coordinate system type
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_DUPLICATE an MSD has been already imported
+ *      - LE_BAD_PARAMETER bad eCall reference
+ *      - LE_FAULT on other failures
+ *
+ * @note The process exits, if an invalid eCall reference is given
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_SetMsdEraGlonassCoordinateSystemType
+(
+    le_ecall_CallRef_t           ecallRef,        ///< [IN] eCall reference
+    le_ecall_MsdCoordinateType_t coordinateType   ///< [IN] ERA-GLONASS coordinate system type
+)
+{
+    ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
+
+    if (NULL == eCallPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", ecallRef);
+        return LE_BAD_PARAMETER;
+    }
+
+    if (eCallPtr->isMsdImported)
+    {
+        LE_ERROR("An MSD has been already imported!");
+        return LE_DUPLICATE;
+    }
+
+    EraGlonassDataObj.presentCoordinateSystemTypeInfo = true;
+    EraGlonassDataObj.coordinateSystemType = CoordinateSystemTypeEnumToEnumAsn1(coordinateType);
+
+    return EncodeMsd(eCallPtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reset the ERA-GLONASS coordinate system type. Optional parameter is not included
+ * in the MSD message.
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_DUPLICATE an MSD has been already imported
+ *      - LE_BAD_PARAMETER bad eCall reference
+ *      - LE_FAULT on other failures
+ *
+ * @note The process exits, if an invalid eCall reference is given
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_ecall_ResetMsdEraGlonassCoordinateSystemType
+(
+    le_ecall_CallRef_t   ecallRef       ///< [IN] eCall reference
+)
+{
+    ECall_t*   eCallPtr = le_ref_Lookup(ECallRefMap, ecallRef);
+
+    if (NULL == eCallPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", ecallRef);
+        return LE_BAD_PARAMETER;
+    }
+
+    if (eCallPtr->isMsdImported)
+    {
+        LE_ERROR("An MSD has been already imported!");
+        return LE_DUPLICATE;
+    }
+
+    EraGlonassDataObj.presentCoordinateSystemTypeInfo = false;
+    EraGlonassDataObj.coordinateSystemType = MSD_COORDINATE_SYSTEM_TYPE_ABSENT;
+
+    return EncodeMsd(eCallPtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Called to get the termination reason.
  *
  * @return The termination reason.
@@ -3860,29 +4281,39 @@ le_result_t le_ecall_SetSystemStandard
         ///< System mode
 )
 {
-    le_result_t result = LE_FAULT;
+    le_cfg_IteratorRef_t iteratorRef;
+    const char *standard = "\0";
+    pa_ecall_SysStd_t system;
 
-    le_cfg_IteratorRef_t iteratorRef = le_cfg_CreateWriteTxn( CFG_MODEMSERVICE_ECALL_PATH );
-
-    if (LE_ECALL_PAN_EUROPEAN == systemStandard)
-    {
-        le_cfg_SetString(iteratorRef, CFG_NODE_SYSTEM_STD, "PAN-EUROPEAN");
-        le_cfg_CommitTxn(iteratorRef);
-        result = LE_OK;
-    }
-    else if (LE_ECALL_ERA_GLONASS == systemStandard)
-    {
-        le_cfg_SetString(iteratorRef, CFG_NODE_SYSTEM_STD, "ERA-GLONASS");
-        le_cfg_CommitTxn(iteratorRef);
-        result = LE_OK;
-    }
-    else
+    if ( (LE_ECALL_PAN_EUROPEAN != systemStandard) && (LE_ECALL_ERA_GLONASS != systemStandard) )
     {
         LE_ERROR("parameter %d has invalid value", systemStandard);
-        result = LE_FAULT;
-        le_cfg_CancelTxn( iteratorRef );
+        return LE_FAULT;
     }
-    return result;
+
+    switch (systemStandard)
+    {
+        case LE_ECALL_PAN_EUROPEAN:
+            standard = "PAN-EUROPEAN";
+            system = PA_ECALL_PAN_EUROPEAN;
+            break;
+        case LE_ECALL_ERA_GLONASS:
+            standard = "ERA-GLONASS";
+            system = PA_ECALL_ERA_GLONASS;
+            break;
+        default: break;
+    }
+
+    if ( LE_OK != pa_ecall_UpdateSystemStandard(system))
+    {
+       LE_INFO("Update PA system standard (%d) failed!", system);
+    }
+
+    iteratorRef = le_cfg_CreateWriteTxn(CFG_MODEMSERVICE_ECALL_PATH);
+    le_cfg_SetString(iteratorRef, CFG_NODE_SYSTEM_STD, standard);
+    le_cfg_CommitTxn(iteratorRef);
+
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -4046,27 +4477,25 @@ le_result_t le_ecall_SetVehicleType
         ///< [IN] Vehicle type
 )
 {
-    le_result_t result = LE_FAULT;
-    le_cfg_IteratorRef_t iteratorRef = le_cfg_CreateWriteTxn( CFG_MODEMSERVICE_ECALL_PATH );
-    char  vehStr[VEHICLE_TYPE_MAX_BYTES] = {0};
+    le_result_t result;
+    le_cfg_IteratorRef_t iteratorRef;
+    char vehStr[VEHICLE_TYPE_MAX_BYTES];
 
-    if( LE_OK == VehicleTypeEnumToString( vehicleType, vehStr ))
-    {
-        LE_WARN("VehicleTypeEnumToString %d -> '%s' !", vehicleType, vehStr );
+    memset(vehStr, 0, VEHICLE_TYPE_MAX_BYTES);
 
-        le_cfg_SetString(iteratorRef, CFG_NODE_VEH, vehStr);
-        result = LE_OK;
-        le_cfg_CommitTxn(iteratorRef);
-    }
-    else
+    result = VehicleTypeEnumToString(vehicleType, vehStr);
+    if (LE_FAULT == result)
     {
         LE_WARN("No value set for '%s' !", CFG_NODE_VEH);
-        result = LE_FAULT;
-        le_cfg_CancelTxn( iteratorRef );
+        return LE_FAULT;
     }
 
-    LE_DEBUG("VehicleTypeEnumToString %s", vehStr );
-    return result;
+    LE_DEBUG("VehicleTypeEnumToString %d -> '%s' !", vehicleType, vehStr);
+    iteratorRef = le_cfg_CreateWriteTxn(CFG_MODEMSERVICE_ECALL_PATH);
+    le_cfg_SetString(iteratorRef, CFG_NODE_VEH, vehStr);
+    le_cfg_CommitTxn(iteratorRef);
+
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -4133,7 +4562,44 @@ le_result_t le_ecall_GetVehicleType
     return result;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * The Vehicle Identification Number is defined by iso 3833 as a 17 character
+ * alphanumeric code, which does not include the letters i, I, o, O, q, Q. Also
+ * the letters u, U, z, Z and the digit 0 are not allowed in the model year code
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static int VerifyVIN
+(
+    char *vin
+)
+{
+    int ret = 0;
+    char c;
 
+    c = (char)tolower(vin[9]);
+
+    if ( ('0' == c) || ('u' == c) || ('z' == c) )
+    {
+        LE_WARN("Year digit cannot be %c", vin[9]);
+        ret = -1;
+    }
+
+    while ( (*vin) && (!ret) )
+    {
+        c= (char)tolower(*vin);
+        if ( ('i' == c) || ('o' == c) || ('q' == c) )
+        {
+            LE_WARN("%c not allowed in VIN", *vin);
+            ret = -1;
+        }
+
+        vin++;
+    }
+
+    return ret;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -4147,39 +4613,30 @@ le_result_t le_ecall_GetVehicleType
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_SetVIN
 (
-    const char* vin
-        ///< [IN] VIN (Vehicle Identification Number)
+    const char* vin ///< [IN] VIN (Vehicle Identification Number)
 )
 {
-    le_result_t result = LE_OK;
-    le_cfg_IteratorRef_t iteratorRef = NULL;
+    le_cfg_IteratorRef_t iterator;
 
-    if (NULL == vin)
+    if (strlen(vin) != LE_ECALL_VIN_MAX_LEN)
     {
-        LE_KILL_CLIENT("vin is NULL !");
-        return LE_BAD_PARAMETER;
+        LE_WARN("VIN has to be %d bytes long: %s -> %zd",
+            LE_ECALL_VIN_MAX_LEN, vin, strlen(vin));
+        return LE_FAULT;
     }
 
-    iteratorRef = le_cfg_CreateWriteTxn( CFG_MODEMSERVICE_ECALL_PATH );
-
-    if (LE_ECALL_VIN_MAX_LEN > strnlen( vin, LE_ECALL_VIN_MAX_BYTES))
+    if (VerifyVIN((char *)vin))
     {
-        LE_WARN("SetVIN parameter vin is not big enough %zu. Should be least %d. '%s'",
-                strnlen( vin, LE_ECALL_VIN_MAX_BYTES),
-                LE_ECALL_VIN_MAX_LEN,
-                vin);
-        result = LE_FAULT;
-        le_cfg_CancelTxn( iteratorRef );
-    }
-    else
-    {
-        le_cfg_SetString(iteratorRef, CFG_NODE_VIN, vin);
-        LE_INFO("Set VIN to %s", vin);
-        result = LE_OK;
-        le_cfg_CommitTxn(iteratorRef);
+        return LE_FAULT;
     }
 
-    return result;
+    iterator = le_cfg_CreateWriteTxn(CFG_MODEMSERVICE_ECALL_PATH);
+
+    le_cfg_SetString(iterator, CFG_NODE_VIN, vin);
+
+    le_cfg_CommitTxn(iterator);
+
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -4189,68 +4646,61 @@ le_result_t le_ecall_SetVIN
  * @return
  *  - LE_OK on success
  *  - LE_NOT_FOUND if the value is not set.
- *  - LE_BAD_PARAMETER parameter is NULL or to small
+ *  - LE_BAD_PARAMETER parameter is NULL or too small
+ *  - LE_FAULT for other failures
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_ecall_GetVIN
 (
-    char* vin,
-        ///< [OUT] VIN size is 17 chars
-
-    size_t vinNumElements
-        ///< [IN]
+    char* vin,              ///< [OUT] VIN size is 18 chars
+    size_t vinNumElements   ///< [IN]
 )
 {
-    le_result_t result = LE_FAULT;
-    le_cfg_IteratorRef_t iteratorRef = NULL;
+    le_cfg_IteratorRef_t iterator;
 
-    if (NULL == vin)
+    if (!vin)
     {
         LE_KILL_CLIENT("vin is NULL !");
         return LE_BAD_PARAMETER;
     }
 
-
-    if (LE_ECALL_VIN_MAX_LEN > vinNumElements)
+    if (vinNumElements != LE_ECALL_VIN_MAX_BYTES)
     {
-        LE_ERROR("vinNumElements must be at least %d not %zu", LE_ECALL_VIN_MAX_LEN, vinNumElements);
-        return LE_FAULT;
+        LE_WARN("VIN has to be at least %d bytes long", LE_ECALL_VIN_MAX_BYTES);
+        return LE_BAD_PARAMETER;
     }
 
-    iteratorRef = le_cfg_CreateReadTxn( CFG_MODEMSERVICE_ECALL_PATH );
+    iterator = le_cfg_CreateReadTxn(CFG_MODEMSERVICE_ECALL_PATH);
 
     // Get VIN
-    char vinStr[LE_ECALL_VIN_MAX_BYTES] = {'\0'};
-    if (le_cfg_NodeExists(iteratorRef, CFG_NODE_VIN))
+    if (!le_cfg_NodeExists(iterator, CFG_NODE_VIN))
     {
-        if (le_cfg_GetString(iteratorRef, CFG_NODE_VIN, vinStr, LE_ECALL_VIN_MAX_BYTES, "")
-            != LE_OK)
-        {
-            LE_WARN("No node value set for '%s'", CFG_NODE_VIN);
-            vin[0] = '\0';
-        }
-        else if (strnlen( vinStr, LE_ECALL_VIN_MAX_BYTES) > 0)
-        {
-            memcpy( &vin[0],
-                   (const void *)vinStr,
-                   strnlen( vinStr, LE_ECALL_VIN_MAX_BYTES));
-            result = LE_OK;
-        }
-        else
-        {
-            result = LE_NOT_FOUND;
-        }
-        LE_DEBUG("eCall settings, VIN is %s", vinStr);
-    }
-    else
-    {
-        LE_WARN("No value set for '%s' !", CFG_NODE_VIN);
-        result = LE_NOT_FOUND;
+        LE_WARN("No node value set for '%s'", CFG_NODE_VIN);
+
+        le_cfg_CancelTxn(iterator);
+
+        return LE_NOT_FOUND;
     }
 
-    le_cfg_CancelTxn( iteratorRef );
+    memset(vin, 0, LE_ECALL_VIN_MAX_BYTES);
 
-    return result;
+    le_cfg_GetString(iterator, CFG_NODE_VIN, vin, LE_ECALL_VIN_MAX_BYTES, "");
+    if (strlen(vin) != LE_ECALL_VIN_MAX_LEN)
+    {
+        LE_DEBUG("eCall settings, VIN is set to %s", vin);
+
+        memset(vin, 0, LE_ECALL_VIN_MAX_BYTES);
+
+        LE_WARN("No node value set for '%s'", CFG_NODE_VIN);
+
+        le_cfg_CancelTxn(iterator);
+
+        return LE_NOT_FOUND;
+    }
+
+    le_cfg_CancelTxn(iterator);
+
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -4284,7 +4734,7 @@ le_result_t le_ecall_SetPropulsionType
 
     if (LE_ECALL_PROPULSION_TYPE_GASOLINE & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf(cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
 
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "Gasoline");
         i++;
@@ -4292,44 +4742,42 @@ le_result_t le_ecall_SetPropulsionType
 
     if (LE_ECALL_PROPULSION_TYPE_DIESEL & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf (cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "Diesel");
         i++;
     }
 
     if (LE_ECALL_PROPULSION_TYPE_NATURALGAS & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf (cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "NaturalGas");
         i++;
     }
 
     if (LE_ECALL_PROPULSION_TYPE_PROPANE & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf (cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "Propane");
         i++;
     }
 
     if (LE_ECALL_PROPULSION_TYPE_ELECTRIC & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf (cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "Electric");
         i++;
     }
 
     if (LE_ECALL_PROPULSION_TYPE_HYDROGEN & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
+        snprintf (cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "Hydrogen");
         i++;
-
     }
 
     if (LE_ECALL_PROPULSION_TYPE_OTHER & propulsionTypeBitMask)
     {
-        sprintf (cfgNodeLoc, "%d", i);
-        le_cfg_GoToNode(iteratorRef, cfgNodeLoc);
+        snprintf (cfgNodeLoc, sizeof(cfgNodeLoc), "%d", i);
         le_cfg_SetString ( iteratorRef, cfgNodeLoc, "Other");
         i++;
     }
@@ -4370,7 +4818,7 @@ le_result_t le_ecall_GetPropulsionType
         ///< [OUT] bitmask
 )
 {
-    le_result_t result = LE_OK;
+    le_result_t result;
     le_ecall_PropulsionTypeBitMask_t resultBitMask= 0;
 
     if (NULL == propulsionTypePtr)
@@ -4425,4 +4873,3 @@ le_result_t le_ecall_GetPropulsionType
 
     return result;
 }
-

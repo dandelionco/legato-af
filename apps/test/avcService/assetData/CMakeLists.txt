@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 set(TEST_EXE testAssetData)
@@ -11,7 +11,7 @@ mkexe(${TEST_EXE}
       assetDataTest
       -i ${LEGATO_ROOT}/interfaces
       -i ${LEGATO_ROOT}/components/airVantage/avcDaemon/
-      -i ${LEGATO_ROOT}/framework/c/src
+      -i ${LEGATO_ROOT}/framework/liblegato
       -i ${LEGATO_ROOT}/components/airVantage/platformAdaptor/inc
 )
 
@@ -19,5 +19,5 @@ mkexe(${TEST_EXE}
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${TEST_SCRIPT}.in
                ${EXECUTABLE_OUTPUT_PATH}/${TEST_SCRIPT})
 
-
-
+# This is a C test
+add_dependencies(tests_c ${TEST_EXE})

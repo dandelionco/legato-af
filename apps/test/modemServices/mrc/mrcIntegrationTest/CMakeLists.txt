@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 # AR7 Component Implementation
@@ -13,3 +13,6 @@ mkapp(mrcTest.adef
      -i ${LEGATO_ROOT}/interfaces/modemServices
      --cflags=-DAR7_DETECTED=${AR7_ENABLE_FLAG}
 )
+
+# This is a C test
+add_dependencies(tests_c mrcTest)

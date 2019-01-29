@@ -2,69 +2,117 @@
 # Determines which target include file to include based on the goal passed to make on the
 # command-line.
 #
-# Copyright (C), Sierra Wireless Inc.  Use of this work is subject to license.
+# Copyright (C), Sierra Wireless Inc.
 # --------------------------------------------------------------------------------------------------
 
-ifeq ($(MAKECMDGOALS),localhost)
-  include targetDefs.localhost
-else ifeq ($(MAKECMDGOALS),tests_localhost)
-  include targetDefs.localhost
-
-else ifeq ($(MAKECMDGOALS),ar7)
-  include targetDefs.ar7
-else ifeq ($(MAKECMDGOALS),tests_ar7)
-  include targetDefs.ar7
-
-else ifeq ($(MAKECMDGOALS),ar759x)
-  include targetDefs.ar759x
-else ifeq ($(MAKECMDGOALS),tests_ar759x)
-  include targetDefs.ar759x
-
-else ifeq ($(MAKECMDGOALS),ar758x)
-  include targetDefs.ar758x
-else ifeq ($(MAKECMDGOALS),tests_ar758x)
-  include targetDefs.ar758x
-
-else ifeq ($(MAKECMDGOALS),ar86)
-  include targetDefs.ar86
-else ifeq ($(MAKECMDGOALS),tests_ar86)
-  include targetDefs.ar86
-
-else ifeq ($(MAKECMDGOALS),wp85)
-  include targetDefs.wp85
-else ifeq ($(MAKECMDGOALS),tests_wp85)
-  include targetDefs.wp85
-
-else ifeq ($(MAKECMDGOALS),wp750x)
-  include targetDefs.wp750x
-else ifeq ($(MAKECMDGOALS),tests_wp750x)
-  include targetDefs.wp750x
-
-else ifeq ($(MAKECMDGOALS),wp76xx)
-  include targetDefs.wp76xx
-else ifeq ($(MAKECMDGOALS),tests_wp76xx)
-  include targetDefs.wp76xx
-
-else ifeq ($(MAKECMDGOALS),virt)
-  include targetDefs.virt
-else ifeq ($(MAKECMDGOALS),tests_virt)
-  include targetDefs.virt
-
-else ifeq ($(MAKECMDGOALS),raspi)
-  include targetDefs.raspi
-else ifeq ($(MAKECMDGOALS),tests_raspi)
-  include targetDefs.raspi
-
-else ifeq ($(MAKECMDGOALS),docs)
-  include targetDefs.localhost
-else ifeq ($(MAKECMDGOALS),user_docs)
-  include targetDefs.localhost
-else ifeq ($(MAKECMDGOALS),implementation_docs)
-  include targetDefs.localhost
+ifneq ($(findstring $(MAKECMDGOALS),docs user_docs implementation_docs),)
+    export TARGET := localhost
+else
+    export TARGET := $(lastword $(subst _, ,$(MAKECMDGOALS)))
 endif
 
-# Include an optional targetDefs file which can be included
-# to add extra defintions, or override default ones
-ifneq (, $(wildcard targetDefs.extra))
-  include targetDefs.extra
+TARGET_CAPS := $(shell echo $(TARGET) |tr a-z A-Z)
+
+ifeq ($(TARGET),virt)
+    VIRT_TARGET_ARCH ?= arm
+    export VIRT_TARGET_ARCH
+
+    export VIRT_TOOLCHAIN_PREFIX ?= $(shell $(FINDTOOLCHAIN) $(TARGET)_$(VIRT_TARGET_ARCH) prefix)
+
+    export VIRT_TOOLCHAIN_DIR := $(shell $(FINDTOOLCHAIN) $(TARGET)_$(VIRT_TARGET_ARCH) dir)
+endif
+
+ifeq ($(TARGET),localhost)
+    # If the toolchain directory is not specified, assume the directory that GCC is installed in.
+    ifeq ($(TOOLCHAIN_DIR),)
+        ifeq ($(USE_CLANG),1)
+            export TOOLCHAIN_DIR := $(dir $(shell which clang))
+        else
+            export TOOLCHAIN_DIR := $(dir $(shell which gcc))
+        endif
+        export TOOLCHAIN_PREFIX :=
+    endif
+
+    SDEF_TO_USE ?= localhost.sdef
+else
+    ifeq ($($(TARGET_CAPS)_TOOLCHAIN_DIR),)
+        export $(TARGET_CAPS)_TOOLCHAIN_DIR := $(shell $(FINDTOOLCHAIN) $(TARGET) dir)
+    endif
+
+    ifeq ($($(TARGET_CAPS)_TOOLCHAIN_PREFIX),)
+        export $(TARGET_CAPS)_TOOLCHAIN_PREFIX := $(shell $(FINDTOOLCHAIN) $(TARGET) prefix)
+    endif
+
+    ifeq ($($(TARGET_CAPS)_SYSROOT),)
+        export $(TARGET_CAPS)_SYSROOT := $(shell $(FINDTOOLCHAIN) $(TARGET) sysroot)
+    endif
+
+    ifeq ($($(TARGET_CAPS)_KERNELROOT),)
+        export $(TARGET_CAPS)_KERNELROOT := $(shell $(FINDTOOLCHAIN) $(TARGET) kernelroot)
+    endif
+
+    export TOOLCHAIN_DIR := $($(TARGET_CAPS)_TOOLCHAIN_DIR)
+    export TOOLCHAIN_PREFIX := $($(TARGET_CAPS)_TOOLCHAIN_PREFIX)
+    export LEGATO_SYSROOT ?= $($(TARGET_CAPS)_SYSROOT)
+    export LEGATO_KERNELROOT ?= $($(TARGET_CAPS)_KERNELROOT)
+endif
+
+
+## Set the LD, AR, AS, STRIP, OBJCOPY, and READELF variables for use by the Legato framework build, if
+## they are not set yet.
+
+ifneq ($(TOOLCHAIN_DIR),)
+    TOOLCHAIN_PATH_PREFIX := $(TOOLCHAIN_DIR)/$(TOOLCHAIN_PREFIX)
+else
+    TOOLCHAIN_PATH_PREFIX := $(TOOLCHAIN_PREFIX)
+endif
+
+ifeq ($(wildcard $(TOOLCHAIN_PATH_PREFIX)ld),)
+    export LD := ld
+else
+    export LD := $(TOOLCHAIN_PATH_PREFIX)ld
+endif
+
+ifeq ($(wildcard $(TOOLCHAIN_PATH_PREFIX)ar),)
+    export AR := ar
+else
+    export AR := $(TOOLCHAIN_PATH_PREFIX)ar
+endif
+
+ifeq ($(wildcard $(TOOLCHAIN_PATH_PREFIX)as),)
+    export AS := as
+else
+    export AS := $(TOOLCHAIN_PATH_PREFIX)as
+endif
+
+ifeq ($(wildcard $(TOOLCHAIN_PATH_PREFIX)strip),)
+    export STRIP := strip
+else
+    export STRIP := $(TOOLCHAIN_PATH_PREFIX)strip
+endif
+
+ifeq ($(wildcard $(TOOLCHAIN_PATH_PREFIX)objcopy),)
+    export OBJCOPY := objcopy
+else
+    export OBJCOPY := $(TOOLCHAIN_PATH_PREFIX)objcopy
+endif
+
+ifeq ($(wildcard $(TOOLCHAIN_PATH_PREFIX)readelf),)
+    export READELF := readelf
+else
+    export READELF := $(TOOLCHAIN_PATH_PREFIX)readelf
+endif
+
+ifeq ($(USE_CCACHE),1)
+  ifeq ($(CCACHE),)
+    CCACHE := $(shell which ccache)
+  endif
+  $(info Using ccache: ${CCACHE})
+  ifeq ($(CCACHE),)
+    $(error Unable to find ccache while it is enabled.)
+  endif
+
+  export CCACHE
+else
+  unexport CCACHE
 endif

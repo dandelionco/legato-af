@@ -2,7 +2,7 @@
 /**
  * @file programmingLanguage.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -19,7 +19,8 @@ enum ProgramLang_t
     LANG_C,     ///< C
     LANG_CXX,   ///< C++
     LANG_BIN,   ///< Binary, language unknown/irrelevant
-    LANG_JAVA
+    LANG_JAVA,  ///< Java
+    LANG_PYTHON ///< Python
 };
 
 #endif // LEGATO_MKTOOLS_PROGRAMMING_LANGUAGE_H_INCLUDE_GUARD

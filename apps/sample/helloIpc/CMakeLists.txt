@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 # Creates application using 'print' service
@@ -9,4 +9,4 @@ mkapp(printClient.adef)
 mkapp(printServer.adef)
 
 # This is a sample application
-add_dependencies(samples printClient printServer)
+add_dependencies(samples_c printClient printServer)

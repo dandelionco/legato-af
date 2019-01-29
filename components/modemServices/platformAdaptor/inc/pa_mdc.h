@@ -25,7 +25,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -33,7 +33,7 @@
  *
  * Legato @ref c_pa_mdc include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PA_MDC_INCLUDE_GUARD
@@ -48,7 +48,12 @@
  * Maximum number of profile objects supported
  */
 //--------------------------------------------------------------------------------------------------
+#if defined (PDP_MAX_PROFILE)
+#define PA_MDC_MAX_PROFILE PDP_MAX_PROFILE
+#else
 #define PA_MDC_MAX_PROFILE 5
+#endif
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -176,6 +181,7 @@ pa_mdc_ProfileData_t;
 typedef struct {
     uint32_t profileIndex;              ///< Profile that had the state change
     le_mdc_ConState_t newState;         ///< Data session connection status.
+    le_mdc_Pdp_t pdp;                   ///< PDP type
     le_mdc_DisconnectionReason_t disc;  ///< Disconnection reason
     int32_t  discCode;                  ///< Platform specific disconnection code
 }
@@ -201,7 +207,8 @@ pa_mdc_ConnectionFailureCode_t;
  * Packet statistics structure
  */
 //--------------------------------------------------------------------------------------------------
-typedef struct {
+typedef struct
+{
     uint64_t    transmittedBytesCount;  ///< Number of bytes transmitted without error.
     uint64_t    receivedBytesCount;     ///< Number of bytes received without error.
 }
@@ -392,7 +399,7 @@ LE_SHARED le_result_t pa_mdc_StopSession
  *
  * @return
  *      - LE_OK on success
- *      - LE_BAD_PARAMETER if the input parameter is not valid
+ *      - LE_UNSUPPORTED if not supported by the target
  *      - LE_FAULT for other failures
  */
 //--------------------------------------------------------------------------------------------------
@@ -553,7 +560,6 @@ LE_SHARED le_result_t pa_mdc_GetDataBearerTechnology
  * @return
  *      - LE_OK on success
  *      - LE_FAULT for all other errors
- *
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mdc_GetDataFlowStatistics
@@ -568,12 +574,56 @@ LE_SHARED le_result_t pa_mdc_GetDataFlowStatistics
  * * @return
  *      - LE_OK on success
  *      - LE_FAULT for all other errors
- *
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mdc_ResetDataFlowStatistics
 (
     void
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Stop collecting data flow statistics
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mdc_StopDataFlowStatistics
+(
+    void
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Start collecting data flow statistics
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mdc_StartDataFlowStatistics
+(
+    void
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Map a profile on a network interface
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_UNSUPPORTED if not supported by the target
+ *      - LE_FAULT for all other errors
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mdc_MapProfileOnNetworkInterface
+(
+    uint32_t         profileIndex,         ///< [IN] The profile to use
+    const char*      interfaceNamePtr      ///< [IN] Network interface name
 );
 
 #endif // LEGATO_PA_MDC_INCLUDE_GUARD

@@ -11,7 +11,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -19,7 +19,7 @@
  *
  * Legato @ref c_pa_mrc include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PARC_INCLUDE_GUARD
@@ -85,6 +85,7 @@ typedef enum
 {
     PA_MRC_SCAN_PLMN = 0,       ///< Scan PLMN
     PA_MRC_SCAN_CSG,            ///< Scan closed subscriber group
+    PA_MRC_SCAN_PCI = 3         ///< Scan PCI
 }
 pa_mrc_ScanType_t;
 
@@ -136,17 +137,60 @@ pa_mrc_ScanInformation_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Plmn Information.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    pa_mrc_MobileCode_t  mobileCode;           ///< Mcc/Mnc
+    le_dls_Link_t       link;                 ///< link for the list
+}
+pa_mrc_PlmnInformation_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Network PciScan Information.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    uint16_t            cellId;                  ///< Id of the curent cell
+    le_dls_List_t       plmnList;                ///< list of pa_mrc_PlmnInformation_t
+    le_dls_Link_t*      currentLink;             ///< link for iterator
+    le_dls_List_t       safeRefPlmnInfoList;     ///< list of PlmnInfoSafeRef_t
+    le_dls_Link_t       link;                    ///< link for the list
+}
+pa_mrc_PciScanInformation_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
  * UMTS metrics.
  *
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    int32_t   ecio; ///< Ec/Io value  in dB with 1 decimal place (15 = 1.5 dB)
-    int32_t   rscp; ///< Measured RSCP in dBm (only applicable for TD-SCDMA network)
-    int32_t   sinr; ///< Measured SINR in dB (only applicable for TD-SCDMA network)
+    int32_t   ecio; ///< Ec/Io value in dB with 1 decimal place (15 = 1.5 dB)
+    int32_t   rscp; ///< Measured RSCP in dBm
 }
 pa_mrc_UmtsMetrics_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * TDSCDMA metrics.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    int32_t   ecio; ///< Ec/Io value in dB with 1 decimal place (15 = 1.5 dB)
+    int32_t   rscp; ///< Measured RSCP in dBm
+    int32_t   sinr; ///< Measured SINR in dB
+}
+pa_mrc_TdscdmaMetrics_t;
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -188,9 +232,10 @@ typedef struct
     int32_t                  ss;           ///< Signal strength in dBm
     uint32_t                 er;           ///< Bit/Block/Frame/Packet error rate
     union {                                ///< Additional information for UMTS/LTE/CDMA
-        pa_mrc_UmtsMetrics_t umtsMetrics;
-        pa_mrc_LteMetrics_t  lteMetrics;
-        pa_mrc_CdmaMetrics_t cdmaMetrics;
+        pa_mrc_UmtsMetrics_t    umtsMetrics;
+        pa_mrc_TdscdmaMetrics_t tdscdmaMetrics;
+        pa_mrc_LteMetrics_t     lteMetrics;
+        pa_mrc_CdmaMetrics_t    cdmaMetrics;
     };
 }
 pa_mrc_SignalMetrics_t;
@@ -206,6 +251,32 @@ typedef struct {
     int32_t       ss;           ///< Signal strength in dBm
 }
 pa_mrc_SignalStrengthIndication_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Network reject indication structure.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct {
+    le_mrc_Rat_t  rat;                   ///< RAT of the measured signal
+    char          mcc[LE_MRC_MCC_BYTES]; ///< MCC: Mobile Country Code
+    char          mnc[LE_MRC_MNC_BYTES]; ///< MNC: Mobile Network Code
+}
+pa_mrc_NetworkRejectIndication_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Jamming detection indication structure.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    le_mrc_JammingReport_t  report;     ///< Notification type
+    le_mrc_JammingStatus_t  status;     ///< Jamming status
+}
+pa_mrc_JammingDetectionIndication_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -241,6 +312,42 @@ typedef void (*pa_mrc_NetworkRegHdlrFunc_t)
 typedef void (*pa_mrc_RatChangeHdlrFunc_t)
 (
     le_mrc_Rat_t* ratPtr
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Prototype for handler functions used to report the Service state change.
+ *
+ * @param servicePtr The service state.
+ */
+//--------------------------------------------------------------------------------------------------
+typedef void (*pa_mrc_ServiceChangeHdlrFunc_t)
+(
+    le_mrc_NetRegState_t* servicePtr
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Prototype for handler functions used to report network reject.
+ *
+ * @param networkRejectIndPtr The network reject indication.
+ */
+//--------------------------------------------------------------------------------------------------
+typedef void (*pa_mrc_NetworkRejectIndHdlrFunc_t)
+(
+    pa_mrc_NetworkRejectIndication_t* networkRejectIndPtr
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Prototype for handler functions used to report Jamming detection notifications.
+ *
+ * @param servicePtr The service state.
+ */
+//--------------------------------------------------------------------------------------------------
+typedef void (*pa_mrc_JammingDetectionHandlerFunc_t)
+(
+    pa_mrc_JammingDetectionIndication_t* jammingIndPtr
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -295,6 +402,32 @@ LE_SHARED le_event_HandlerRef_t pa_mrc_SetRatChangeHandler
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED void pa_mrc_RemoveRatChangeHandler
+(
+    le_event_HandlerRef_t handlerRef
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler for Packet Switched change handling.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ * @note Doesn't return on failure, so there's no need to check the return value for errors.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_event_HandlerRef_t pa_mrc_SetPSChangeHandler
+(
+    pa_mrc_ServiceChangeHdlrFunc_t handlerFuncPtr ///< [IN] The handler function.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to unregister the handler for Packet Switched change
+ * handling.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED void pa_mrc_RemovePSChangeHandler
 (
     le_event_HandlerRef_t handlerRef
 );
@@ -434,6 +567,28 @@ LE_SHARED void pa_mrc_DeleteScanInformation
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * This function must be called to delete the list of PCI Scan Information
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED void pa_mrc_DeletePciScanInformation
+(
+    le_dls_List_t *scanInformationListPtr ///< [IN] list of pa_mrc_ScanInformation_t
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to delete the list of Plmn Information
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED void pa_mrc_DeletePlmnScanInformation
+(
+    le_dls_List_t *scanInformationListPtr ///< [IN] list of pa_mrc_PlmnInformation_t
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function must be called to perform a network scan.
  *
  * @return LE_FAULT         The function failed.
@@ -563,8 +718,9 @@ LE_SHARED le_result_t pa_mrc_GetRadioAccessTechInUse
  * Set the Radio Access Technology Preferences
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ * - LE_OK              On success
+ * - LE_FAULT           On failure
+ * - LE_UNSUPPORTED     Not supported by platform
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_SetRatPreferences
@@ -637,6 +793,7 @@ LE_SHARED le_result_t pa_mrc_GetBandPreferences
  * @return
  * - LE_OK              on success
  * - LE_FAULT           on failure
+ * - LE_UNSUPPORTED     the platform doesn't support setting LTE Band preferences.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_SetLteBandPreferences
@@ -663,8 +820,9 @@ LE_SHARED le_result_t pa_mrc_GetLteBandPreferences
  * Set the TD-SCDMA Band Preferences
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ * - LE_OK           On success
+ * - LE_FAULT        On failure
+ * - LE_UNSUPPORTED  The platform doesn't support setting TD-SCDMA Band preferences.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_SetTdScdmaBandPreferences
@@ -677,14 +835,15 @@ LE_SHARED le_result_t pa_mrc_SetTdScdmaBandPreferences
  * Get the TD-SCDMA Band Preferences
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ * - LE_OK           On success
+ * - LE_FAULT        On failure
+ * - LE_UNSUPPORTED  The platform doesn't support getting TD-SCDMA Band preferences.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_GetTdScdmaBandPreferences
 (
     le_mrc_TdScdmaBandBitMask_t* bandsPtr ///< [OUT] A bit mask to get the TD-SCDMA Band
-                                          ///<  preferences.
+                                          ///<       preferences.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -783,9 +942,25 @@ LE_SHARED void pa_mrc_RemoveSignalStrengthIndHandler
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_SetSignalStrengthIndThresholds
 (
-    le_mrc_Rat_t rat,                 ///< Radio Access Technology
+    le_mrc_Rat_t rat,                 ///< [IN] Radio Access Technology
     int32_t      lowerRangeThreshold, ///< [IN] lower-range threshold in dBm
     int32_t      upperRangeThreshold  ///< [IN] upper-range strength threshold in dBm
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to set and activate the delta for signal strength indications.
+ *
+ * @return
+ *  - LE_FAULT  Function failed.
+ *  - LE_OK     Function succeeded.
+ *  - LE_BAD_PARAMETER  Bad parameters.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mrc_SetSignalStrengthIndDelta
+(
+    le_mrc_Rat_t rat,    ///< [IN] Radio Access Technology
+    uint16_t     delta   ///< [IN] Signal delta in units of 0.1 dB
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -836,8 +1011,9 @@ LE_SHARED le_result_t pa_mrc_GetServingCellLocAreaCode
  * Get the Band capabilities
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_GetBandCapabilities
@@ -850,8 +1026,9 @@ LE_SHARED le_result_t pa_mrc_GetBandCapabilities
  * Get the LTE Band capabilities
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_GetLteBandCapabilities
@@ -864,13 +1041,139 @@ LE_SHARED le_result_t pa_mrc_GetLteBandCapabilities
  * Get the TD-SCDMA Band capabilities
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_mrc_GetTdScdmaBandCapabilities
 (
     le_mrc_TdScdmaBandBitMask_t* bandsPtr ///< [OUT] Bit mask to get the TD-SCDMA Band capabilities.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Packet Switched state.
+ *
+ * @return
+ *  - LE_FAULT  Function failed.
+ *  - LE_OK     Function succeeded.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mrc_GetPacketSwitchedState
+(
+    le_mrc_NetRegState_t* statePtr  ///< [OUT] The current Packet switched state.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler for Network Reject Indication.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ * @note Doesn't return on failure, so there's no need to check the return value for errors.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_event_HandlerRef_t pa_mrc_AddNetworkRejectIndHandler
+(
+    pa_mrc_NetworkRejectIndHdlrFunc_t networkRejectIndHandler, ///< [IN] The handler function to
+                                                               ///  handle network reject
+                                                               ///  indication.
+    void*                              contextPtr              ///< [IN] The context to be given to
+                                                               ///  the handler.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to unregister the handler for Network Reject Indication handling.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED void pa_mrc_RemoveNetworkRejectIndHandler
+(
+    le_event_HandlerRef_t handlerRef
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler for jamming detection indication.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ * @note Doesn't return on failure, so there's no need to check the return value for errors.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_event_HandlerRef_t pa_mrc_AddJammingDetectionIndHandler
+(
+    pa_mrc_JammingDetectionHandlerFunc_t JammingDetectionIndHandler, ///< [IN] The handler function
+                                                                     ///  to handle jamming
+                                                                     ///  detection indication.
+    void*                               contextPtr                   ///< [IN] The context to be
+                                                                     ///  given to the handler.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function activates or deactivates jamming detection notification.
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_FAULT on failure
+ *      - LE_DUPLICATE if jamming detection is already activated and an activation is requested
+ *      - LE_UNSUPPORTED if jamming detection is not supported
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mrc_SetJammingDetection
+(
+    bool activation     ///< [IN] Notification activation request
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function returns the jamming detection notification status.
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_BAD_PARAMETER if the parameter is invalid
+ *      - LE_FAULT on failure
+ *      - LE_UNSUPPORTED if jamming detection is not supported or if this request is not supported
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mrc_GetJammingDetection
+(
+    bool* activationPtr     ///< [IN] Notification activation request
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the SAR backoff state
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ *  - LE_OUT_OF_RANGE   The provided index is out of range.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mrc_SetSarBackoffState
+(
+    uint8_t state      ///< [IN] New state to enable.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the SAR backoff state
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_mrc_GetSarBackoffState
+(
+    uint8_t* statePtr     ///< [OUT] Current state
 );
 
 #endif // LEGATO_PARC_INCLUDE_GUARD

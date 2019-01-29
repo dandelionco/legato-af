@@ -2,6 +2,10 @@
 
 Use the Cellular Modem tool to control modem functions.
 
+@warning This tool has been designed to be used for development and testing purposes by a user in
+real time.  This tool should not be called from user apps, and may cause instabilities if called
+continuously.  @ref c_le_data should be used to open and configure connections within user apps.
+
 <h1>Usage</h1>
 
 <b><c> cm [SERVICES] [COMMANDS] </c></b>
@@ -66,6 +70,15 @@ cm info all @endverbatim
 @verbatim cm info bootloader @endverbatim
 > Print the bootloader version.
 
+@section toolsTarget_cm_ips IPS
+
+@verbatim cm ips
+cm ips read @endverbatim
+> Print information about the power supply (voltage, power source, battery level).
+
+@verbatim cm ips thresholds @endverbatim
+> Print the input voltage thresholds.
+
 @section toolsTarget_cm_radio Radio
 
 @verbatim cm radio
@@ -75,13 +88,33 @@ cm radio status @endverbatim
 @verbatim cm radio <on/off> @endverbatim
 > Enable/disable radio.
 
-@verbatim cm radio rat <CDMA | GSM/UMTS | LTE> @endverbatim
-> Set radio access technology.
+@verbatim cm radio rat <[CDMA] [GSM] [UMTS] [LTE] [TDSCDMA]> @endverbatim
+> Set the prefered radio access technologies.
+
+@verbatim cm radio getRAT @endverbatim
+> Get the prefered radio access technologies.
 
 @verbatim cm radio rat AUTO @endverbatim
 > Resume automatic RAT selection.
 
 After setting the radio access technology, you'll need to do a <c>legato restart</c> before it's effective.
+
+@section toolsTarget_cm_rtc RTC
+
+@verbatim cm rtc read @endverbatim
+> Reads the RTC time
+
+@verbatim cm rtc set "21 Oct 2015 16:29:00" @endverbatim
+> Sets the RTC time
+
+Time Format:
+- day of the month (leading zeros are permitted)
+- month (either the abbreviated or the full name)
+- year with century
+- hour (leading zeros are permitted)
+- minute (leading zeros are permitted)
+- seconds (leading zeros are permitted)
+
 
 @section toolsTarget_cm_sim SIM
 
@@ -175,6 +208,6 @@ cm temp all @endverbatim
 
 <HR>
 
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 
 **/

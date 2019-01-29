@@ -2,7 +2,7 @@
   * This module implements the le_ips's tests.
   *
   *
-  * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+  * Copyright (C) Sierra Wireless Inc.
   *
   */
 
@@ -29,11 +29,13 @@
 #define DEFAULT_ISP_WARNING_THRESHOLD       3400
 #define DEFAULT_IPS_CRITICAL_THRESHOLD      3200
 
-#define TEST_IPS_HI_CRITICAL_THRESHOLD   4000
-#define TEST_IPS_NORMAL_THRESHOLD        3700
-#define TEST_IPS_WARNING_THRESHOLD       3600
-#define TEST_IPS_CRITICAL_THRESHOLD      3400
+#define TEST_IPS_HI_CRITICAL_THRESHOLD      4000
+#define TEST_IPS_NORMAL_THRESHOLD           3700
+#define TEST_IPS_WARNING_THRESHOLD          3600
+#define TEST_IPS_CRITICAL_THRESHOLD         3400
 
+/* Simulated external battery level */
+#define TEST_IPS_EXT_BATTERY_LEVEL          57
 
 /* Value for managed Current value displaying and remaining event */
 static int WaitForNbEvents;
@@ -87,18 +89,80 @@ static void PrintUsage()
 //--------------------------------------------------------------------------------------------------
 static void Testle_ips_GetInputVoltage
 (
+    void
 )
 {
     uint32_t voltage = 0;
 
     LE_INFO("======== Testle_ips_GetInputVoltage Test ========");
-    LE_ASSERT(le_ips_GetInputVoltage(&voltage) == LE_OK);
+    LE_ASSERT_OK(le_ips_GetInputVoltage(&voltage));
     LE_ASSERT(voltage != 0);
-    LE_INFO("le_ips_GetInputVoltage return %d mV => %d,%03d V",
-        voltage, voltage/1000, voltage%1000);
-    printf("le_mon_GetInputVoltage return %d mV => %d,%03d V\n",
+    LE_INFO("le_ips_GetInputVoltage returns %d mV => %d,%03d V",
+             voltage, voltage/1000, voltage%1000);
+    printf("le_ips_GetInputVoltage returns %d mV => %d,%03d V\n",
             voltage, voltage/1000, voltage%1000);
     LE_INFO("======== Testle_ips_GetInputVoltage Test PASSED ========");
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Test: le_ips_GetPowerSource()
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void Testle_ips_GetPowerSource
+(
+    void
+)
+{
+    le_ips_PowerSource_t powerSource;
+
+    LE_INFO("======== Testle_ips_GetPowerSource Test ========");
+    LE_ASSERT_OK(le_ips_GetPowerSource(&powerSource));
+    LE_ASSERT(LE_IPS_POWER_SOURCE_EXTERNAL == powerSource);
+    LE_INFO("======== Testle_ips_GetPowerSource Test PASSED ========");
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Test: le_ips_GetBatteryLevel()
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void Testle_ips_GetBatteryLevel
+(
+    void
+)
+{
+    uint8_t batteryLevel;
+
+    LE_INFO("======== Testle_ips_GetBatteryLevel Test ========");
+    LE_ASSERT_OK(le_ips_GetBatteryLevel(&batteryLevel));
+    LE_ASSERT(0 == batteryLevel);
+    LE_INFO("======== Testle_ips_GetBatteryLevel Test PASSED ========");
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Test: le_ips_SetBatteryLevel()
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void Testle_ips_SetBatteryLevel
+(
+    void
+)
+{
+    uint8_t batteryLevel;
+    le_ips_PowerSource_t powerSource;
+
+    LE_INFO("======== Testle_ips_SetBatteryLevel Test ========");
+    LE_ASSERT_OK(le_ips_SetBatteryLevel(TEST_IPS_EXT_BATTERY_LEVEL));
+    LE_ASSERT_OK(le_ips_GetBatteryLevel(&batteryLevel));
+    LE_ASSERT(TEST_IPS_EXT_BATTERY_LEVEL == batteryLevel);
+    LE_ASSERT_OK(le_ips_GetPowerSource(&powerSource));
+    LE_ASSERT(LE_IPS_POWER_SOURCE_BATTERY == powerSource);
+    LE_INFO("======== Testle_ips_SetBatteryLevel Test PASSED ========");
 }
 
 
@@ -430,15 +494,23 @@ COMPONENT_INIT
     nbarg = le_arg_NumArgs();
     LE_INFO(" nbargument %d ", nbarg );
 
+    testNumberStr = le_arg_GetArg(0);
+    if (NULL == testNumberStr)
+    {
+        LE_ERROR("testNumberStr is NULL");
+        exit(EXIT_FAILURE);
+    }
     if ( nbarg  == 1 )
     {
-        testNumberStr = le_arg_GetArg(0);
         if(strcmp(testNumberStr, "ALL") == 0)
         {
             Testle_ips_GetInputVoltage();
+            Testle_ips_GetPowerSource();
+            Testle_ips_GetBatteryLevel();
             Testle_ips_GetVoltageThresholds();
             Testle_ips_SetGetVoltageThresholds();
             Testle_ips_ThresholdEventHandler();
+            Testle_ips_SetBatteryLevel();
             LE_INFO("======== Test IPS implementation Test SUCCESS ========");
         }
         else if(strcmp(testNumberStr, "HANDLER") == 0)
@@ -456,8 +528,6 @@ COMPONENT_INIT
     }
     else if ( nbarg  == 5 )
     {
-        testNumberStr = le_arg_GetArg(0);
-
         if(strcmp(testNumberStr, "SET") == 0)
         {
             const char *  critStr = le_arg_GetArg(1);
@@ -466,6 +536,26 @@ COMPONENT_INIT
             const char *  hiCritStr = le_arg_GetArg(4);
             uint16_t critical, warning, normal, hiCritical;
 
+            if (NULL == critStr)
+            {
+                LE_ERROR("critStr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            if (NULL == warnStr)
+            {
+                LE_ERROR("warnStr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            if (NULL == normStr)
+            {
+                LE_ERROR("normStr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            if (NULL == hiCritStr)
+            {
+                LE_ERROR("hiCritStr is NULL");
+                exit(EXIT_FAILURE);
+            }
             critical = atoi(critStr);
             warning = atoi(warnStr);
             normal = atoi(normStr);

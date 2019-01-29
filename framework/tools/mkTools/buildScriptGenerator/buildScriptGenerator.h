@@ -6,16 +6,16 @@
  *
  * There's a function to generate each type of .ninja:
  *
- * - ninja::Generate(const Component_t*) - Stand-alone component library.
+ * - ninja::Generate(Component_t*) - Stand-alone component library.
  *
- * - ninja::Generate(const Exe_t*) - Executable and associated component libraries.
+ * - ninja::Generate(Exe_t*) - Executable and associated component libraries.
  *
- * - ninja::Generate(const App_t*) - Application bundle, including executables, component libraries,
- *                                   bundled files, a configuration data file,
- *                                   and an info.properties file.
+ * - ninja::Generate(App_t*) - Application bundle, including executables, component libraries,
+ *                             bundled files, a configuration data file,
+ *                             and an info.properties file.
  *
- * - ninja::Generate(const System_t*) - System bundle, including all app bundles and user binding
- *                                      configuration.
+ * - ninja::Generate(System_t*) - System bundle, including all app bundles and user binding
+ *                                configuration.
  *
  * None of the scripts do configuration generation or exe main code generation.  The scripts expect
  * those things to be done before the scripts are run.  The ninja scripts will run ifgen to
@@ -27,7 +27,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -38,9 +38,6 @@ namespace ninja
 {
 
 
-#include "toolChain.h"
-
-
 //--------------------------------------------------------------------------------------------------
 /**
  * Generate a build script for a stand-alone component library.
@@ -48,10 +45,8 @@ namespace ninja
 //--------------------------------------------------------------------------------------------------
 void Generate
 (
-    const model::Component_t* componentPtr,
-    const mk::BuildParams_t& buildParams,
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to array of pointers to command line argument strings.
+    model::Component_t* componentPtr,
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -63,10 +58,8 @@ void Generate
 //--------------------------------------------------------------------------------------------------
 void Generate
 (
-    const model::Exe_t* exePtr,
-    const mk::BuildParams_t& buildParams,
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to array of pointers to command line argument strings.
+    model::Exe_t* exePtr,
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -77,11 +70,8 @@ void Generate
 //--------------------------------------------------------------------------------------------------
 void Generate
 (
-    const model::App_t* appPtr,
-    const mk::BuildParams_t& buildParams,
-    const std::string& outputDir,   ///< Path to the directory into which the built app will be put.
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to array of pointers to command line argument strings.
+    model::App_t* appPtr,
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -92,10 +82,8 @@ void Generate
 //--------------------------------------------------------------------------------------------------
 void Generate
 (
-    const model::Module_t* modulePtr,
-    const mk::BuildParams_t& buildParams,
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to array of pointers to command line argument strings.
+    model::Module_t* modulePtr,
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -106,11 +94,8 @@ void Generate
 //--------------------------------------------------------------------------------------------------
 void Generate
 (
-    const model::System_t* systemPtr,
-    const mk::BuildParams_t& buildParams,
-    const std::string& outputDir,   ///< Path to the directory where the built system will be put.
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to an array of pointers to command line argument strings.
+    model::System_t* systemPtr,
+    const mk::BuildParams_t& buildParams
 );
 
 

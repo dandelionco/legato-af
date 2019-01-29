@@ -1,13 +1,27 @@
 sandboxed: false
 
+executables:
+{
+    modemDaemon = ($LEGATO_ROOT/components/modemServices/modemDaemon
+                   $LEGATO_ROOT/components/watchdogChain)
+    rSimDaemon  = ($LEGATO_ROOT/components/modemServices/rSimDaemon
+                   $LEGATO_ROOT/components/watchdogChain)
+}
+
 processes:
 {
     run:
     {
         (modemDaemon)
+        (rSimDaemon)
     }
 
     faultAction: restart
+    #if ${LEGATO_SERVICES_WDOG_DISABLE} = 1
+        watchdogTimeout: never
+    #else
+        maxWatchdogTimeout: 180000
+    #endif
 }
 
 bundles:
@@ -22,6 +36,8 @@ bundles:
 bindings:
 {
     modemDaemon.modemDaemon.le_pm -> powerMgr.le_pm
+    modemDaemon.watchdogChain.le_wdog -> <root>.le_wdog
+    rSimDaemon.watchdogChain.le_wdog -> <root>.le_wdog
 }
 
 requires:
@@ -31,7 +47,6 @@ requires:
         [w] .
     }
 }
-
 
 extern:
 {
@@ -48,10 +63,7 @@ extern:
     modemDaemon.modemDaemon.le_riPin
     modemDaemon.modemDaemon.le_adc
     modemDaemon.modemDaemon.le_rtc
+    modemDaemon.modemDaemon.le_mdmCfg
+    modemDaemon.modemDaemon.le_lpt
+    rSimDaemon.rSimDaemon.le_rsim
 }
-
-executables:
-{
-    modemDaemon = (   $LEGATO_ROOT/components/modemServices/modemDaemon    )
-}
-

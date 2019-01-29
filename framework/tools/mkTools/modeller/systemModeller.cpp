@@ -2,7 +2,7 @@
 /**
  * @file systemModeller.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -12,53 +12,6 @@
 
 namespace modeller
 {
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Get environment variable settings from a "buildVars:" section and set them in the process
- * environment.
- */
-//--------------------------------------------------------------------------------------------------
-static void GetBuildEnvVars
-(
-    const parseTree::CompoundItem_t* sectionPtr
-)
-//--------------------------------------------------------------------------------------------------
-{
-    auto buildVarsSectionPtr = dynamic_cast<const parseTree::CompoundItemList_t*>(sectionPtr);
-
-    for (const auto contentItemPtr : buildVarsSectionPtr->Contents())
-    {
-        auto buildVarPtr = dynamic_cast<const parseTree::EnvVar_t*>(contentItemPtr);
-
-        // Make sure they're not trying to redefine one of the reserved environment variables
-        // like LEGATO_ROOT.
-        const auto& name = buildVarPtr->firstTokenPtr->text;
-        if (envVars::IsReserved(name))
-        {
-            buildVarPtr->firstTokenPtr->ThrowException(name
-                                                     + " is a reserved environment variable name.");
-        }
-
-        // If the string starts with a single quote ('), just unquote it.  Otherwise, unquote it
-        // and do environment variable substitution.
-        auto valueTokenPtr = buildVarPtr->Contents()[0];
-        std::string value = path::Unquote(valueTokenPtr->text);
-        if (valueTokenPtr->text[0] != '\'')
-        {
-            value = envVars::DoSubstitution(value);
-        }
-
-        // Update the process environment.
-        if (setenv(name.c_str(), value.c_str(), true /* overwrite existing */) != 0)
-        {
-            throw mk::Exception_t("Failed to set '" + name + "' environment variable to '"
-                                   + value + "'.");
-        }
-    }
-}
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -177,6 +130,10 @@ static void ModelAppOverrides
         {
             SetWatchdogTimeout(appPtr, ToSimpleSectionPtr(subsectionPtr));
         }
+        else if (subsectionName == "maxWatchdogTimeout")
+        {
+            SetMaxWatchdogTimeout(appPtr, ToSimpleSectionPtr(subsectionPtr));
+        }
         else if (subsectionName == "preloaded")
         {
             const auto& tokenText = ToSimpleSectionPtr(subsectionPtr)->Text();
@@ -188,8 +145,9 @@ static void ModelAppOverrides
         }
         else
         {
-            subsectionPtr->ThrowException("Internal error: Unexpected subsection "
-                                          "'" + subsectionName + "'.");
+            subsectionPtr->ThrowException(
+                mk::format(LE_I18N("Internal error: Unexpected subsection '%'."), subsectionName)
+            );
         }
     }
 }
@@ -238,7 +196,7 @@ static std::string FindBinAppAdef
 {
     auto filePaths = file::ListFiles(basePath);
 
-    for (auto fileName : filePaths)
+    for (auto const &fileName : filePaths)
     {
         auto pos = fileName.rfind('.');
 
@@ -253,7 +211,7 @@ static std::string FindBinAppAdef
         }
     }
 
-    sectionPtr->ThrowException("Error could not find binary app .adef file.");
+    sectionPtr->ThrowException(LE_I18N("Error could not find binary app .adef file."));
 }
 
 
@@ -275,31 +233,38 @@ static void ModelApp
 
     // The first token in the app subsection could be the name of an app or a .adef/.app file path.
     // Find the app name and .adef/.app file.
-    const auto appSpec = path::Unquote(envVars::DoSubstitution(sectionPtr->firstTokenPtr->text));
+    const auto appSpec = path::Unquote(DoSubstitution(sectionPtr->firstTokenPtr));
 
     // Build a proper .app suffix that includes the target that the app was built against.
+    const std::string appSuffixSigned = "." + buildParams.target + ".signed.app";
     const std::string appSuffix = "." + buildParams.target + ".app";
     bool isBinApp = false;
 
     if (path::HasSuffix(appSpec, ".adef"))
     {
         appName = path::RemoveSuffix(path::GetLastNode(appSpec), ".adef");
-        filePath = file::FindFile(appSpec, buildParams.sourceDirs);
+        filePath = file::FindFile(appSpec, buildParams.appDirs);
     }
     else if (path::HasSuffix(appSpec, appSuffix))
     {
         appName = path::RemoveSuffix(path::GetLastNode(appSpec), appSuffix);
-        filePath = file::FindFile(appSpec, buildParams.sourceDirs);
+        filePath = file::FindFile(appSpec, buildParams.appDirs);
+        isBinApp = true;
+    }
+    else if (path::HasSuffix(appSpec, appSuffixSigned))
+    {
+        appName = path::RemoveSuffix(path::GetLastNode(appSpec), appSuffixSigned);
+        filePath = file::FindFile(appSpec, buildParams.appDirs);
         isBinApp = true;
     }
     else
     {
         appName = path::GetLastNode(appSpec);
-        filePath = file::FindFile(appSpec + ".adef", buildParams.sourceDirs);
+        filePath = file::FindFile(appSpec + ".adef", buildParams.appDirs);
 
         if (filePath.empty())
         {
-            filePath = file::FindFile(appSpec + appSuffix, buildParams.sourceDirs);
+            filePath = file::FindFile(appSpec + appSuffix, buildParams.appDirs);
             isBinApp = true;
         }
     }
@@ -307,11 +272,21 @@ static void ModelApp
     // If neither adef nor app file has been found, report the error now.
     if (filePath.empty())
     {
-        std::string formattedMsg = "Can't find definition file (" + appName + ".adef)"
-                                   " or binary app (" + appName + appSuffix + ")"
-                                   " for app specification '" + appSpec + "'.\n"
-                                   "Note: Looked in the following places:\n";
-        for (auto& dir : buildParams.sourceDirs)
+        if (appSpec.empty())
+        {
+            std::cerr << LE_I18N("** Warning: Ignoring empty app specification") << std::endl;
+            return;
+        }
+
+        std::string formattedMsg =
+            mk::format(LE_I18N("Can't find definition file (%s.adef) or binary app (%s) "
+                               "for app specification '%s'.\n"
+                               "Note: Looked in the following places:\n"),
+                               appName,
+                               appName + appSuffix,
+                               appSpec);
+
+        for (auto& dir : buildParams.appDirs)
         {
             formattedMsg += "    '" + dir + "'\n";
         }
@@ -324,8 +299,10 @@ static void ModelApp
     if (appsIter != systemPtr->apps.end())
     {
         std::stringstream msg;
-        msg << "App '" << appName << "' added to the system more than once.  Previously added at"
-            "line " << appsIter->second->parseTreePtr->firstTokenPtr->line << ".";
+
+        msg << "App '" << appName << "' added to the system more than once.\n"
+            << appsIter->second->parseTreePtr->firstTokenPtr->GetLocation() << ": note: "
+            "Previously added here.";
         sectionPtr->ThrowException(msg.str());
     }
 
@@ -343,11 +320,12 @@ static void ModelApp
 
         UntarBinApp(filePath, dirPath, sectionPtr, buildParams.beVerbose);
         filePath = FindBinAppAdef(sectionPtr, path::MakeAbsolute(dirPath) + "/");
+        //filePath = newAdefPath;
     }
 
     if (buildParams.beVerbose)
     {
-        std::cout << "System contains app '" << appName << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("System contains app '%s'."), appName) << std::endl;
     }
 
     // Model this app.
@@ -401,38 +379,41 @@ static void ModelKernelModule
 
     // Tokens in the module subsection are paths to their .mdef file
     // Assume that modules are built outside of Legato
-    const auto moduleSpec = path::Unquote(envVars::DoSubstitution(sectionPtr->firstTokenPtr->text));
+    const auto moduleSpec = path::Unquote(DoSubstitution(sectionPtr->firstTokenPtr));
     if (path::HasSuffix(moduleSpec, ".mdef"))
     {
         moduleName = path::RemoveSuffix(path::GetLastNode(moduleSpec), ".mdef");
-        modulePath = file::FindFile(moduleSpec, buildParams.sourceDirs);
+        modulePath = file::FindFile(moduleSpec, buildParams.moduleDirs);
     }
     else
     {
         // Try by appending ".mdef" to path
         moduleName = path::GetLastNode(moduleSpec);
-        modulePath = file::FindFile(moduleSpec + ".mdef", buildParams.sourceDirs);
+        modulePath = file::FindFile(moduleSpec + ".mdef", buildParams.moduleDirs);
     }
 
     if (modulePath.empty())
     {
-        std::cerr << "Looked in the following places:" << std::endl;
-        for (auto& dir : buildParams.sourceDirs)
+        std::string formattedMsg =
+            mk::format(LE_I18N("Can't find definition file (.mdef) "
+                               "for module specification '%s'.\n"
+                               "note: Looked in the following places:\n"), moduleSpec);
+        for (auto& dir : buildParams.moduleDirs)
         {
-            std::cerr << "  '" << dir << "'" << std::endl;
+            formattedMsg += "    '" + dir + "'\n";
         }
-        sectionPtr->ThrowException("Can't find definition (.mdef) file for module specification "
-                                   "'" + moduleSpec + "'.");
+        sectionPtr->ThrowException(formattedMsg);
     }
 
     // Check for duplicates.
     auto modulesIter = systemPtr->modules.find(moduleName);
     if (modulesIter != systemPtr->modules.end())
     {
-        std::stringstream msg;
-        msg << "Module '" << moduleName << "' added to the system more than once.  Previously added at"
-            "line " << modulesIter->second->parseTreePtr->firstTokenPtr->line << ".";
-        sectionPtr->ThrowException(msg.str());
+            sectionPtr->ThrowException(
+                mk::format(LE_I18N("Module '%s' added to the system more than once.\n"
+                                   "%s: note: Previously added here."),
+                           moduleName, modulesIter->second->parseTreePtr->firstTokenPtr->GetLocation())
+            );
     }
 
     // Model this module.
@@ -443,7 +424,7 @@ static void ModelKernelModule
 
     if (buildParams.beVerbose)
     {
-        std::cout << "System contains module '" << moduleName << "'." << std::endl;
+        std::cout << mk::format(LE_I18N("System contains module '%s'."), moduleName) << std::endl;
     }
 }
 
@@ -565,10 +546,17 @@ static void AddNonAppUserBinding
         std::stringstream msg;
 
         msg << "Duplicate binding of client-side interface '" << interfaceName
-            << "' belonging to non-app user '" + userName + "'. Previous binding was at"
-               " line " << i->second->parseTreePtr->firstTokenPtr->line << ".";
+            << "' belonging to non-app user '" + userName + "'.\n"
+            << i->second->parseTreePtr->firstTokenPtr->GetLocation()
+            << "Previous binding was here.";
 
-        bindingPtr->parseTreePtr->ThrowException(msg.str());
+        bindingPtr->parseTreePtr->ThrowException(
+            mk::format(LE_I18N("Duplicate binding of client-side interface '%s'"
+                               " belonging to non-app user '%s'.\n"
+                               "%s: note: Previous binding was here."),
+                       interfaceName, userName,
+                       i->second->parseTreePtr->firstTokenPtr->GetLocation())
+        );
     }
 
     // Add the binding to the user.
@@ -649,9 +637,11 @@ static void ModelBindingsSection
                 {
                     if (interfacePtr->bindingPtr != NULL)
                     {
-                        std::cout << "Overriding binding of pre-built interface '"
-                                  << bindingPtr->clientAgentName << ".*."
-                                  << bindingPtr->clientIfName << "'." << std::endl;
+                        std::cout << mk::format(LE_I18N("Overriding binding of pre-built interface"
+                                                        " '%s.*.%s'."),
+                                                bindingPtr->clientAgentName,
+                                                bindingPtr->clientIfName)
+                                  << std::endl;
                     }
                 }
 
@@ -672,9 +662,10 @@ static void ModelBindingsSection
                 {
                     if (clientIfPtr->bindingPtr != NULL)
                     {
-                        std::cout << "Overriding binding of '"
-                                  << bindingPtr->clientAgentName << "."
-                                  << bindingPtr->clientIfName << "'." << std::endl;
+                        std::cout << mk::format(LE_I18N("Overriding binding of '%s.%s'."),
+                                                bindingPtr->clientAgentName,
+                                                bindingPtr->clientIfName)
+                                  << std::endl;
                     }
                 }
 
@@ -695,9 +686,10 @@ static void ModelBindingsSection
                 {
                     if (clientIfPtr->bindingPtr != NULL)
                     {
-                        std::cout << "Overriding binding of '"
-                                  << bindingPtr->clientAgentName << "."
-                                  << bindingPtr->clientIfName << "'." << std::endl;
+                        std::cout << mk::format(LE_I18N("Overriding binding of '%s.%s'."),
+                                                bindingPtr->clientAgentName,
+                                                bindingPtr->clientIfName)
+                                  << std::endl;
                     }
                 }
 
@@ -774,16 +766,18 @@ static void ModelCommandsSection
         auto commandPtr = new model::Command_t(commandSpecPtr);
 
         // The first token is the command name.
-        commandPtr->name = path::Unquote(envVars::DoSubstitution(tokens[0]->text));
+        commandPtr->name = path::Unquote(DoSubstitution(tokens[0]));
 
         // Check for duplicates.
         auto commandIter = systemPtr->commands.find(commandPtr->name);
         if (commandIter != systemPtr->commands.end())
         {
-            std::stringstream msg;
-            msg << "Command name '" << commandPtr->name << "' used more than once. Previously used"
-                   " at line " << commandIter->second->parseTreePtr->firstTokenPtr->line << ".";
-            tokens[0]->ThrowException(msg.str());
+            tokens[0]->ThrowException(
+                mk::format(LE_I18N("Command name '%s' used more than once.\n"
+                                   "%s: note: Previously used here."),
+                           commandPtr->name,
+                           commandIter->second->parseTreePtr->firstTokenPtr->GetLocation())
+            );
         }
 
         // The second token is the app name.
@@ -795,7 +789,8 @@ static void ModelCommandsSection
         // Make sure the path is absolute.
         if (!path::IsAbsolute(commandPtr->exePath))
         {
-            tokens[2]->ThrowException("Command executable path inside app must begin with '/'.");
+            tokens[2]->ThrowException(LE_I18N("Command executable path inside app must begin"
+                                              " with '/'."));
         }
 
         // NOTE: It would be nice to check that the exePath points to something that is executable
@@ -833,11 +828,42 @@ static void ModelCommands
 /**
  * Get interface search directory paths from an "interfaceSearch:" section and add them to the
  * list in the buildParams object.
+ *
+ * Get search directory paths from a *Search: section, and add them to the specified list.
  */
 //--------------------------------------------------------------------------------------------------
-static void GetInterfaceSearchDirs
+static void ReadSearchDirs
 (
-    mk::BuildParams_t& buildParams, ///< Object to add interface search dir paths to.
+    std::list<std::string>& searchPathList,   ///< And add the new search paths to this list.
+    const parseTree::TokenList_t* sectionPtr  ///< From the search paths from this section.
+)
+//--------------------------------------------------------------------------------------------------
+{
+    // An interfaceSearch section is a list of FILE_PATH tokens.
+    for (const auto contentItemPtr : sectionPtr->Contents())
+    {
+        auto tokenPtr = dynamic_cast<const parseTree::Token_t*>(contentItemPtr);
+
+        auto dirPath = path::Unquote(DoSubstitution(tokenPtr));
+
+        // If the environment variable substitution resulted in an empty string, just ignore this.
+        if (!dirPath.empty())
+        {
+            searchPathList.push_back(dirPath);
+        }
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get flags from a "cflags:", "cxxflags:" or "ldflags:" section and add them to the
+ * flags list in the buildParams object.
+ */
+//--------------------------------------------------------------------------------------------------
+static void GetToolFlags
+(
+    std::string *toolFlagsPtr, ///< String to add flags to.
     const parseTree::TokenList_t* sectionPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -847,12 +873,13 @@ static void GetInterfaceSearchDirs
     {
         auto tokenPtr = dynamic_cast<const parseTree::Token_t*>(contentItemPtr);
 
-        auto dirPath = path::Unquote(envVars::DoSubstitution(tokenPtr->text));
+        auto flag = path::Unquote(DoSubstitution(tokenPtr));
 
-        // If the environment variable substitution resulted in an empty string, just ignore this.
-        if (!dirPath.empty())
+        // If environment variable substitution resulted in an empty string, just ignore this.
+        if (!flag.empty())
         {
-            buildParams.interfaceDirs.push_back(dirPath);
+            *toolFlagsPtr += " ";
+            *toolFlagsPtr += flag;
         }
     }
 }
@@ -860,23 +887,62 @@ static void GetInterfaceSearchDirs
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Add all the interface search dir paths from all "interfaceSearch:" sections to a given
- * BuildParams_t object.
+ * Add external watchdog kick timer to system config
  */
 //--------------------------------------------------------------------------------------------------
-static void GetInterfaceSearchDirs
+static void GetExternalWdogKick
 (
-    mk::BuildParams_t& buildParams, ///< Object to add interface search dir paths to.
-    const std::list<const parseTree::CompoundItem_t*>& sectionPtrList
+    model::System_t* systemPtr,
+    const parseTree::TokenList_t* sectionPtr
+)
+{
+    auto& value = ToSimpleSectionPtr(sectionPtr)->Text();
+    systemPtr->externalWatchdogKick = value;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Make sure that the required kernel modules listed in app and modules are in sdef.
+ */
+//--------------------------------------------------------------------------------------------------
+static void EnsureRequiredKernelModuleinSystem
+(
+    model::System_t* systemPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
-    for (auto sectionPtr : sectionPtrList)
+    for (auto& appMapEntry : systemPtr->apps)
     {
-        // Each interfaceSearch section is a list of FILE_PATH tokens.
-        auto tokenListPtr = dynamic_cast<const parseTree::TokenList_t*>(sectionPtr);
+        auto appPtr = appMapEntry.second;
 
-        GetInterfaceSearchDirs(buildParams, tokenListPtr);
+        for (auto const& it : appPtr->requiredModules)
+        {
+            auto searchModule = systemPtr->modules.find(it);
+            if (searchModule == systemPtr->modules.end())
+            {
+                throw mk::Exception_t(
+                    mk::format(
+                        LE_I18N("Kernel module %s.mdef must be listed in sdef file."), it)
+                );
+            }
+        }
+    }
+
+    for (auto& moduleMapEntry : systemPtr->modules)
+    {
+        auto modulePtr = moduleMapEntry.second;
+
+        for (auto const& it : modulePtr->requiredModules)
+        {
+            auto searchModule = systemPtr->modules.find(it);
+            if (searchModule == systemPtr->modules.end())
+            {
+                throw mk::Exception_t(
+                    mk::format(
+                        LE_I18N("Kernel module %s.mdef must be listed in sdef file."), it)
+                );
+            }
+        }
     }
 }
 
@@ -895,10 +961,6 @@ model::System_t* GetSystem
 )
 //--------------------------------------------------------------------------------------------------
 {
-    // Save the old CURDIR environment variable value and set it to the dir containing this file.
-    auto oldDir = envVars::Get("CURDIR");
-    envVars::Set("CURDIR", path::GetContainingDir(sdefPath));
-
     // Parse the .sdef file.
     const auto sdefFilePtr = parser::sdef::Parse(sdefPath, buildParams.beVerbose);
 
@@ -907,8 +969,10 @@ model::System_t* GetSystem
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Modelling system: '" << systemPtr->name << "'" << std::endl
-                  << "  defined in: '" << sdefFilePtr->path << "'" << std::endl;
+        std::cout << mk::format(LE_I18N("Modelling system: '%s'\n"
+                                        "  defined in '%s'"),
+                                systemPtr->name, sdefFilePtr->path)
+                  << std::endl;
     }
 
     // Lists of things that need to be modelled near the end.
@@ -916,7 +980,6 @@ model::System_t* GetSystem
     std::list<const parseTree::CompoundItem_t*> bindingsSections;
     std::list<const parseTree::CompoundItem_t*> commandsSections;
     std::list<const parseTree::CompoundItem_t*> kernelModulesSections;
-    std::list<const parseTree::CompoundItem_t*> interfaceSearchSections;
 
     // Iterate over the .sdef file's list of sections, processing content items.
     for (auto sectionPtr : sdefFilePtr->sections)
@@ -937,35 +1000,59 @@ model::System_t* GetSystem
         }
         else if (sectionName == "buildVars")
         {
-            // Add each build environment variable to the mksys process's environment.
-            GetBuildEnvVars(sectionPtr);
+            // Skip -- these have already been added to build environment env vars by the parser.
+        }
+        else if (sectionName == "cflags")
+        {
+            GetToolFlags(&buildParams.cFlags, ToTokenListPtr(sectionPtr));
         }
         else if (sectionName == "commands")
         {
             // Remember for later, when we know all apps have been instantiated.
             commandsSections.push_back(sectionPtr);
         }
+        else if (sectionName == "cxxflags")
+        {
+            GetToolFlags(&buildParams.cxxFlags, ToTokenListPtr(sectionPtr));
+        }
         else if (sectionName == "kernelModules")
         {
             kernelModulesSections.push_back(sectionPtr);
         }
+        else if (sectionName == "ldflags")
+        {
+            GetToolFlags(&buildParams.ldFlags, ToTokenListPtr(sectionPtr));
+        }
         else if (sectionName == "interfaceSearch")
         {
-            interfaceSearchSections.push_back(sectionPtr);
+            ReadSearchDirs(buildParams.interfaceDirs, ToTokenListPtr(sectionPtr));
+        }
+        else if (sectionName == "moduleSearch")
+        {
+            ReadSearchDirs(buildParams.moduleDirs, ToTokenListPtr(sectionPtr));
+        }
+        else if (sectionName == "appSearch")
+        {
+            ReadSearchDirs(buildParams.appDirs, ToTokenListPtr(sectionPtr));
+        }
+        else if (sectionName == "componentSearch")
+        {
+            ReadSearchDirs(buildParams.componentDirs, ToTokenListPtr(sectionPtr));
+        }
+        else if (sectionName == "externalWatchdogKick")
+        {
+            GetExternalWdogKick(systemPtr, ToTokenListPtr(sectionPtr));
         }
         else
         {
-            sectionPtr->ThrowException("Internal error: Unrecognized section '" + sectionName
-                                       + "'.");
+            sectionPtr->ThrowException(
+                mk::format(LE_I18N("Internal error: Unrecognized section '%s'."), sectionName)
+            );
         }
     }
 
-    // Process all the "interfaceSearch:" sections.  This must be done after all the build
-    // environment variable settings have been parsed.
-    GetInterfaceSearchDirs(buildParams, interfaceSearchSections);
-
-    // Process all the "apps:" sections.  This must be done after all the build environment
-    // variable settings have been parsed.
+    // Process all the "apps:" sections.  This must be done after all interface search directories
+    // have been parsed.
     ModelApps(systemPtr, appsSections, buildParams);
 
     // Process bindings.  This must be done after all the components and executables have been
@@ -982,8 +1069,8 @@ model::System_t* GetSystem
     // have been parsed.
     ModelKernelModules(systemPtr, kernelModulesSections, buildParams);
 
-    // Restore the previous contents of the CURDIR environment variable.
-    envVars::Set("CURDIR", oldDir);
+    // Ensure that all required kernel modules are listed in the kernelModules: section of sdef
+    EnsureRequiredKernelModuleinSystem(systemPtr);
 
     return systemPtr;
 }

@@ -6,7 +6,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -29,10 +29,9 @@ namespace ninja
  * Generate comment header for an app build script.
  */
 //--------------------------------------------------------------------------------------------------
-static void GenerateCommentHeader
+void AppBuildScriptGenerator_t::GenerateCommentHeader
 (
-    std::ofstream& script,  ///< Build script to write the variable definition to.
-    const model::App_t* appPtr
+    model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -48,9 +47,9 @@ static void GenerateCommentHeader
  * Generate app build rules.
  **/
 //--------------------------------------------------------------------------------------------------
-void GenerateAppBuildRules
+void AppBuildScriptGenerator_t::GenerateAppBuildRules
 (
-    std::ofstream& script   ///< Ninja script to write rules to.
+    void
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -58,8 +57,7 @@ void GenerateAppBuildRules
         // Add a bundled file into the app's staging area.
         "rule BundleFile\n"
         "  description = Bundling file\n"
-        "  command = cp -T $in $out && $\n"
-        "            chmod $modeFlags $out\n"
+        "  command = legato-install -m $modeFlags $in $out\n"
         "\n"
 
         // Generate a rule for creating an info.properties file.
@@ -71,9 +69,10 @@ void GenerateAppBuildRules
         // Don't follow symlinks (-P), and include the directory structure and the contents of
         // symlinks as part of the MD5 hash.
         "            md5=$$( ( cd $workingDir/staging && $\n"
-        "                      find -P | sort && $\n"
-        "                      find -P -type f | sort | xargs cat && $\n"
-        "                      find -P -type l | sort | xargs -r -n 1 readlink $\n"
+        "                      find -P -print0 |LC_ALL=C sort -z && $\n"
+        "                      find -P -type f -print0 |LC_ALL=C sort -z |xargs -0 md5sum && $\n"
+        "                      find -P -type l -print0 |LC_ALL=C sort -z"
+                             " |xargs -0 -r -n 1 readlink $\n"
         "                    ) | md5sum) && $\n"
         "            md5=$${md5%% *} && $\n"
         // Generate the app's info.properties file.
@@ -88,7 +87,15 @@ void GenerateAppBuildRules
         "rule PackApp\n"
         "  description = Packaging app\n"
         // Pack the staging area into a tarball.
-        "  command = tar cjf $workingDir/$name.$target -C $workingDir/staging . && $\n"
+
+        "  command = $\n"
+        // Change all file time stamp to generate reproducible build. Can't use gnu tar --mtime
+        // option as it is not available in other tar (e.g bsdtar)
+        "            mtime=`stat -c %Y $adefPath` && $\n"
+        "            find $workingDir/staging -exec touch --no-dereference "
+                    "--date=@$$mtime {} \\; && $\n"
+        "            (cd $workingDir/staging && find . -print0 | LC_ALL=C sort -z"
+                     " |tar --no-recursion --null -T - -cjf - ) > $workingDir/$name.$target && $\n"
         // Get the size of the tarball.
         "            tarballSize=`stat -c '%s' $workingDir/$name.$target` && $\n"
         // Get the app's MD5 hash from its info.properties file.
@@ -109,8 +116,83 @@ void GenerateAppBuildRules
         "  description = Packaging app for distribution.\n"
         "  command = cp -r $stagingDir/* $workingDir/ && $\n"
         "            rm $workingDir/info.properties $workingDir/root.cfg && $\n"
-        "            tar cjf $out -C $workingDir/ .\n"
+        // Change all file time stamp to generate reproducible build. Can't use gnu tar --mtime
+        // option as it is not available in other tar (e.g bsdtar)
+        "            mtime=`stat -c %Y $adefPath` && $\n"
+        "            find $workingDir -exec touch  --no-dereference --date=@$$mtime {} \\; && $\n"
+        "            (cd $workingDir/ && find . -print0 |LC_ALL=C sort -z"
+        "  |tar --no-recursion --null -T - -cjf - ) > $out\n"
         "\n";
+
+    if (buildParams.signPkg)
+    {
+        script <<
+            // Create an update pack file for an app.
+            "rule PackSignedApp\n"
+            "  description = Signing and packaging app\n"
+            // Require signing image. Create a separate staging area and compute its md5 hash
+            "  command = rm -rf $workingDir/staging.signed ; mkdir $workingDir/staging.signed && "
+                        "cp -r $workingDir/staging/* $workingDir/staging.signed/ && $\n"
+            // No need to recompute the md5 hash again as it is used for app version and enable
+            // signing shouldn't change the app version.
+            "            cp " << buildParams.pubCert <<
+                        " $workingDir/staging.signed/ima_pub.cert  && $\n"
+            // Recompute the MD5 checksum of the staging area.
+            // Don't follow symlinks (-P), and include the directory structure and the contents
+            // of symlinks as part of the MD5 hash.
+            "            md5signed=$$( ( cd $workingDir/staging.signed && $\n"
+            "                      find -P -print0 |LC_ALL=C sort -z && $\n"
+            "                      find -P -type f -print0 |LC_ALL=C sort -z |xargs -0 md5sum && $\n"
+            "                      find -P -type l -print0 |LC_ALL=C sort -z"
+                                 " |xargs -0 -r -n 1 readlink $\n"
+            "                    ) | md5sum) && $\n"
+            "            md5signed=$${md5signed%% *} && $\n"
+            // Get the app's MD5 hash from its info.properties file and replace with signed one.
+            "            md5=`grep '^app.md5=' $workingDir/staging.signed/info.properties"
+                        " | sed 's/^app.md5=//'` && $\n"
+            "            sed -i \"s/$$md5/$$md5signed/g\" "
+                                                "$workingDir/staging.signed/info.properties && $\n"
+            // Change all file time stamp to generate reproducible build. Can't use gnu tar --mtime
+            // option as it is not available in other tar (e.g bsdtar)
+            "            mtime=`stat -c %Y $adefPath` && $\n"
+            "            find $workingDir/staging.signed -exec touch --no-dereference "
+                        "--date=@$$mtime {} \\; && $\n"
+            "            "<< baseGeneratorPtr->GetPathEnvVarDecl() << " && $\n"
+            "            fakeroot ima-sign.sh --sign -y legato -d $workingDir/staging.signed "
+                        "-t $workingDir/$name.$target.signed -p " << buildParams.privKey <<" && $\n"
+            // Get the size of the tarball.
+            "            tarballSize=`stat -c '%s' $workingDir/$name.$target.signed` && $\n"
+            // Generate a JSON header and concatenate the tarball to it to create the update pack.
+            "            ( printf '{\\n' && $\n"
+            "              printf '\"command\":\"updateApp\",\\n' && $\n"
+            "              printf '\"name\":\"$name\",\\n' && $\n"
+            "              printf '\"version\":\"$version\",\\n' && $\n"
+            "              printf '\"md5\":\"%s\",\\n' \"$$md5signed\" && $\n"
+            "              printf '\"size\":%s\\n' \"$$tarballSize\" && $\n"
+            "              printf '}' && $\n"
+            "              cat $workingDir/$name.$target.signed $\n"
+            "            ) > $out\n"
+            "\n"
+
+            "rule BinPackSignedApp\n"
+            "  description = Signing and packaging app for distribution.\n"
+            "  command = rm -rf $workingDir/staging.signed.bin ; "
+                        "mkdir $workingDir/staging.signed.bin "
+                        "&& cp -r $stagingDir/* $workingDir/staging.signed.bin/ && $\n"
+            "            cp " <<  buildParams.pubCert  << " " <<
+                        "$workingDir/staging.signed.bin/ima_pub.cert  && $\n" <<
+            // Change all file time stamp to generate reproducible build. Can't use gnu tar --mtime
+            // option as it is not available in other tar (e.g bsdtar)
+            "            mtime=`stat -c %Y $adefPath` && $\n"
+            "            find $workingDir/staging.signed.bin -exec touch --no-dereference "
+                        "--date=@$$mtime {} \\; && $\n"
+            // Require signing image. Sign the staging area and create tarball
+            "            "<< baseGeneratorPtr->GetPathEnvVarDecl() << " && $\n"
+            "            fakeroot ima-sign.sh --sign -y legato -d $workingDir/staging.signed.bin/ "
+                        "-t $out -p " << buildParams.privKey << "\n"
+            "\n";
+    }
+
 }
 
 
@@ -119,201 +201,16 @@ void GenerateAppBuildRules
  * Generates build statements for all the executables in a given app.
  */
 //--------------------------------------------------------------------------------------------------
-void GenerateExeBuildStatements
+void AppBuildScriptGenerator_t::GenerateExeBuildStatements
 (
-    std::ofstream& script,      ///< Ninja script to write rules to.
-    const model::App_t* appPtr,
-    const mk::BuildParams_t& buildParams
+    model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
     for (auto mapItem : appPtr->executables)
     {
-        GenerateBuildStatements(script, mapItem.second, buildParams);
+        exeGeneratorPtr->GenerateBuildStatements(mapItem.second);
     }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Generate a permission string for chmod based on the permissions we want to set on the target
- * file.
- **/
-//--------------------------------------------------------------------------------------------------
-static std::string PermissionsToModeFlags
-(
-    model::Permissions_t permissions  ///< The permission flags to set on the given file(s).
-)
-//--------------------------------------------------------------------------------------------------
-{
-    std::string flags;
-
-    if (permissions.IsExecutable())
-    {
-        flags = "u+rwx,g+rwx,o+x";
-    }
-    else
-    {
-        flags = "u+rw,g+rw,o";
-    }
-
-    if (permissions.IsReadable())
-    {
-        flags += "+r";
-    }
-    else
-    {
-        flags += "-r";
-    }
-
-    if (permissions.IsWriteable())
-    {
-        flags += "+w";
-    }
-    else
-    {
-        flags += "-w";
-    }
-
-    return flags;
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Write to a given build script the build statement for bundling a single file into
- * the staging area.
- *
- * Adds the absolute destination file path to the bundledFiles set.
- **/
-//--------------------------------------------------------------------------------------------------
-static void GenerateFileBundleBuildStatement
-(
-    std::ofstream& script,
-    model::Permissions_t permissions,  ///< Permissions to set on the dest file.
-    std::set<std::string>& bundledFiles, ///< Set to fill with bundled file paths.
-    const std::string& srcPath,   ///< Absolute path of source directory on localhost.
-    const std::string& destPath,  ///< Absolute path of dest (staging) directory on localhost.
-    std::function<void(const std::string&)> exceptionFunc ///< Function to use to throw exceptions.
-)
-//--------------------------------------------------------------------------------------------------
-{
-    std::string containingDir = path::GetContainingDir(destPath);
-
-    if (bundledFiles.find(destPath) == bundledFiles.end())
-    {
-        script << "build " << destPath << " : BundleFile " << srcPath
-               << " | " << containingDir << "\n"
-               << "  modeFlags = " << PermissionsToModeFlags(permissions) << "\n";
-
-        bundledFiles.insert(destPath);
-
-        // If the destination directory doesn't already have a build statement for it,
-        // create one to make the directory.
-        if (bundledFiles.find(containingDir) == bundledFiles.end())
-        {
-            script << "build " << containingDir << " : MakeDir\n\n";
-
-            bundledFiles.insert(containingDir);
-        }
-    }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Write to a given build script the build statements for bundling files from a directory into
- * the staging area.
- **/
-//--------------------------------------------------------------------------------------------------
-static void GenerateDirBundleBuildStatements
-(
-    std::ofstream& script,
-    const model::Permissions_t& permissions,
-    std::set<std::string>& bundledFiles, ///< Set to fill with bundled file paths.
-    const std::string& srcPath,   ///< Absolute path of source directory on localhost.
-    const std::string& destPath,  ///< Absolute path of dest (staging) directory on localhost.
-    std::function<void(const std::string&)> exceptionFunc ///< Function to use to throw exceptions.
-)
-//--------------------------------------------------------------------------------------------------
-{
-    // Attempt to open the source as a directory stream.
-    DIR* dir = opendir(srcPath.c_str());
-    if (dir == NULL)
-    {
-        // If failed for some reason other than this just not being a directory,
-        if (errno != ENOTDIR)
-        {
-            int err = errno;
-            exceptionFunc("Can't access file or directory '" + srcPath + "'"
-                          " (" + strerror(err) + ")");
-        }
-        // If the source is not a directory,
-        else
-        {
-            exceptionFunc("Not a directory: '" + srcPath + "'.");
-        }
-    }
-
-    // Loop over list of directory contents.
-    for (;;)
-    {
-        // Setting errno so as to be able to detect errors from end of directory
-        // (as recommended in the documentation).
-        errno = 0;
-
-        // Read an entry from the directory.
-        struct dirent* entryPtr = readdir(dir);
-
-        if (entryPtr == NULL)
-        {
-            if (errno != 0)
-            {
-                exceptionFunc("Internal error: readdir() failed.  Errno = "
-                              + std::string(strerror(errno)));
-            }
-            else
-            {
-                // Hit end of the directory.  Nothing more to do.
-                break;
-            }
-        }
-        // Skip "." and ".."
-        else if ((strcmp(entryPtr->d_name, ".") != 0) && (strcmp(entryPtr->d_name, "..") != 0))
-        {
-            auto entrySrcPath = path::Combine(srcPath, entryPtr->d_name);
-            auto entryDestPath = path::Combine(destPath, entryPtr->d_name);
-
-            // If this is a directory, then recursively descend into it.
-            if (file::DirectoryExists(entrySrcPath))
-            {
-                GenerateDirBundleBuildStatements(script,
-                                                 permissions,
-                                                 bundledFiles,
-                                                 entrySrcPath,
-                                                 entryDestPath,
-                                                 exceptionFunc);
-            }
-            // If this is a file, create a build statement for it.
-            else if (file::FileExists(entrySrcPath))
-            {
-                GenerateFileBundleBuildStatement(script,
-                                                 permissions,
-                                                 bundledFiles,
-                                                 entrySrcPath,
-                                                 entryDestPath,
-                                                 exceptionFunc);
-            }
-            // If this is anything else, we don't support it.
-            else
-            {
-                exceptionFunc("File system object is not a directory or a file: '"
-                              + entrySrcPath + "'.");
-            }
-        }
-    }
-
-    closedir(dir);
 }
 
 
@@ -323,23 +220,14 @@ static void GenerateDirBundleBuildStatements
  * the staging area.
  **/
 //--------------------------------------------------------------------------------------------------
-static void GenerateFileBundleBuildStatement
+void AppBuildScriptGenerator_t::GenerateFileBundleBuildStatement
 (
-    std::ofstream& script,
-    std::set<std::string>& bundledFiles, ///< Set to fill with bundled file paths.
-    const model::App_t* appPtr, ///< App to bundle the file into.
-    const model::FileSystemObject_t* fileSystemObjPtr,  ///< File bundling info.
-    const mk::BuildParams_t& buildParams
+    model::FileSystemObjectSet_t& bundledFiles, ///< Set to fill with bundled file paths.
+    model::App_t* appPtr, ///< App to bundle the file into.
+    const model::FileSystemObject_t* fileSystemObjPtr  ///< File bundling info.
 )
 //--------------------------------------------------------------------------------------------------
 {
-    // Create a lambda function that uses the file system object's parse tree object to throw
-    // an exception that contains the definition file path, line number, etc.
-    auto throwException = [&fileSystemObjPtr](const std::string& msg)
-        {
-            fileSystemObjPtr->parseTreePtr->ThrowException(msg);
-        };
-
     // The file will be put in the app's staging area.
     path::Path_t destPath = "$builddir";
     destPath += appPtr->workingDir;
@@ -357,12 +245,12 @@ static void GenerateFileBundleBuildStatement
 
     destPath += fileSystemObjPtr->destPath;
 
-    GenerateFileBundleBuildStatement(script,
-                                     fileSystemObjPtr->permissions,
-                                     bundledFiles,
-                                     fileSystemObjPtr->srcPath,
-                                     destPath.str,
-                                     throwException);
+    baseGeneratorPtr->GenerateFileBundleBuildStatement(model::FileSystemObject_t(
+                                                               fileSystemObjPtr->srcPath,
+                                                               destPath.str,
+                                                               fileSystemObjPtr->permissions,
+                                                               fileSystemObjPtr),
+                                                       bundledFiles);
 }
 
 
@@ -372,23 +260,14 @@ static void GenerateFileBundleBuildStatement
  * the staging area.
  **/
 //--------------------------------------------------------------------------------------------------
-static void GenerateDirBundleBuildStatements
+void AppBuildScriptGenerator_t::GenerateDirBundleBuildStatements
 (
-    std::ofstream& script,
-    std::set<std::string>& bundledFiles, ///< Set to fill with bundled file paths.
-    const model::App_t* appPtr, ///< App to bundle the directory into.
-    const model::FileSystemObject_t* fileSystemObjPtr,  ///< Directory bundling info.
-    const mk::BuildParams_t& buildParams
+    model::FileSystemObjectSet_t& bundledFiles, ///< Set to fill with bundled file paths.
+    model::App_t* appPtr, ///< App to bundle the directory into.
+    const model::FileSystemObject_t* fileSystemObjPtr  ///< Directory bundling info.
 )
 //--------------------------------------------------------------------------------------------------
 {
-    // Create a lambda function that uses the file system object's parse tree object to throw
-    // an exception that contains the definition file path, line number, etc.
-    auto throwException = [&fileSystemObjPtr](const std::string& msg)
-        {
-            fileSystemObjPtr->parseTreePtr->ThrowException(msg);
-        };
-
     // The files will be put in the app's staging area.
     path::Path_t destPath = "$builddir";
     destPath += appPtr->workingDir;
@@ -407,12 +286,12 @@ static void GenerateDirBundleBuildStatements
 
     destPath += fileSystemObjPtr->destPath;
 
-    GenerateDirBundleBuildStatements(script,
-                                     fileSystemObjPtr->permissions,
-                                     bundledFiles,
-                                     fileSystemObjPtr->srcPath,
-                                     destPath.str,
-                                     throwException);
+    baseGeneratorPtr->GenerateDirBundleBuildStatements(model::FileSystemObject_t(
+                                                               fileSystemObjPtr->srcPath,
+                                                               destPath.str,
+                                                               fileSystemObjPtr->permissions,
+                                                               fileSystemObjPtr),
+                                                       bundledFiles);
 }
 
 
@@ -427,33 +306,34 @@ static void GenerateDirBundleBuildStatements
  *       bundle's dependency list.
  **/
 //--------------------------------------------------------------------------------------------------
-void GenerateStagingBundleBuildStatements
+void AppBuildScriptGenerator_t::GenerateStagingBundleBuildStatements
 (
-    std::ofstream& script,
-    std::set<std::string>& bundledFiles, ///< Set to fill with bundled file paths.
-    const model::App_t* appPtr,
-    const mk::BuildParams_t& buildParams
+    model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
+    auto& allBundledFiles = appPtr->getTargetInfo<target::FileSystemInfo_t>()->allBundledFiles;
+
     // Start with the application's list of bundled items first, so they override any items
     // bundled by components.
     // NOTE: Source paths for bundled items are always absolute.
     for (auto fileSystemObjPtr : appPtr->bundledFiles)
     {
-        GenerateFileBundleBuildStatement(script,
-                                         bundledFiles,
+        GenerateFileBundleBuildStatement(allBundledFiles,
                                          appPtr,
-                                         fileSystemObjPtr,
-                                         buildParams);
+                                         fileSystemObjPtr.get());
     }
     for (auto fileSystemObjPtr : appPtr->bundledDirs)
     {
-        GenerateDirBundleBuildStatements(script,
-                                         bundledFiles,
+        GenerateDirBundleBuildStatements(allBundledFiles,
                                          appPtr,
-                                         fileSystemObjPtr,
-                                         buildParams);
+                                         fileSystemObjPtr.get());
+    }
+    for (auto fileSystemObjPtr : appPtr->bundledBinaries)
+    {
+        GenerateFileBundleBuildStatement(allBundledFiles,
+                                         appPtr,
+                                         fileSystemObjPtr.get());
     }
 
     // Now do the same for each component in the app, and also generate statements for bundling
@@ -462,19 +342,15 @@ void GenerateStagingBundleBuildStatements
     {
         for (auto fileSystemObjPtr : componentPtr->bundledFiles)
         {
-            GenerateFileBundleBuildStatement(script,
-                                             bundledFiles,
+            GenerateFileBundleBuildStatement(allBundledFiles,
                                              appPtr,
-                                             fileSystemObjPtr,
-                                             buildParams);
+                                             fileSystemObjPtr.get());
         }
         for (auto fileSystemObjPtr : componentPtr->bundledDirs)
         {
-            GenerateDirBundleBuildStatements(script,
-                                             bundledFiles,
+            GenerateDirBundleBuildStatements(allBundledFiles,
                                              appPtr,
-                                             fileSystemObjPtr,
-                                             buildParams);
+                                             fileSystemObjPtr.get());
         }
 
         // Generate a statement for bundling a component library into an application, if it has
@@ -482,23 +358,49 @@ void GenerateStagingBundleBuildStatements
         if ((componentPtr->HasCOrCppCode()) || (componentPtr->HasJavaCode()))
         {
             auto destPath = "$builddir/" + appPtr->workingDir
-                          + "/staging/read-only/lib/libComponent_" + componentPtr->name;
+                          + "/staging/read-only/lib/" +
+                path::GetLastNode(componentPtr->getTargetInfo<target::LinuxComponentInfo_t>()->lib);
+            auto lib = componentPtr->getTargetInfo<target::LinuxComponentInfo_t>()->lib;
 
-            if (componentPtr->HasJavaCode())
-            {
-                destPath += ".jar";
-            }
-            else
-            {
-                destPath += ".so";
-            }
-
-            // Hard link the component library into the app's lib directory.
-            script << "build " << destPath << " : HardLink " << componentPtr->lib << "\n\n";
+            // Copy the component library into the app's lib directory.
+            // Cannot use hard link as this will cause builds to fail occasionally (LE-7383)
+            script << "build " << destPath << " : BundleFile " << lib << "\n"
+                   << "  modeFlags = " << baseGeneratorPtr->PermissionsToModeFlags(
+                                                                 model::Permissions_t(true,
+                                                                                      false,
+                                                                                      true))
+                   << "\n\n";
 
             // Add the component library to the set of bundled files.
-            bundledFiles.insert(destPath);
+            allBundledFiles.insert(model::FileSystemObject_t(
+                                       lib,
+                                       destPath,
+                                       model::Permissions_t(true,
+                                                            false,
+                                                            componentPtr->HasCOrCppCode())));
         }
+    }
+
+    // Finally bundle all executables into the app
+    for (auto& exeMapPtr : appPtr->executables)
+    {
+        auto exePtr = exeMapPtr.second;
+        auto destPath = "$builddir/" + appPtr->workingDir
+            + "/staging/read-only/bin/" + exePtr->name;
+        auto exePath = "$builddir/" + exePtr->path;
+        if (exePtr->hasJavaCode)
+        {
+            destPath += ".jar";
+        }
+
+        // Copy the component library into the app's lib directory.
+        // Cannot use hard link as this will cause builds to fail occasionally (LE-7383)
+        script << "build " << destPath << " : BundleFile " << exePath << "\n"
+               << "  modeFlags = " << baseGeneratorPtr->PermissionsToModeFlags(
+                                                            model::Permissions_t(true,
+                                                                                 false,
+                                                                                 true))
+               << "\n\n";
     }
 }
 
@@ -509,19 +411,18 @@ void GenerateStagingBundleBuildStatements
  * bundle.
  **/
 //--------------------------------------------------------------------------------------------------
-void GenerateAppBundleBuildStatement
+void AppBuildScriptGenerator_t::GenerateAppBundleBuildStatement
 (
-    std::ofstream& script,
-    const model::App_t* appPtr,
-    const mk::BuildParams_t& buildParams,
+    model::App_t* appPtr,
     const std::string& outputDir    ///< Path to the directory into which the built app will be put.
 )
 //--------------------------------------------------------------------------------------------------
 {
-    std::set<std::string> bundledFiles;
+    // Give this a FS target info
+    appPtr->setTargetInfo(new target::FileSystemInfo_t());
 
     // Generate build statements for bundling files into the staging area.
-    GenerateStagingBundleBuildStatements(script, bundledFiles, appPtr, buildParams);
+    GenerateStagingBundleBuildStatements(appPtr);
 
     // Compute the staging directory path.
     auto stagingDir = "$builddir/" + path::Combine(appPtr->workingDir, "staging");
@@ -533,13 +434,19 @@ void GenerateAppBundleBuildStatement
     script << "build " << infoPropertiesPath << " : MakeAppInfoProperties |";
 
     // This depends on all the bundled files and executables in the app.
-    for (auto filePath : bundledFiles)
+    for (auto filePath : appPtr->getTargetInfo<target::FileSystemInfo_t>()->allBundledFiles)
     {
-        script << " " << filePath;
+        script << " " << filePath.destPath;
     }
     for (auto mapItem : appPtr->executables)
     {
-        script << " $builddir/" << mapItem.second->path;
+        auto exeName = mapItem.second->name;
+        if (mapItem.second->hasJavaCode)
+        {
+            exeName += ".jar";
+        }
+        script << " $builddir/" << appPtr->workingDir
+               << "/staging/read-only/bin/" << exeName;
     }
 
     // It also depends on the generated config file.
@@ -563,10 +470,31 @@ void GenerateAppBundleBuildStatement
     // Tell the build rule what the app's name and version are and where its working directory
     // is.
     script << "  name = " << appPtr->name << "\n"
+        "  adefPath = " << appPtr->defFilePtr->path << "\n"
         "  version = " << appPtr->version << "\n"
         "  workingDir = $builddir/" + appPtr->workingDir << "\n"
         "\n";
 
+    if (buildParams.signPkg)
+    {
+      // No need to check the environment variable for keys again as it is already checked
+      // after parsing mkapp input parameters.
+
+      // Now create the signed app package. This should be build after unsigned app package
+      // is built.
+      auto outputFileSigned = path::Combine(outputDir, appPtr->name) + ".$target.signed.update";
+      script << "build " << outputFileSigned << ": PackSignedApp " << infoPropertiesPath << " | "
+      // No need to include private key in dependency as public and private key come in pair.
+             << " "<< buildParams.pubCert << "\n";
+      // Tell the build rule what the app's name and version are and where its working directory
+      // is.
+      script << "  name = " << appPtr->name << "\n"
+          "  adefPath = " << appPtr->defFilePtr->path << "\n"
+          "  version = " << appPtr->version << "\n"
+          "  workingDir = $builddir/" + appPtr->workingDir << "\n"
+          "\n";
+
+    }
     // Are we building a binary app package as well?
     if (buildParams.binPack)
     {
@@ -579,7 +507,6 @@ void GenerateAppBundleBuildStatement
         {
             script << "build " << interfacesDir << "/" << path::GetLastNode(apiFile.second->path)
                    << ": CopyFile " << apiFile.second->path << "\n"
-                      "  modeFlags = +r\n"
                       "\n";
         }
 
@@ -599,10 +526,23 @@ void GenerateAppBundleBuildStatement
         }
 
         script << "\n"
+                  "  adefPath = " << appPtr->defFilePtr->path << "\n"
                   "  stagingDir = $builddir/" << appPtr->workingDir << "/staging" << "\n"
                   "  workingDir = " << appPackDir << "\n"
                   "\n";
 
+        if (buildParams.signPkg)
+        {
+            // Now create the signed app package. This should be build after unsigned app package
+            // is built.
+            auto outputFileSigned = path::Combine(outputDir, appPtr->name) + ".$target.signed.app";
+            script << "build " << outputFileSigned << ": BinPackSignedApp " << infoPropertiesPath
+                   << " | " << " " << buildParams.pubCert << " " << outputFile << "\n"
+                    "  adefPath = " << appPtr->defFilePtr->path << "\n"
+                    "  stagingDir = " << appPackDir << "\n"
+                    "  workingDir = " << "$builddir/" << "\n"
+                    "\n";
+        }
 
     }
 }
@@ -613,17 +553,12 @@ void GenerateAppBundleBuildStatement
  * Write to a given build script the build statements for the build script itself.
  **/
 //--------------------------------------------------------------------------------------------------
-static void GenerateNinjaScriptBuildStatement
+void AppBuildScriptGenerator_t::GenerateNinjaScriptBuildStatement
 (
-    std::ofstream& script,
-    const model::App_t* appPtr,
-    const std::string& filePath     ///< Path to the build.ninja file.
+    model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
-    // Generate a build statement for the build.ninja.
-    script << "build " << filePath << ": RegenNinjaScript | " << appPtr->defFilePtr->path;
-
     // In addition to the .adef file, the build.ninja depends on the .cdef files of all components
     // and all the .api files they use.
     // Create a set of dependencies.
@@ -658,12 +593,75 @@ static void GenerateNinjaScriptBuildStatement
         }
     }
 
-    // Write the dependencies to the script.
-    for (auto dep : dependencies)
+    baseGeneratorPtr->GenerateNinjaScriptBuildStatement(dependencies);
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate all build rules required for building an application.
+ */
+//--------------------------------------------------------------------------------------------------
+void AppBuildScriptGenerator_t::GenerateBuildRules
+(
+    void
+)
+{
+    exeGeneratorPtr->GenerateBuildRules();
+    GenerateAppBuildRules();
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate a build script for an application.
+ */
+//--------------------------------------------------------------------------------------------------
+void AppBuildScriptGenerator_t::Generate
+(
+    model::App_t* appPtr
+)
+{
+    // Start the script with a comment, the file-level variable definitions, and
+    // a set of generic rules.
+    GenerateCommentHeader(appPtr);
+    std::string includes;
+    includes = " -I " + buildParams.workingDir;
+    for (const auto& dir : buildParams.interfaceDirs)
     {
-        script << " " << dep;
+        includes += " -I" + dir;
     }
-    script << "\n\n";
+    script << "builddir =" << buildParams.workingDir << "\n\n";
+    script << "cFlags =" << buildParams.cFlags << includes << "\n\n";
+    script << "cxxFlags =" << buildParams.cxxFlags << includes << "\n\n";
+    script << "ldFlags =" << buildParams.ldFlags << "\n\n";
+    script << "target = " << buildParams.target << "\n\n";
+    GenerateBuildRules();
+
+    // For each component included in executables in this application, generate IPC code.
+    for (auto componentPtr : appPtr->components)
+    {
+        componentGeneratorPtr->GenerateIpcBuildStatements(componentPtr);
+    }
+
+    // If we are not just generating code,
+    if (!buildParams.codeGenOnly)
+    {
+        // For each component included in executables in this application.
+        for (auto componentPtr : appPtr->components)
+        {
+            componentGeneratorPtr->GenerateBuildStatementsRecursive(componentPtr);
+        }
+
+        // For each executable built by the mk tools for this application,
+        GenerateExeBuildStatements(appPtr);
+
+        // Generate build statement for packing everything into an application bundle.
+        GenerateAppBundleBuildStatement(appPtr, buildParams.outputDir);
+    }
+
+    // Add a build statement for the build.ninja file itself.
+    GenerateNinjaScriptBuildStatement(appPtr);
 }
 
 
@@ -674,59 +672,16 @@ static void GenerateNinjaScriptBuildStatement
 //--------------------------------------------------------------------------------------------------
 void Generate
 (
-    const model::App_t* appPtr,
-    const mk::BuildParams_t& buildParams,
-    const std::string& outputDir,   ///< Path to the directory into which the built app will be put.
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to array of pointers to command line argument strings.
+    model::App_t* appPtr,
+    const mk::BuildParams_t& buildParams
 )
 //--------------------------------------------------------------------------------------------------
 {
     std::string filePath = path::Minimize(buildParams.workingDir + "/build.ninja");
 
-    std::ofstream script;
-    OpenFile(script, filePath, buildParams.beVerbose);
+    AppBuildScriptGenerator_t appGenerator(filePath, buildParams);
 
-    // Start the script with a comment, the file-level variable definitions, and
-    // a set of generic rules.
-    GenerateCommentHeader(script, appPtr);
-    std::string includes;
-    for (const auto& dir : buildParams.interfaceDirs)
-    {
-        includes += " -I" + dir;
-    }
-    script << "builddir =" << buildParams.workingDir << "\n\n";
-    script << "cFlags =" << buildParams.cFlags << includes << "\n\n";
-    script << "cxxFlags =" << buildParams.cxxFlags << includes << "\n\n";
-    script << "ldFlags =" << buildParams.ldFlags << "\n\n";
-    script << "target = " << buildParams.target << "\n\n";
-    GenerateIfgenFlagsDef(script, buildParams.interfaceDirs);
-    GenerateBuildRules(script, buildParams.target, argc, argv);
-    GenerateAppBuildRules(script);
-
-    // If we are not just generating code,
-    if (!buildParams.codeGenOnly)
-    {
-        // For each component included in executables in this application.
-        for (auto componentPtr : appPtr->components)
-        {
-            GenerateBuildStatements(script, componentPtr, buildParams);
-        }
-
-        // For each executable built by the mk tools for this application,
-        GenerateExeBuildStatements(script, appPtr, buildParams);
-
-        // Generate build statement for packing everything into an application bundle.
-        GenerateAppBundleBuildStatement(script, appPtr, buildParams, outputDir);
-    }
-
-    // Add build statements for all the IPC interfaces' generated files.
-    GenerateIpcBuildStatements(script, buildParams);
-
-    // Add a build statement for the build.ninja file itself.
-    GenerateNinjaScriptBuildStatement(script, appPtr, filePath);
-
-    CloseFile(script);
+    appGenerator.Generate(appPtr);
 }
 
 

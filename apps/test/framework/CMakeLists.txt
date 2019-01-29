@@ -1,5 +1,5 @@
 #--------------------------------------------------------------------------------------------------
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #--------------------------------------------------------------------------------------------------
 
 add_subdirectory(args)
@@ -11,6 +11,7 @@ add_subdirectory(hashmap)
 add_subdirectory(hex)
 add_subdirectory(messaging)
 add_subdirectory(path)
+add_subdirectory(pack)
 add_subdirectory(safeRef)
 add_subdirectory(semaphore)
 add_subdirectory(signalEvents)
@@ -33,4 +34,8 @@ add_subdirectory(lists)
 add_subdirectory(log)
 add_subdirectory(memPool)
 add_subdirectory(utf8)
-
+add_subdirectory(signalShowStack)
+add_subdirectory(fs)
+add_subdirectory(random)
+add_subdirectory(start)
+add_subdirectory(imaSmack)

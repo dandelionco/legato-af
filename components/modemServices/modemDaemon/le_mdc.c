@@ -3,19 +3,19 @@
  *
  * Implementation of Modem Data Control API
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
 
 #include "legato.h"
 #include "interfaces.h"
-#include "pa_mdc.h"
-
-// Include macros for printing out values
 #include "le_print.h"
-
 #include "jansson.h"
+#include "mdmCfgEntries.h"
+#include "pa_mdc.h"
+#include "le_ms_local.h"
+#include "watchdogChain.h"
 
 //--------------------------------------------------------------------------------------------------
 // Symbol and Enum definitions.
@@ -35,8 +35,6 @@
 #define APN_IIN_FILE    le_arg_GetArg(0)
 #define APN_MCCMNC_FILE le_arg_GetArg(1)
 #endif
-// @TODO change the APN file when modemservices becomes a sandboxed app.
-//#define APN_FILE "/usr/local/share/apns.json"
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -81,7 +79,6 @@ le_mdc_Profile_t;
 //--------------------------------------------------------------------------------------------------
 /**
  * Request command structure.
- *
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct
@@ -90,12 +87,19 @@ typedef struct
     le_mdc_ProfileRef_t         profileRef;          ///< Profile reference.
     le_mdc_SessionHandlerFunc_t handlerFunc;         ///< The Handler function.
     void                        *contextPtr;         ///< Context.
-} CmdRequest_t;
-
+}
+CmdRequest_t;
 
 //--------------------------------------------------------------------------------------------------
 // Static declarations.
 //--------------------------------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Data statistics
+ */
+//--------------------------------------------------------------------------------------------------
+static pa_mdc_PktStatistics_t DataStatistics;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -117,7 +121,6 @@ static le_mem_PoolRef_t DataProfilePool;
  */
 //--------------------------------------------------------------------------------------------------
 static le_ref_MapRef_t DataProfileRefMap;
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -233,10 +236,11 @@ static void NewSessionStateHandler
         }
         else
         {
-            LE_DEBUG("profileIndex %d, old connection status %d, new state %d",
+            LE_DEBUG("profileIndex %d, old connection status %d, new state %d, pdp Type %d",
                                                             sessionStatePtr->profileIndex,
                                                             profilePtr->connectionStatus,
-                                                            sessionStatePtr->newState);
+                                                            sessionStatePtr->newState,
+                                                            sessionStatePtr->pdp);
             // Event report
             if (profilePtr->connectionStatus != sessionStatePtr->newState)
             {
@@ -333,11 +337,6 @@ static le_mdc_ProfileRef_t CreateModemProfile
     {
         char eventName[32] = {0};
 
-        if ( pa_mdc_InitializeProfile(index) != LE_OK )
-        {
-            return NULL;
-        }
-
         profilePtr = le_mem_ForceAlloc(DataProfilePool);
 
         if (profilePtr == NULL)
@@ -346,13 +345,6 @@ static le_mdc_ProfileRef_t CreateModemProfile
         }
 
         memset(profilePtr, 0, sizeof(le_mdc_Profile_t));
-
-        // Read the requested profile
-        if ( pa_mdc_ReadProfile(index, &profilePtr->modemData) != LE_OK )
-        {
-            le_mem_Release(profilePtr);
-            return NULL;
-        }
 
         profilePtr->profileIndex = index;
 
@@ -369,7 +361,7 @@ static le_mdc_ProfileRef_t CreateModemProfile
         profilePtr->profileRef = le_ref_CreateRef(DataProfileRefMap, profilePtr);
     }
 
-        LE_DEBUG("profileRef %p created for index %d",  profilePtr->profileRef, index);
+    LE_DEBUG("profileRef %p created for index %d",  profilePtr->profileRef, index);
 
     return profilePtr->profileRef;
 }
@@ -596,30 +588,19 @@ static void ProcessCommandEventHandler
     {
         if (cmdRequestPtr->command == START_SESSION)
         {
-            switch (profilePtr->modemData.pdp)
+            result = le_mdc_StartSession(cmdRequestPtr->profileRef);
+            if (result != LE_OK)
             {
-                case LE_MDC_PDP_IPV4:
-                {
-                    result = pa_mdc_StartSessionIPV4(profilePtr->profileIndex);
-                }
-                break;
-                case LE_MDC_PDP_IPV6:
-                {
-                    result = pa_mdc_StartSessionIPV6(profilePtr->profileIndex);
-                }
-                break;
-                case LE_MDC_PDP_IPV4V6:
-                {
-                    result = pa_mdc_StartSessionIPV4V6(profilePtr->profileIndex);
-                }
-                break;
-                default:
-                    result = LE_FAULT;
+                LE_ERROR("le_mdc_StartSession error %d", result);
             }
         }
         else if(cmdRequestPtr->command == STOP_SESSION)
         {
-            result = pa_mdc_StopSession(profilePtr->profileIndex);
+            result = le_mdc_StopSession(cmdRequestPtr->profileRef);
+            if (result != LE_OK)
+            {
+                LE_ERROR("le_mdc_StopSession error %d", result);
+            }
         }
         else
         {
@@ -651,13 +632,111 @@ static void* CommandThread
     void* contextPtr
 )
 {
+    le_sem_Ref_t initSemaphore = (le_sem_Ref_t)contextPtr;
+
+    // Connect to services used by this thread
+    le_cfg_ConnectService();
+
     // Register for MDC command events
-    le_event_AddHandler("ProcessCommandHandler", CommandEventId,
-        ProcessCommandEventHandler);
+    le_event_AddHandler("ProcessCommandHandler", CommandEventId, ProcessCommandEventHandler);
+
+    le_sem_Post(initSemaphore);
+
+    // Monitor event loop
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_MonitorEventLoop(MS_WDOG_MDC_LOOP, watchdogInterval);
 
     // Run the event loop
     le_event_RunLoop();
     return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Read the data counter activation state
+ */
+//--------------------------------------------------------------------------------------------------
+static bool GetDataCounterState
+(
+    void
+)
+{
+    bool activationState;
+    le_cfg_IteratorRef_t iteratorRef;
+
+    iteratorRef = le_cfg_CreateReadTxn(CFG_MODEMSERVICE_MDC_PATH);
+    activationState = le_cfg_GetBool(iteratorRef, CFG_NODE_COUNTING, true);
+    le_cfg_CancelTxn(iteratorRef);
+
+    LE_DEBUG("Retrieved data counter activation state: %d", activationState);
+
+    return activationState;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Write the message counting state
+ */
+//--------------------------------------------------------------------------------------------------
+static void SetDataCounterState
+(
+    bool activationState    ///< New data counter activation state
+)
+{
+    le_cfg_IteratorRef_t iteratorRef;
+
+    LE_DEBUG("New data counter activation state: %d", activationState);
+
+    iteratorRef = le_cfg_CreateWriteTxn(CFG_MODEMSERVICE_MDC_PATH);
+    le_cfg_SetBool(iteratorRef, CFG_NODE_COUNTING, activationState);
+    le_cfg_CommitTxn(iteratorRef);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Read the saved data counters
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t GetDataCounters
+(
+    uint64_t* rxBytesPtr,   ///< Received bytes
+    uint64_t* txBytesPtr    ///< Transmitted bytes
+)
+{
+    le_cfg_IteratorRef_t iteratorRef;
+
+    iteratorRef = le_cfg_CreateReadTxn(CFG_MODEMSERVICE_MDC_PATH);
+    *rxBytesPtr = le_cfg_GetFloat(iteratorRef, CFG_NODE_RX_BYTES, 0);
+    *txBytesPtr = le_cfg_GetFloat(iteratorRef, CFG_NODE_TX_BYTES, 0);
+    le_cfg_CancelTxn(iteratorRef);
+
+    LE_DEBUG("Saved rxBytes=%"PRIu64", txBytes=%"PRIu64, *rxBytesPtr, *txBytesPtr);
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Write the saved data counters
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t SetDataCounters
+(
+    uint64_t rxBytes,   ///< Received bytes
+    uint64_t txBytes    ///< Transmitted bytes
+)
+{
+    le_cfg_IteratorRef_t iteratorRef;
+
+    iteratorRef = le_cfg_CreateWriteTxn(CFG_MODEMSERVICE_MDC_PATH);
+    le_cfg_SetFloat(iteratorRef, CFG_NODE_RX_BYTES, rxBytes);
+    le_cfg_SetFloat(iteratorRef, CFG_NODE_TX_BYTES, txBytes);
+    le_cfg_CommitTxn(iteratorRef);
+
+    LE_DEBUG("Saved rxBytes=%"PRIu64", txBytes=%"PRIu64, rxBytes, txBytes);
+
+    return LE_OK;
 }
 
 // =============================================
@@ -690,13 +769,29 @@ void le_mdc_Init
     // Subscribe to the session state handler
     pa_mdc_AddSessionStateHandler(NewSessionStateHandler, NULL);
 
+    // Initialize data counter state and values
+    if (GetDataCounterState())
+    {
+        pa_mdc_StartDataFlowStatistics();
+    }
+    else
+    {
+        pa_mdc_StopDataFlowStatistics();
+    }
+    GetDataCounters(&DataStatistics.receivedBytesCount, &DataStatistics.transmittedBytesCount);
+
     /* MT-PDP management */
     // Create an event Id for MT-PDP notification
     MtPdpEventId = le_event_CreateId("MtPdpNotif", sizeof(le_mdc_Profile_t*));
 
-    CommandEventId = le_event_CreateId("CommandEventId",
-         sizeof(CmdRequest_t));
-    le_thread_Start(le_thread_Create("CommandEventThread", CommandThread, NULL));
+    CommandEventId = le_event_CreateId("CommandEventId", sizeof(CmdRequest_t));
+
+    // initSemaphore is used to wait for CommandThread() execution. It ensures that the thread is
+    // ready when we exit from le_mdc_Init().
+    le_sem_Ref_t initSemaphore = le_sem_Create("InitSem", 0);
+    le_thread_Start(le_thread_Create(WDOG_THREAD_NAME_MDC_COMMAND_EVENT, CommandThread, (void*)initSemaphore));
+    le_sem_Wait(initSemaphore);
+    le_sem_Delete(initSemaphore);
 
     //  MT-PDP change handler counter initialization
     MtPdpStateChangeHandlerCounter = 0;
@@ -765,12 +860,6 @@ le_result_t le_mdc_GetProfileFromApn
     le_mdc_ProfileRef_t* profileRefPtr  ///< [OUT] profile reference
 )
 {
-    if (apnPtr == NULL)
-    {
-        LE_CRIT("apnPtr is NULL !");
-        return LE_BAD_PARAMETER;
-    }
-
     size_t apnLen = strlen(apnPtr);
     if ( apnLen > LE_MDC_APN_NAME_MAX_LEN )
     {
@@ -806,12 +895,9 @@ le_result_t le_mdc_GetProfileFromApn
 
     for (; profileIndex <= profileIndexMax; profileIndex++)
     {
-        char tmpApn[LE_MDC_APN_NAME_MAX_LEN];
         pa_mdc_ProfileData_t profileData;
 
         *profileRefPtr = NULL;
-
-        memset(tmpApn, 0, LE_MDC_APN_NAME_MAX_LEN);
 
         if ( pa_mdc_ReadProfile(profileIndex, &profileData) == LE_OK )
         {
@@ -982,12 +1068,16 @@ le_result_t le_mdc_StopSession
     le_mdc_ProfileRef_t profileRef     ///< [IN] Stop data session for this profile object
 )
 {
+    uint64_t rxBytes, txBytes;
     le_mdc_Profile_t* profilePtr = le_ref_Lookup(DataProfileRefMap, profileRef);
     if (profilePtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) found!", profileRef);
         return LE_BAD_PARAMETER;
     }
+
+    // Store data counters
+    le_mdc_GetBytesCounters(&rxBytes, &txBytes);
 
     return pa_mdc_StopSession(profilePtr->profileIndex);
 }
@@ -1039,10 +1129,14 @@ void le_mdc_StopSessionAsync
  * @return
  *      - LE_OK on success
  *      - LE_BAD_PARAMETER if the input parameter is not valid
+ *      - LE_UNSUPPORTED if not supported by the target
  *      - LE_FAULT for other failures
  *
  * @note
  *      The process exits, if an invalid profile object is given
+ *
+ * @warning The MT-PDP context activation feature is not supported on all platforms. Please refer to
+ * @ref MT-PDP_context section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_mdc_RejectMtPdpSession
@@ -1149,6 +1243,9 @@ le_mdc_SessionStateHandlerRef_t le_mdc_AddSessionStateHandler
  *
  * @note
  *      Process exits on failure.
+ *
+ * @warning The MT-PDP context activation feature is not supported on all platforms. Please refer to
+ * @ref MT-PDP_context section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 le_mdc_MtPdpSessionStateHandlerRef_t le_mdc_AddMtPdpSessionStateHandler
@@ -1204,6 +1301,9 @@ void le_mdc_RemoveSessionStateHandler
  *
  * @note
  *      The process exits on failure
+ *
+ * @warning The MT-PDP context activation feature is not supported on all platforms. Please refer to
+ * @ref MT-PDP_context section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 void le_mdc_RemoveMtPdpSessionStateHandler
@@ -1630,12 +1730,12 @@ le_result_t le_mdc_GetBytesCounters
     uint64_t *txBytes   ///< [OUT] bytes amount transmitted since the last counter reset
 )
 {
-    if (rxBytes == NULL)
+    if (!rxBytes)
     {
         LE_KILL_CLIENT("rxBytes is NULL !");
         return LE_FAULT;
     }
-    if (txBytes == NULL)
+    if (!txBytes)
     {
         LE_KILL_CLIENT("txBytes is NULL !");
         return LE_FAULT;
@@ -1643,15 +1743,20 @@ le_result_t le_mdc_GetBytesCounters
 
     pa_mdc_PktStatistics_t data;
     le_result_t result = pa_mdc_GetDataFlowStatistics(&data);
-    if ( result != LE_OK )
+    if (LE_OK != result)
     {
         return result;
     }
 
-    *rxBytes = data.receivedBytesCount;
-    *txBytes = data.transmittedBytesCount;
+    *rxBytes = DataStatistics.receivedBytesCount + data.receivedBytesCount;
+    *txBytes = DataStatistics.transmittedBytesCount + data.transmittedBytesCount;
+    LE_DEBUG("Received and transmitted bytes: rx=%"PRIu64", tx=%"PRIu64, *rxBytes, *txBytes);
+
+    SetDataCounters(*rxBytes, *txBytes);
+
     return LE_OK;
 }
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1667,7 +1772,69 @@ le_result_t le_mdc_ResetBytesCounter
     void
 )
 {
-    return pa_mdc_ResetDataFlowStatistics();
+    LE_DEBUG("Reset received and transmitted bytes");
+
+    if (LE_OK == pa_mdc_ResetDataFlowStatistics())
+    {
+        DataStatistics.receivedBytesCount = 0;
+        DataStatistics.transmittedBytesCount = 0;
+        SetDataCounters(DataStatistics.receivedBytesCount, DataStatistics.transmittedBytesCount);
+        return LE_OK;
+    }
+
+    return LE_FAULT;
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Stop collecting received/transmitted data flow statistics
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_mdc_StopBytesCounter
+(
+    void
+)
+{
+    LE_DEBUG("Stop counting received and transmitted bytes");
+
+    if (LE_OK == pa_mdc_StopDataFlowStatistics())
+    {
+        SetDataCounterState(false);
+        return LE_OK;
+    }
+
+    return LE_FAULT;
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Start collecting received/transmitted data flow statistics
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_FAULT for all other errors
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_mdc_StartBytesCounter
+(
+    void
+)
+{
+    LE_DEBUG("Start counting received and transmitted bytes");
+
+    if (LE_OK == pa_mdc_StartDataFlowStatistics())
+    {
+        SetDataCounterState(true);
+        return LE_OK;
+    }
+
+    return LE_FAULT;
 }
 
 
@@ -1727,6 +1894,8 @@ le_mdc_Pdp_t le_mdc_GetPDP
     le_mdc_ProfileRef_t profileRef  ///< [IN] Query this profile object
 )
 {
+    le_result_t status;
+
     le_mdc_Profile_t* profilePtr = le_ref_Lookup(DataProfileRefMap, profileRef);
     if (profilePtr == NULL)
     {
@@ -1734,12 +1903,20 @@ le_mdc_Pdp_t le_mdc_GetPDP
         return LE_MDC_PDP_UNKNOWN;
     }
 
-    if ( pa_mdc_ReadProfile(profilePtr->profileIndex,&profilePtr->modemData) != LE_OK )
+    status = pa_mdc_ReadProfile(profilePtr->profileIndex,&profilePtr->modemData);
+    if (status != LE_OK)
     {
-        LE_ERROR("Could not read profile at index %d", profilePtr->profileIndex);
-        return LE_MDC_PDP_UNKNOWN;
+        if (status == LE_NOT_FOUND)
+        {
+            // Fill PDP type with default value
+            profilePtr->modemData.pdp = LE_MDC_PDP_IPV4V6;
+        }
+        else
+        {
+            LE_ERROR("Could not read profile at index %d", profilePtr->profileIndex);
+            return LE_MDC_PDP_UNKNOWN;
+        }
     }
-
     return profilePtr->modemData.pdp;
 }
 
@@ -1755,6 +1932,9 @@ le_mdc_Pdp_t le_mdc_GetPDP
  *      - LE_BAD_PARAMETER if an input parameter is not valid
  *      - LE_FAULT if the data session is currently connected for the given profile
  *
+ * @warning The maximum APN length might be limited by the platform.
+ *          Please refer to the platform documentation @ref platformConstraintsMdc.
+ *
  * @note
  *      The process exits, if an invalid profile object is given
  */
@@ -1769,11 +1949,6 @@ le_result_t le_mdc_SetAPN
     if (profilePtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) found!", profileRef);
-        return LE_BAD_PARAMETER;
-    }
-    if (apnPtr == NULL)
-    {
-        LE_CRIT("apnStr is NULL !");
         return LE_BAD_PARAMETER;
     }
 
@@ -1794,8 +1969,7 @@ le_result_t le_mdc_SetAPN
         return LE_FAULT;
     }
 
-    // We already know that the APN will fit, so strcpy() is okay here
-    strcpy(profilePtr->modemData.apn, apnPtr);
+    le_utf8_Copy(profilePtr->modemData.apn, apnPtr, sizeof(profilePtr->modemData.apn), NULL);
 
     return pa_mdc_WriteProfile(profilePtr->profileIndex, &profilePtr->modemData);
 }
@@ -1892,6 +2066,8 @@ le_result_t le_mdc_GetAPN
     size_t              apnSize     ///< [IN] apnPtr buffer size
 )
 {
+    le_result_t status;
+
     le_mdc_Profile_t* profilePtr = le_ref_Lookup(DataProfileRefMap, profileRef);
     if (profilePtr == NULL)
     {
@@ -1904,10 +2080,19 @@ le_result_t le_mdc_GetAPN
         return LE_BAD_PARAMETER;
     }
 
-    if ( pa_mdc_ReadProfile(profilePtr->profileIndex,&profilePtr->modemData) != LE_OK )
+    status = pa_mdc_ReadProfile(profilePtr->profileIndex,&profilePtr->modemData);
+    if ( status != LE_OK)
     {
-        LE_ERROR("Could not read profile at index %d", profilePtr->profileIndex);
-        return LE_FAULT;
+        if (status == LE_NOT_FOUND)
+        {
+            // Fill APN with an empty string
+            memset(profilePtr->modemData.apn, 0, sizeof(profilePtr->modemData.apn));
+        }
+        else
+        {
+            LE_ERROR("Could not read profile at index %d", profilePtr->profileIndex);
+            return LE_FAULT;
+        }
     }
 
     return le_utf8_Copy(apnPtr,profilePtr->modemData.apn,apnSize,NULL);
@@ -1926,7 +2111,7 @@ le_result_t le_mdc_GetAPN
  *       function will not return.
  * @note If password is too long (max PASSWORD_NAME_MAX_LEN digits), it is a fatal error, the
  *       function will not return.
- * @note Both PAP and CHAP authentification can be set for 3GPP network: in this case, the device
+ * @note Both PAP and CHAP authentication can be set for 3GPP network: in this case, the device
  *       decides which authentication procedure is performed. For example, the device can have a
  *       policy to select the most secure authentication mechanism.
  *
@@ -1945,16 +2130,6 @@ le_result_t le_mdc_SetAuthentication
     if (profilePtr == NULL)
     {
         LE_KILL_CLIENT("Invalid reference (%p) found!", profileRef);
-        return LE_FAULT;
-    }
-    if (userName == NULL)
-    {
-        LE_CRIT("userName is NULL !");
-        return LE_FAULT;
-    }
-    if (password == NULL)
-    {
-        LE_CRIT("password is NULL !");
         return LE_FAULT;
     }
     if ( strlen(userName) > LE_MDC_USER_NAME_MAX_LEN )
@@ -2119,6 +2294,9 @@ le_mdc_DisconnectionReason_t le_mdc_GetDisconnectionReason
 /**
  * Called to get the platform specific disconnection code.
  *
+ * Refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * disconnection code description.
+ *
  * @return The platform specific disconnection code.
  *
  * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
@@ -2182,4 +2360,32 @@ void le_mdc_GetPlatformSpecificFailureConnectionReason
 
     *failureCodePtr = profilePtr->conFailure.callConnectionFailureCode;
     *failureTypePtr = profilePtr->conFailure.callConnectionFailureType;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Map a profile on a network interface
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_UNSUPPORTED if not supported by the target
+ *      - LE_FAULT for all other errors
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_mdc_MapProfileOnNetworkInterface
+(
+    le_mdc_ProfileRef_t profileRef,        ///< [IN] Profile reference
+    const char*      interfaceNamePtr      ///< [IN] Network interface name
+)
+{
+    le_mdc_Profile_t* profilePtr = le_ref_Lookup(DataProfileRefMap, profileRef);
+
+    if (profilePtr == NULL)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", profileRef);
+        return LE_FAULT;
+    }
+
+    return pa_mdc_MapProfileOnNetworkInterface(profilePtr->profileIndex, interfaceNamePtr);
 }

@@ -2,7 +2,7 @@
 /**
  * @file api.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -34,6 +34,7 @@ struct ApiFile_t
     std::string GetClientInterfaceFile (const std::string& internalName) const;
     std::string GetServerInterfaceFile(const std::string& internalName) const;
     std::string GetAsyncServerInterfaceFile(const std::string& internalName) const;
+    std::string GetJavaInterfaceFile(const std::string& internalName) const;
 
     /// Get a pre-existing API file object for the .api file at a given path.
     /// @return Pointer to the object or NULL if not found.
@@ -83,6 +84,21 @@ struct InterfaceCFiles_t
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Structure to hold paths to the Python code for a generated interface.
+ */
+//--------------------------------------------------------------------------------------------------
+struct InterfacePythonFiles_t
+{
+    std::string cExtensionBinaryFile;
+    std::string cExtensionObjectFile;
+    std::string cdefSourceFile;
+    std::string cExtensionSourceFile;
+    std::string wrapperSourceFile;
+};
+
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Structure to hold paths to the Java code for a generated interface.
  */
 //--------------------------------------------------------------------------------------------------
@@ -114,6 +130,7 @@ public:
 
     virtual void GetInterfaceFiles(InterfaceCFiles_t& cFiles) const = 0;
     virtual void GetInterfaceFiles(InterfaceJavaFiles_t& javaFiles) const = 0;
+    virtual void GetInterfaceFiles(InterfacePythonFiles_t& pythonFiles) const = 0;
 };
 
 
@@ -128,6 +145,7 @@ struct ApiTypesOnlyInterface_t : public ApiRef_t
 
     virtual void GetInterfaceFiles(InterfaceCFiles_t& cFiles) const;
     virtual void GetInterfaceFiles(InterfaceJavaFiles_t& javaFiles) const;
+    virtual void GetInterfaceFiles(InterfacePythonFiles_t& pythonFiles) const;
 };
 
 
@@ -145,6 +163,7 @@ struct ApiClientInterface_t : public ApiRef_t
 
     virtual void GetInterfaceFiles(InterfaceCFiles_t& cFiles) const;
     virtual void GetInterfaceFiles(InterfaceJavaFiles_t& javaFiles) const;
+    virtual void GetInterfaceFiles(InterfacePythonFiles_t& pythonFiles) const;
 };
 
 
@@ -162,6 +181,7 @@ struct ApiServerInterface_t : public ApiRef_t
 
     virtual void GetInterfaceFiles(InterfaceCFiles_t& cFiles) const;
     virtual void GetInterfaceFiles(InterfaceJavaFiles_t& javaFiles) const;
+    virtual void GetInterfaceFiles(InterfacePythonFiles_t& pythonFiles) const;
 };
 
 

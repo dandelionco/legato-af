@@ -35,7 +35,7 @@ to actual C definitions (based on the @ref apiFilesC_sampleAPI).
 FUNCTION int32 UseCallback
 (
     uint32 someParm IN,
-    handler TestAHandler
+    TestAHandler handler
 );
 @endcode
 
@@ -64,7 +64,7 @@ to actual C definitions (based on the @ref apiFilesC_sampleAPI).
 EVENT TestA
 (
     uint32 data,
-    handler TestAHandler
+    TestAHandler myHandler
 );
 @endcode
 
@@ -76,7 +76,7 @@ typedef struct TestAHandler* TestAHandlerRef_t;
 TestAHandlerRef_t AddTestAHandler
 (
     uint32_t data,
-    TestAHandlerFunc_t handlerPtr,
+    TestAHandlerFunc_t myHandlerPtr,
     void* contextPtr
 );
 
@@ -226,6 +226,19 @@ The async-server functionality is not enabled by default.
 Enable it by using the .cdef provides @ref defFilesCdef_providesApiAsync.
 
 
+@section apiFilesC_sendFd Sending File Descriptors
+
+If a file descriptor is sent over the Legato IPC, the underlying messaging infrastructure would
+close the file descriptor.  Therefore, after the file descriptor is passed as an "IN parameter" to a
+function that uses Legato IPC, the file descriptor should not be explicitly closed. If the file
+descriptor is needed after calling such function, it should be duplicated before being passed to the
+function.
+
+See the "file" type in @ref apiFilesSyntax_types.
+
+See @ref c_messagingSendingFileDescriptors for more detail.
+
+
 @section apiFilesC_sampleAPI API File Sample Output
 
 Here's the generated client interface header file for the defn.api file from @ref apiFilesC_sampleAPI
@@ -242,6 +255,6 @@ Here's the generated client interface header file for the example.api file from 
 
 <HR>
 
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 
 **/

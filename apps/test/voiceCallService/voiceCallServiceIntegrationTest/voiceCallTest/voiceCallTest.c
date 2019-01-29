@@ -2,7 +2,7 @@
   * This module implements the le_voicecall's integration tests.
   *
   *
-  * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+  * Copyright (C) Sierra Wireless Inc.
   *
   */
 
@@ -386,6 +386,11 @@ COMPONENT_INIT
     {
         // This function gets the telephone number from the User.
         const char* phoneNumber = le_arg_GetArg(0);
+        if (NULL == phoneNumber)
+        {
+            LE_ERROR("phoneNumber is NULL");
+            exit(EXIT_FAILURE);
+        }
         strncpy(DestinationNumber, phoneNumber, LE_MDMDEFS_PHONE_NUM_MAX_BYTES);
 
         LE_INFO("Phone number %s", DestinationNumber);

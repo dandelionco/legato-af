@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
 # Contributors:
 #     Sierra Wireless - initial API and implementation
@@ -13,3 +13,5 @@ mkexe(  ${APP_TARGET}
 
 add_test(${APP_TARGET} ${EXECUTABLE_OUTPUT_PATH}/${APP_TARGET})
 
+# This is a C test
+add_dependencies(tests_c ${APP_TARGET})

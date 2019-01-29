@@ -8,6 +8,13 @@ the same executable (@c hw_proc1, @c hw_proc2, etc.).
 
 High-level steps to use GDB with a sandboxed app:
 
+To debug a running app which is part of the default system:
+- On your dev machine, run @verbatim $ remoteDebug appName processName targetIP @endverbatim.
+
+To debug app startup, or app which is not part of default system:
+When compiling:
+- @ref howToDebugGDB_building Make sure to build debug symbols
+
 On the target device:
 - Make sure the @ref basicTargetDevMode_installDev "devMode app" @c is installed and running
 - Run the sandboxed app @ref howToDebugGDB_withoutProcess "without the process" you want to debug.
@@ -46,7 +53,7 @@ processes:
 }
 @endcode
 
-See @ref basicAppsCreate for more info.
+See @ref getStartedApps for more info.
 
 @subsection howToDebugGDB_sampleCode_cdef .cdef
 
@@ -56,14 +63,7 @@ sources:
 {
     hello.c
 }
-
-cflags:
-{
-    -g
-}
 @endcode
-
-See @ref defFilesCdef_cFlags for more info on @c cflags.
 
 @subsection howToDebugGDB_sampleCode_helloC hello.c
 
@@ -78,7 +78,16 @@ COMPONENT_INIT
 }
 @endcode
 
-See @ref basicAppsCreate for more info.
+See @ref getStartedApps for more info.
+
+@section howToDebugGDB_building Building with Debug Symbols
+
+When building your app, build as normal, but add @verbatim -d <debug-path> @endverbatim to the
+mkapp command-line to generate debug symbols in @c <debug-path>.  You can use the same
+directory for all your apps -- each program or library will use a unique name.
+
+When building the Legato framework from source, debug symbols for the legato framework are
+always generated and placed in @c build/<target>/debug.
 
 @section howToDebugGDB_onTarget Running GDB on your Target Device
 
@@ -119,7 +128,7 @@ On the target, start @c gdbserver by starting the app with the arguments specifi
 (two dashes):
 
 @verbatim
-# app runProc <app name> --exe=/bin/gdbserver --localhost:2000 /bin/<app bin dir>
+# app runProc <app name> --exe=/bin/gdbserver -- localhost:2000 /bin/<app bin dir>
 @endverbatim
 
 For Example:
@@ -170,6 +179,14 @@ The target will display:
 @verbatim
 Remote debugging using localhost:2000
 @endverbatim
+
+Now tell gdb to fetch the libraries to debug across the network, but use local debug symbols:
+@verbatim
+$ (gdb) set debug-file-directory <debug-path>
+$ (gdb) set sysroot remote:/
+@endverbatim
+
+You should see GDB reading symbols for Legato components.
 
 You can now run any of the standard @c gdb debugging commands on @c hw_exe.
 

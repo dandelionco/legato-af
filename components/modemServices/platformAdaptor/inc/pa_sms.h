@@ -30,7 +30,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -38,7 +38,7 @@
  *
  * Legato @ref c_pa_sms include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PASMS_INCLUDE_GUARD
@@ -69,9 +69,10 @@
 typedef enum
 {
     PA_SMS_OPTIONMASK_NO_OPTION = 0x0000, ///< No option
-    PA_SMS_OPTIONMASK_OA        = 0x0001, ///< oa option is present
-    PA_SMS_OPTIONMASK_SCTS      = 0x0002, ///< scts option is present
-    PA_SMS_OPTIONMASK_DA        = 0x0004, ///< da option is present
+    PA_SMS_OPTIONMASK_OA        = 0x0001, ///< TP Originating Address is present
+    PA_SMS_OPTIONMASK_SCTS      = 0x0002, ///< TP Service Centre Time Stamp is present
+    PA_SMS_OPTIONMASK_DA        = 0x0004, ///< TP Destination Address is present
+    PA_SMS_OPTIONMASK_RA        = 0x0008  ///< TP Recipient Address is present
 }
 pa_sms_OptionMask_t;
 
@@ -124,6 +125,7 @@ typedef enum
     PA_SMS_STORAGE_NONE    = 3    ///< No SMS Storage (for SMS CB).
 }
 pa_sms_Storage_t;
+
 //--------------------------------------------------------------------------------------------------
 // APIs.
 //--------------------------------------------------------------------------------------------------
@@ -160,6 +162,22 @@ typedef struct {
     uint32_t            dataLen;                          ///< mandatory, SMS user data length
 }
 pa_sms_SmsSubmit_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * SMS STATUS REPORT  message type structure.
+ * Defined in 3GPP TS 23.040 section 9.2.2.3.
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct {
+    uint8_t mr;                                 ///< Mandatory, Message Reference
+    char    ra[LE_MDMDEFS_PHONE_NUM_MAX_BYTES]; ///< Mandatory, Recipient Address
+    uint8_t tora;                               ///< Mandatory, Recipient Address Type of Address
+    char    scts[LE_SMS_TIMESTAMP_MAX_BYTES];   ///< Mandatory, Service Centre Time Stamp
+    char    dt[LE_SMS_TIMESTAMP_MAX_BYTES];     ///< Mandatory, Discharge Time
+    uint8_t st;                                 ///< Mandatory, Status
+}
+pa_sms_SmsStatusReport_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -214,12 +232,13 @@ pa_sms_CellBroadcast_t;
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct {
-    pa_sms_MsgType_t  type;                       ///< Message Type
-    union {                                       ///< Associated data and informations
-        pa_sms_SmsDeliver_t       smsDeliver;
-        pa_sms_SmsSubmit_t        smsSubmit;
-        pa_sms_Pdu_t              pdu;
-        pa_sms_CellBroadcast_t    cellBroadcast;
+    pa_sms_MsgType_t  type;                         ///< Message Type
+    union {                                         ///< Associated data and informations
+        pa_sms_SmsDeliver_t       smsDeliver;       ///< SMS DELIVER (SC to MS)
+        pa_sms_SmsSubmit_t        smsSubmit;        ///< SMS SUBMIT (MS to SC)
+        pa_sms_SmsStatusReport_t  smsStatusReport;  ///< SMS STATUS REPORT (SC to MS)
+        pa_sms_Pdu_t              pdu;              ///< PDU
+        pa_sms_CellBroadcast_t    cellBroadcast;    ///< Cell Broadcast
     };
 }
 pa_sms_Message_t;
@@ -356,19 +375,20 @@ LE_SHARED void pa_sms_RemoveStorageStatusHandler
 //--------------------------------------------------------------------------------------------------
 /**
  * This function sends a message in PDU mode.
+ *
+ * @return LE_OK              The function succeeded.
  * @return LE_FAULT           The function failed to send a message in PDU mode.
- * @return LE_BAD_PARAMETER   The parameters are invalid.
  * @return LE_TIMEOUT         No response was received from the Modem.
- * @return a positive value   The function succeeded. The value represents the message reference.
  */
 //--------------------------------------------------------------------------------------------------
-LE_SHARED int32_t pa_sms_SendPduMsg
+LE_SHARED le_result_t pa_sms_SendPduMsg
 (
     pa_sms_Protocol_t        protocol,   ///< [IN] protocol to use
     uint32_t                 length,     ///< [IN] The length of the TP data unit in bytes.
-    const uint8_t           *dataPtr,    ///< [IN] The message.
+    const uint8_t*           dataPtr,    ///< [IN] The message.
+    uint8_t*                 msgRef,     ///< [OUT] Message reference (TP-MR)
     uint32_t                 timeout,    ///< [IN] Timeout in seconds.
-    pa_sms_SendingErrCode_t *errorCode   ///< [OUT] The error code.
+    pa_sms_SendingErrCode_t* errorCode   ///< [OUT] The error code.
 );
 
 //--------------------------------------------------------------------------------------------------

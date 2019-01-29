@@ -2,7 +2,7 @@
 /**
  * @file codeGenerator.h
  *
- * Copyright (C) Sierra Wireless Inc., Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.,
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -20,7 +20,7 @@ namespace code
 //--------------------------------------------------------------------------------------------------
 void GenerateInterfacesHeader
 (
-    const model::Component_t* componentPtr,
+    model::Component_t* componentPtr,
     const mk::BuildParams_t& buildParams
 );
 
@@ -35,9 +35,8 @@ void GenerateInterfacesHeader
 //--------------------------------------------------------------------------------------------------
 void GenerateComponentMainFile
 (
-    const model::Component_t* componentPtr,
-    const mk::BuildParams_t& buildParams,
-    bool isStandAlone   ///< true = fully resolve all interface name variables.
+    model::Component_t* componentPtr,
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -48,7 +47,7 @@ void GenerateComponentMainFile
 //--------------------------------------------------------------------------------------------------
 void GenerateExeMain
 (
-    const model::Exe_t* exePtr,
+    model::Exe_t* exePtr,
     const mk::BuildParams_t& buildParams
 );
 

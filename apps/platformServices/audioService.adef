@@ -2,8 +2,7 @@ sandboxed: false
 
 executables:
 {
-    audioDaemon = ( $LEGATO_ROOT/components/audio
-                  )
+    audioDaemon = ( $LEGATO_ROOT/components/audio )
 }
 
 processes:
@@ -14,7 +13,12 @@ processes:
     }
     maxFileBytes: 5000K
     faultAction: restart
-    priority: medium
+    #if ${LEGATO_SERVICES_WDOG_DISABLE} = 1
+        watchdogTimeout: never
+    #else
+        maxWatchdogTimeout: 120000
+    #endif
+    priority: rt3
 }
 
 extern:
@@ -25,4 +29,5 @@ extern:
 bindings:
 {
     audioDaemon.audio.le_pm -> powerMgr.le_pm
+    audioDaemon.watchdogChain.le_wdog -> <root>.le_wdog
 }

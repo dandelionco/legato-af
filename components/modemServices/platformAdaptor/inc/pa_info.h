@@ -30,7 +30,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -38,7 +38,7 @@
  *
  * Legato @ref c_pa_info include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PAINFO_INCLUDE_GUARD
@@ -55,26 +55,60 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Maximum 'International Mobile Equipment Identity length.
+ * Maximum International Mobile Equipment Identity length excluding null termination character.
  */
 //--------------------------------------------------------------------------------------------------
 #define PA_INFO_IMEI_MAX_LEN     LE_INFO_IMEI_MAX_LEN
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Maximum 'International Mobile Equipment Identity length.
+ * Maximum International Mobile Equipment Identity length.
  */
 //--------------------------------------------------------------------------------------------------
 #define PA_INFO_IMEI_MAX_BYTES   LE_INFO_IMEI_MAX_BYTES
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum International Mobile Equipment Identity software version number length excluding null
+ * termination character.
+ */
+//--------------------------------------------------------------------------------------------------
+#define PA_INFO_IMEISV_MAX_LEN     LE_INFO_IMEISV_MAX_LEN
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Maximum number of characters (excluding null terminator) in a device model
- * identification string.
+ * Maximum International Mobile Equipment Identity software version number length.
+ */
+//--------------------------------------------------------------------------------------------------
+#define PA_INFO_IMEISV_MAX_BYTES   LE_INFO_IMEISV_MAX_BYTES
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of a version string excluding null termination character.
  **/
 //--------------------------------------------------------------------------------------------------
-#define PA_INFO_DEVICE_MODEL_MAX_LEN     256
+#define PA_INFO_VERS_MAX_LEN    LE_INFO_MAX_VERS_LEN
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of a version string
+ **/
+//--------------------------------------------------------------------------------------------------
+#define PA_INFO_VERS_MAX_BYTES   LE_INFO_MAX_VERS_BYTES
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of a model string excluding null termination character.
+ **/
+//--------------------------------------------------------------------------------------------------
+#define PA_INFO_MODEL_MAX_LEN    LE_INFO_MAX_MODEL_LEN
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of a model string
+ **/
+//--------------------------------------------------------------------------------------------------
+#define PA_INFO_MODEL_MAX_BYTES   LE_INFO_MAX_MODEL_BYTES
 
 
 //--------------------------------------------------------------------------------------------------
@@ -84,6 +118,12 @@
 //--------------------------------------------------------------------------------------------------
 typedef char pa_info_Imei_t[PA_INFO_IMEI_MAX_BYTES];
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Type definition for an International Mobile Equipment Identity software version number (IMEISV)
+ */
+//--------------------------------------------------------------------------------------------------
+typedef char pa_info_ImeiSv_t[PA_INFO_IMEISV_MAX_BYTES];
 
 
 //--------------------------------------------------------------------------------------------------
@@ -91,7 +131,7 @@ typedef char pa_info_Imei_t[PA_INFO_IMEI_MAX_BYTES];
  * Type definition for a 'Device Model ID'.
  */
 //--------------------------------------------------------------------------------------------------
-typedef char pa_info_DeviceModel_t[PA_INFO_DEVICE_MODEL_MAX_LEN + 1];
+typedef char pa_info_DeviceModel_t[PA_INFO_MODEL_MAX_BYTES];
 
 
 
@@ -135,6 +175,23 @@ LE_SHARED le_result_t pa_info_GetBootloaderVersion
     size_t versionSize       ///< [IN] Size of version buffer
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the last reset information reason
+ *
+ * @return
+ *      - LE_OK          on success
+ *      - LE_UNSUPPORTED if it is not supported by the platform
+ *        LE_OVERFLOW    specific reset information length exceeds the maximum length.
+ *      - LE_FAULT       for any other errors
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_info_GetResetInformation
+(
+    le_info_Reset_t* resetPtr,              ///< [OUT] Reset information
+    char* resetSpecificInfoStr,             ///< [OUT] Reset specific information
+    size_t resetSpecificInfoNumElements     ///< [IN] The length of specific information string.
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -149,6 +206,21 @@ LE_SHARED le_result_t pa_info_GetBootloaderVersion
 LE_SHARED le_result_t pa_info_GetImei
 (
     pa_info_Imei_t imei   ///< [OUT] IMEI value
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function get the International Mobile Equipment Identity software version number (IMEISV).
+ *
+ * @return
+ * - LE_FAULT         The function failed to get the value.
+ * - LE_TIMEOUT       No response was received from the Modem.
+ * - LE_OK            The function succeeded.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_info_GetImeiSv
+(
+    pa_info_ImeiSv_t imeiSv   ///< [OUT] IMEISV value
 );
 
 
@@ -241,7 +313,7 @@ LE_SHARED le_result_t pa_info_GetPrlVersion
 );
 
 
-///--------------------------------------------------------------------------------------------------
+///-------------------------------------------------------------------------------------------------
 /**
  * Get the CDMA Preferred Roaming List (PRL) only preferences status.
  *
@@ -330,6 +402,36 @@ LE_SHARED le_result_t pa_info_GetPriId
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Get the Carrier PRI Name and Revision Number strings in ASCII text.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed to get the value.
+ *      - LE_OVERFLOW      The Name or the Revision Number strings length exceed the maximum length.
+ *      - LE_UNSUPPORTED   The function is not supported on the platform.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_info_GetCarrierPri
+(
+    char* capriNameStr,
+        ///< [OUT]
+        ///< The Carrier Product Requirement Information
+        ///< (CAPRI) Name string (null-terminated).
+
+    size_t capriNameStrNumElements,
+        ///< [IN]
+
+    char* capriRevStr,
+        ///< [OUT]
+        ///< The Carrier Product Requirement Information
+        ///< (CAPRI) Revision Number string (null-terminated).
+
+    size_t capriRevStrNumElements
+        ///< [IN]
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Get the product stock keeping unit number (SKU) string in ASCII text.
  *
  * @return
@@ -378,7 +480,7 @@ LE_SHARED le_result_t pa_info_GetPlatformSerialNumber
  *      - LE_UNSUPPORTED request not supported
  *      - LE_FAULT function failed to get the RF devices working status
  *      - LE_OVERFLOW the number of statuses exceeds the maximum size
- *        (LE_INFO_RF_DEVICES_STATUS_MAX)
+ *      - LE_BAD_PARAMETER Null pointers provided
  */
 //--------------------------------------------------------------------------------------------------
 LE_SHARED le_result_t pa_info_GetRfDeviceStatus

@@ -1,7 +1,7 @@
 /**
- * This module implements some stub for audio unit tetst.
+ * This module implements some stub for audio unit test.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -49,4 +49,44 @@ le_msg_SessionEventHandlerRef_t MyAddServiceCloseHandler
 )
 {
     return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Sets the priority of a thread.  (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t MyThreadSetPriority
+(
+    le_thread_Ref_t         thread,     ///< [in]
+    le_thread_Priority_t    priority    ///< [in]
+)
+{
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Start watchdogs 0..N-1.  Typically this is used in COMPONENT_INIT to start all watchdogs needed
+ * by the process.
+ */
+//--------------------------------------------------------------------------------------------------
+void le_wdogChain_Init
+(
+    uint32_t wdogCount
+)
+{
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Begin monitoring the event loop on the current thread.
+ */
+//--------------------------------------------------------------------------------------------------
+void le_wdogChain_MonitorEventLoop
+(
+    uint32_t watchdog,          ///< Watchdog to use for monitoring
+    le_clk_Time_t watchdogInterval ///< Interval at which to check event loop is functioning
+)
+{
 }

@@ -116,14 +116,90 @@ requires:
 }
 @endcode
 
-Some useful environment variables:
+A double dollar sign ('$$') is replaced by a dollar sign ('$').
+
+Furthermore, the mk tools will create some environment variables:
 
  - @c LEGATO_ROOT = path to where the Legato framework sources are located
  - @c LEGATO_TARGET = build target (e.g., wp85, localhost)
  - @c LEGATO_BUILD = shorthand for <c>$LEGATO_ROOT/build/$TARGET</c>
  - @c LEGATO_SYSROOT = path of the directory containing the target device's system files
  - @c CURDIR = path of the directory containing the definition file being parsed
+ - @c CC = path to the C compiler
+ - @c CXX = path to the C++ compiler
+ - @c LD = path to the linker
+ - @c AR = path to the archiver to be used to generate static libraries
+ - @c AS = path to the assembler to be used if assembly code source files are found
+ - @c STRIP = path to the debug symbol stripper utility
+ - @c OBJCOPY = path to the object file copier/translator utility
+ - @c READELF = path to the ELF file information extractor utility
 
+
+@section defFileFormatIncludeDirectives Include Directives
+
+Definition file sections or parts of a section may be common between several related
+systems, applications or components.  For example, all systems built for a certain module may
+need the some common @c buildVars or @c cflags set, or a series of related products
+may all share a base set of apps.
+To reuse common parts of the definition file, these parts can be separated
+into a common file, which is then included in each definition file where it is needed.  This
+is done through include directives.
+
+Include directives consist of the word @c \#include followed by the name of the file to include.
+For example
+
+@code
+#include baseBuildVars.inc
+@endcode
+
+will be treated as if the contents of baseBuildVars.inc appeared at this point.  Multiple
+include directives can be used to include multiple files.
+
+When looking for a file to include, environment variables in the filename will be expanded first.
+If the filename is absolute, that file will be included.  If it is relative, first the directory
+containing the current file will be searched, followed by the
+@c ${LEGATO_ROOT} directory.
+
+@note If an environment variable is used in an include filename the value of that environment
+variable can't be changed in a later @c buildVars section.
+
+@section defFileFormatIfDirectives If Directives
+
+Some definition file sections or parts of sections may be needed only on certain targets, or
+in certain configurations.  To handle conditionals like this, definition files support the @c \#if,
+@c \#elif, @c \#else, and @c \#endif directives.  These function much like their C counterparts,
+allowing you to include or exclude certain sections of a Xdef file.
+
+If directives consist of an initial @c \#if directive, zero or more @c \#elif directives, optionally
+an @c \#else directive then a final @c \#endif directive marking the end of the conditional section.
+For example:
+
+@code
+#if ${INCLUDE_FEATURE} = 1
+    // Definitions to be used if INCLUDE_FEATURE is 1
+#elif dir_exists(apps/optional_app)
+    // Definitions to be used if INCLUDE_FEATURE is not 1 but apps/optional_app exists
+#else
+    // Definitions to be used if none of the above are true
+#endif
+@endcode
+
+Conditions which can be used with @c \#if directives are:
+
+ - <code>left_hand_side = right_hand_side</code>: Check if left_hand_side is equal to
+   right_hand_side after expanding environment variables.  Example uses are setting
+   different compiler flags depending on the target, or including certain apps only if a specific
+   feature is enabled.
+ - <code>dir_exists(dirpath)</code>: Checks if the directory @c dirpath exists.  Relative paths are
+   relative to the directory containing the file being processed.  Example uses include building a
+   component from source if the source is available, or using a pre-built binary module if not.
+ - <code>file_exists(filepath)</code>: Checks if the file @c filepath exists.  Relative paths are
+   relative to the directory containing the file being processed.  Uses are similar to
+   @c dir_exists.
+
+@note This feature is most commonly used in included files.  In a top level file it is usually
+easier to write a separate definition file for each configuration, or move target-specific
+portions into a target-specific include file.
 
 @section defFileFormatWhitespace Whitespace
 
@@ -148,6 +224,8 @@ Comments can be included using
  * (defined in httpdCtrl.api) that allows other apps to start and stop the web server via IPC.
  */
 
+#include "targets/${LEGATO_TARGET}.def"
+
 bundles:
 {
     // Include all the web pages from the build host in the application, and have them appear
@@ -167,6 +245,6 @@ provides :     // Note that space is allowed between the section name and the co
 sources: {httpd.c}
 @endcode
 
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 
 **/

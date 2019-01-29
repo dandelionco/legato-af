@@ -4,7 +4,7 @@
  *
  * Functions shared by multiple modeller modules.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -65,17 +65,25 @@ void CheckBindingTarget
         auto appMapIter = systemPtr->apps.find(bindingPtr->serverAgentName);
         if (appMapIter == systemPtr->apps.end())
         {
-            bindingPtr->parseTreePtr->ThrowException("Binding to non-existent server app '"
-                                                     + bindingPtr->serverAgentName + "'.");
+            bindingPtr->parseTreePtr->ThrowException(
+                mk::format(LE_I18N("Binding to non-existent server app '%s'."),
+                           bindingPtr->serverAgentName)
+            );
         }
         auto appPtr = appMapIter->second;
 
         auto ifMapIter = appPtr->externServerInterfaces.find(bindingPtr->serverIfName);
         if (ifMapIter == appPtr->externServerInterfaces.end())
         {
-            bindingPtr->parseTreePtr->ThrowException("Binding to non-existent server interface '"
-                                                     + bindingPtr->serverIfName + "' on "
-                                                     "app '" + bindingPtr->serverAgentName + "'.");
+            ifMapIter = appPtr->preBuiltServerInterfaces.find(bindingPtr->serverIfName);
+
+            if(ifMapIter == appPtr->preBuiltServerInterfaces.end())
+            {
+                bindingPtr->parseTreePtr->ThrowException(
+                    mk::format(LE_I18N("Binding to non-existent server interface '%s' on app '%s'."),
+                               bindingPtr->serverIfName, bindingPtr->serverAgentName)
+                );
+            }
         }
     }
 }
@@ -128,22 +136,23 @@ void EnsureClientInterfacesBound
                             // has been marked "extern" or not).
                             else if (ifInstancePtr->externMarkPtr != NULL)
                             {
-                                throw mk::Exception_t("Client interface '"
-                                                      + appPtr->name + "."
-                                                      + ifInstancePtr->name + "' (aka '"
-                                                      + appPtr->name + "."
-                                                      + exePtr->name + "."
-                                                      + componentInstancePtr->componentPtr->name
-                                                      + "."
-                                                      + ifInstancePtr->ifPtr->internalName
-                                                      + "') is not bound to anything.");
+                                throw mk::Exception_t(
+                                    mk::format(LE_I18N("Client interface '%s.%s'"
+                                                       " (aka '%s.%s.%s.%s')"
+                                                       " is not bound to anything."),
+                                               appPtr->name, ifInstancePtr->name,
+                                               appPtr->name, exePtr->name,
+                                               componentInstancePtr->componentPtr->name,
+                                               ifInstancePtr->ifPtr->internalName)
+                                );
                             }
                             else
                             {
-                                throw mk::Exception_t("Client interface '"
-                                                      + appPtr->name + "."
-                                                      + ifInstancePtr->name
-                                                      + "' is not bound to anything.");
+                                throw mk::Exception_t(
+                                    mk::format(LE_I18N("Client interface '%s.%s' "
+                                                       "is not bound to anything."),
+                                               appPtr->name, ifInstancePtr->name)
+                                );
                             }
                         }
                     }
@@ -199,16 +208,19 @@ void EnsureClientInterfacesSatisfied
                         }
                         else
                         {
-                            throw mk::Exception_t("Client interface '"
-                                                  + ifInstancePtr->ifPtr->internalName
-                                                  + "' of component '"
-                                                  + componentInstancePtr->componentPtr->name
-                                                  + "' in executable '" + exePtr->name
-                                                  + "' is unsatisfied. It must either be declared"
-                                                  " an external (inter-app) required interface"
-                                                  " (in a \"requires: api:\" section in the .adef)"
-                                                  " or be bound to a server side interface"
-                                                  " (in the \"bindings:\" section of the .adef).");
+                            throw mk::Exception_t(
+                                mk::format(LE_I18N("Client interface '%s' of component '%s' "
+                                                   "in executable '%s' is unsatisfied. "
+                                                   "It must either be declared"
+                                                   " an external (inter-app) required interface"
+                                                   " (in an \"extern:\" section in the .adef)"
+                                                   " or be bound to a server side interface"
+                                                   " (in the \"bindings:\" section"
+                                                   " of the .adef)."),
+                                           ifInstancePtr->ifPtr->internalName,
+                                           componentInstancePtr->componentPtr->name,
+                                           exePtr->name)
+                            );
                         }
                     }
                 }
@@ -267,29 +279,37 @@ static model::FileSystemObject_t* GetPermissionItem
 {
     auto fileSystemObjectPtr = new model::FileSystemObject_t(itemPtr);
 
-    const std::string* srcPathPtr;
-    const std::string* destPathPtr;
+    const parseTree::Token_t* srcPathPtr;
+    const parseTree::Token_t* destPathPtr;
 
     // Optionally, there may be permissions.
     auto firstTokenPtr = itemPtr->Contents()[0];
     if (firstTokenPtr->type == parseTree::Token_t::FILE_PERMISSIONS)
     {
-        srcPathPtr = &(itemPtr->Contents()[1]->text);
-        destPathPtr = &(itemPtr->Contents()[2]->text);
+        srcPathPtr = itemPtr->Contents()[1];
+        destPathPtr = itemPtr->Contents()[2];
 
         GetPermissions(fileSystemObjectPtr->permissions, firstTokenPtr);
+
+        // Enforce W^X on all file system objects.
+        if (fileSystemObjectPtr->permissions.IsWriteable() &&
+            fileSystemObjectPtr->permissions.IsExecutable())
+        {
+            firstTokenPtr->ThrowException(LE_I18N("For security, files cannot be both writable and "
+                                                  "executable."));
+        }
     }
     // If no permissions, default to read-only.
     else
     {
-        srcPathPtr = &(firstTokenPtr->text);
-        destPathPtr = &(itemPtr->Contents()[1]->text);
+        srcPathPtr = firstTokenPtr;
+        destPathPtr = itemPtr->Contents()[1];
 
         fileSystemObjectPtr->permissions.SetReadable();
     }
 
-    fileSystemObjectPtr->srcPath = path::Unquote(envVars::DoSubstitution(*srcPathPtr));
-    fileSystemObjectPtr->destPath = path::Unquote(envVars::DoSubstitution(*destPathPtr));
+    fileSystemObjectPtr->srcPath = path::Unquote(DoSubstitution(srcPathPtr));
+    fileSystemObjectPtr->destPath = path::Unquote(DoSubstitution(destPathPtr));
 
     // If the destination path ends in a slash, append the last path node from the source to it.
     if (fileSystemObjectPtr->destPath.back() == '/')
@@ -334,13 +354,13 @@ model::FileSystemObject_t* GetRequiredFileOrDir
     auto srcPathTokenPtr = itemPtr->Contents()[0];
     auto destPathTokenPtr = itemPtr->Contents()[1];
 
-    std::string srcPath = path::Unquote(envVars::DoSubstitution(srcPathTokenPtr->text));
-    std::string destPath = path::Unquote(envVars::DoSubstitution(destPathTokenPtr->text));
+    std::string srcPath = path::Unquote(DoSubstitution(srcPathTokenPtr));
+    std::string destPath = path::Unquote(DoSubstitution(destPathTokenPtr));
 
     // The source path must not end in a slash.
     if (srcPath.back() == '/')
     {
-        srcPathTokenPtr->ThrowException("Required item's path must not end in a '/'.");
+        srcPathTokenPtr->ThrowException(LE_I18N("Required item's path must not end in a '/'."));
     }
 
     // If the destination path ends in a slash, append the last path node from the source to it.
@@ -378,13 +398,60 @@ model::FileSystemObject_t* GetRequiredDevice
     // Execute permissions are not allowed on devices.
     if (permPtr->permissions.IsExecutable())
     {
-        throw std::invalid_argument("Execute permission is not allowed on devices: '"
-                                                + permPtr->srcPath + "'");
+        auto srcPath = permPtr->srcPath;
+        delete(permPtr);
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Execute permission is not allowed on devices: '%s'."),
+                       srcPath)
+        );
     }
 
     return permPtr;
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handles suffixes for integer values.
+ *
+ * Note: sets errno to ERANGE if the value is out of range or suffix is not a recognized suffix.
+ *
+ * @return the value
+ */
+//--------------------------------------------------------------------------------------------------
+template<class T>
+static T HandleSuffix(
+    T value,
+    const char *suffix
+)
+//--------------------------------------------------------------------------------------------------
+{
+    switch (*suffix)
+    {
+        case '\0':
+            break;
+        case 'K':
+            if ((value >= 0 && value <= std::numeric_limits<T>::max() / 1024) ||
+                (value < 0 && value >= std::numeric_limits<T>::lowest() / 1024))
+            {
+                value *= 1024;
+            }
+            else
+            {
+                errno = ERANGE;
+            }
+
+            if (*(suffix + 1) != '\0')
+            {
+                errno = ERANGE;
+            }
+            break;
+        default:
+            errno = ERANGE;
+    }
+
+    return value;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -406,16 +473,15 @@ size_t GetNonNegativeInt
     char* endPtr;
     errno = 0;
     size_t result = strtoul(valueTokenPtr->text.c_str(), &endPtr, 0);
+
+    result = HandleSuffix(result, endPtr);
+
     if (errno != 0)
     {
-        std::stringstream msg;
-        msg << "Value must be an integer between 0 and " << ULONG_MAX << ", with an optional 'K'"
-               " suffix.";
-        valueTokenPtr->ThrowException(msg.str());
-    }
-    if (*endPtr == 'K')
-    {
-        result *= 1024;
+        valueTokenPtr->ThrowException(
+            mk::format(LE_I18N("Value must be an integer between 0 and %d, "
+                               "with an optional 'K' suffix."), ULONG_MAX)
+        );
     }
 
     return result;
@@ -441,16 +507,15 @@ ssize_t GetInt
     char* endPtr;
     errno = 0;
     size_t result = strtol(valueTokenPtr->text.c_str(), &endPtr, 0);
+
+    result = HandleSuffix(result, endPtr);
+
     if (errno != 0)
     {
-        std::stringstream msg;
-        msg << "Value must be an integer between " << LONG_MIN << " and " << LONG_MAX
-            << ", with an optional 'K' suffix.";
-        valueTokenPtr->ThrowException(msg.str());
-    }
-    if (*endPtr == 'K')
-    {
-        result *= 1024;
+        valueTokenPtr->ThrowException(
+            mk::format(LE_I18N("Value must be an integer between %d and %d,"
+                               " with an optional 'K' suffix."), LONG_MIN, LONG_MAX)
+        );
     }
 
     return result;
@@ -473,14 +538,25 @@ size_t GetPositiveInt
 )
 //--------------------------------------------------------------------------------------------------
 {
-    size_t result = GetNonNegativeInt(sectionPtr);
+    size_t result;
+
+    try
+    {
+        result = GetNonNegativeInt(sectionPtr);
+    }
+    catch (mk::Exception_t &e)
+    {
+        // Force result out of range to throw error with correct range (1-ULONG_MAX)
+        // even for negative numbers or invalid formats
+        result = 0;
+    }
 
     if (result == 0)
     {
-        std::stringstream msg;
-        msg << "Value must be an integer between 1 and " << ULONG_MAX << ", with an optional 'K'"
-               " suffix.";
-        sectionPtr->Contents()[0]->ThrowException(msg.str());
+        sectionPtr->Contents()[0]->ThrowException(
+            mk::format(LE_I18N("Value must be an integer between 1 and %d, with an optional 'K'"
+                               " suffix."), ULONG_MAX)
+        );
     }
 
     return result;
@@ -500,15 +576,15 @@ void PrintPermissions
 {
     if (permissions.IsReadable())
     {
-        std::cout << " read";
+        std::cout << LE_I18N(" read");
     }
     if (permissions.IsWriteable())
     {
-        std::cout << " write";
+        std::cout << LE_I18N(" write");
     }
     if (permissions.IsExecutable())
     {
-        std::cout << " execute";
+        std::cout << LE_I18N(" execute");
     }
 }
 
@@ -577,10 +653,40 @@ void SetStart
     }
     else
     {
-        sectionPtr->Contents()[0]->ThrowException("Internal error: unexpected startup option.");
+        sectionPtr->Contents()[0]->ThrowException(LE_I18N("Internal error: "
+                                                          "unexpected startup option."));
     }
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Sets whether the Supervisor will load the module automatically at system start-up,
+ * or only when asked to do so, based on the contents of a "load:" section in the parse tree.
+ */
+//--------------------------------------------------------------------------------------------------
+void SetLoad
+(
+    model::Module_t* modulePtr,
+    const parseTree::SimpleSection_t* sectionPtr
+)
+//--------------------------------------------------------------------------------------------------
+{
+    auto& mode = sectionPtr->Text();
+
+    if (mode == "auto")
+    {
+        modulePtr->loadTrigger = model::Module_t::AUTO;
+    }
+    else if (mode == "manual")
+    {
+        modulePtr->loadTrigger = model::Module_t::MANUAL;
+    }
+    else
+    {
+        sectionPtr->Contents()[0]->ThrowException(LE_I18N("Internal error: "
+                                                          "unexpected module load option."));
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -596,7 +702,7 @@ void SetWatchdogAction
 {
     if (appPtr->watchdogAction.IsSet())
     {
-        sectionPtr->ThrowException("Only one watchdogAction section allowed.");
+        sectionPtr->ThrowException(LE_I18N("Only one watchdogAction section allowed."));
     }
     appPtr->watchdogAction = sectionPtr->Text();
 }
@@ -616,7 +722,7 @@ void SetWatchdogTimeout
 {
     if (appPtr->watchdogTimeout.IsSet())
     {
-        sectionPtr->ThrowException("Only one watchdogTimeout section allowed.");
+        sectionPtr->ThrowException(LE_I18N("Only one watchdogTimeout section allowed."));
     }
 
     auto tokenPtr = sectionPtr->Contents()[0];
@@ -628,6 +734,27 @@ void SetWatchdogTimeout
     {
         appPtr->watchdogTimeout = GetInt(sectionPtr);
     }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the app-level maximum watchdog timeout setting.
+ */
+//--------------------------------------------------------------------------------------------------
+void SetMaxWatchdogTimeout
+(
+    model::App_t* appPtr,
+    const parseTree::SimpleSection_t* sectionPtr  ///< Ptr to section in parse tree.
+)
+//--------------------------------------------------------------------------------------------------
+{
+    if (appPtr->maxWatchdogTimeout.IsSet())
+    {
+        sectionPtr->ThrowException(LE_I18N("Only one maxWatchdogTimeout section allowed."));
+    }
+
+    appPtr->maxWatchdogTimeout = GetInt(sectionPtr);
 }
 
 
@@ -694,6 +821,104 @@ model::ApiFile_t* GetApiFilePtr
     return apiFilePtr;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Add each kernel module name within "requires: kernelModules:" section to the dependency list.
+ */
+//--------------------------------------------------------------------------------------------------
+static void ReqKernelModule
+(
+    std::set<std::string>& requiredModules,
+    const parseTree::Module_t* sectionPtr,
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    std::string moduleName;
+    std::string modulePath;
+
+    // Tokens in the module subsection are paths to their .mdef file
+    const auto moduleSpec = path::Unquote(DoSubstitution(sectionPtr->firstTokenPtr));
+    if (path::HasSuffix(moduleSpec, ".mdef"))
+    {
+        moduleName = path::RemoveSuffix(path::GetLastNode(moduleSpec), ".mdef");
+        modulePath = file::FindFile(moduleSpec, buildParams.moduleDirs);
+    }
+    else
+    {
+        // Append ".mdef" to path
+        moduleName = path::GetLastNode(moduleSpec);
+        modulePath = file::FindFile(moduleSpec + ".mdef", buildParams.moduleDirs);
+    }
+
+    if (modulePath.empty())
+    {
+        std::string formattedMsg =
+            mk::format(LE_I18N("Can't find definition file (.mdef) "
+                               "for module specification '%s'.\n"
+                               "note: Looked in the following places:\n"), moduleSpec);
+        for (auto& dir : buildParams.moduleDirs)
+        {
+            formattedMsg += "    '" + dir + "'\n";
+        }
+        sectionPtr->ThrowException(formattedMsg);
+    }
+
+    // Check for duplicates.
+    auto modulesIter = requiredModules.find(moduleName);
+    if (modulesIter != requiredModules.end())
+    {
+        sectionPtr->ThrowException(
+            mk::format(LE_I18N("Module '%s' added to the app more than once.\n"),
+                       moduleName)
+        );
+    }
+
+    requiredModules.insert(moduleName);
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Iterate through each kernel module listed in "requires: kernelModules:" section.
+ */
+//--------------------------------------------------------------------------------------------------
+static void ReqKernelModulesSection
+(
+    std::set<std::string>& requiredModules,
+    const parseTree::CompoundItem_t* sectionPtr,
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    auto moduleSectionPtr = dynamic_cast<const parseTree::CompoundItemList_t*>(sectionPtr);
+
+    for (auto itemPtr : moduleSectionPtr->Contents())
+    {
+        ReqKernelModule(requiredModules,
+                        dynamic_cast<const parseTree::Module_t*>(itemPtr),
+                        buildParams);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Add required kernel module section from "requires:" "kernelModules:" section to a given object.
+ */
+//--------------------------------------------------------------------------------------------------
+void AddRequiredKernelModules
+(
+    std::set<std::string>& requiredModules,
+    const std::list<const parseTree::CompoundItem_t*>& reqKernelModulesSections,
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    for (auto sectionPtr : reqKernelModulesSections)
+    {
+        ReqKernelModulesSection(requiredModules, sectionPtr, buildParams);
+    }
+}
 
 
 

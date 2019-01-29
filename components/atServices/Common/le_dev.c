@@ -2,7 +2,7 @@
  *
  * Implementation of device access.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -10,6 +10,7 @@
 #include "le_dev.h"
 #include <pwd.h>
 #include <grp.h>
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -20,19 +21,26 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * String size for the buffer that contains a summary of all the device information available
+ */
+//--------------------------------------------------------------------------------------------------
+#define DSIZE_INFO_STR   1600
+
+//--------------------------------------------------------------------------------------------------
+/**
  * struct DevInfo contains useful information about the device in use
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    int             fd;                 ///< file descriptor in use
-    char            linkName[DSIZE];    ///< device full path
-    char            fdSysPath[DSIZE];   ///< /proc/PID/fd/FD
-    unsigned int    major;              ///< device's major number
-    unsigned int    minor;              ///< device's minor number
-    char            uName[DSIZE];       ///< user name
-    char            gName[DSIZE];       ///< group name
-    char            devInfoStr[DSIZE];  ///< formatted string for all info
+    int             fd;                         ///< file descriptor in use
+    char            linkName[DSIZE];            ///< device full path
+    char            fdSysPath[DSIZE];           ///< /proc/PID/fd/FD
+    unsigned int    major;                      ///< device's major number
+    unsigned int    minor;                      ///< device's minor number
+    char            uName[DSIZE];               ///< user name
+    char            gName[DSIZE];               ///< group name
+    char            devInfoStr[DSIZE_INFO_STR]; ///< formatted string for all info
 }
 DevInfo_t;
 
@@ -59,7 +67,7 @@ static char* StrError
 #ifdef __USE_GNU
     snprintf(errMsg, DSIZE, "%s", strerror_r(err, errMsg, DSIZE));
 #else /* XSI-compliant */
-    strerror_r(err, errMsg, DSIZE);
+    strerror_r(err, errMsg, sizeof(errMsg));
 #endif
     return errMsg;
 }
@@ -86,19 +94,29 @@ static le_result_t GetDeviceInformation
         struct passwd* passwd;
         struct group* group;
 
-        memset(DevInfo.fdSysPath, 0, DSIZE);
-        memset(DevInfo.linkName, 0, DSIZE);
-        memset(DevInfo.devInfoStr, 0, DSIZE);
+        // Note: Better use sizeof() operator instead of any macro(i.e. DSIZE), as it is compile
+        //       time operator and gives the code better flexibility.
+
+        memset(DevInfo.fdSysPath, 0, sizeof(DevInfo.fdSysPath));
+        memset(DevInfo.linkName, 0, sizeof(DevInfo.linkName));
+        memset(DevInfo.devInfoStr, 0, sizeof(DevInfo.devInfoStr));
 
         // build the path to fd
         snprintf(DevInfo.fdSysPath,
-            DSIZE, "/proc/%d/fd/%d", getpid(), DevInfo.fd);
+            sizeof(DevInfo.fdSysPath), "/proc/%d/fd/%d", getpid(), DevInfo.fd);
 
+        int len = readlink(DevInfo.fdSysPath, DevInfo.linkName, sizeof(DevInfo.fdSysPath));
         // get device path
-        if (readlink(DevInfo.fdSysPath, DevInfo.linkName, DSIZE) == -1) {
+        if (len < 0) {
             LE_ERROR("readlink failed %s", StrError(errno));
             return LE_FAULT;
         }
+        else if (len >= sizeof(DevInfo.fdSysPath))
+        {
+            LE_ERROR("Too long path. Max allowed: %zd", sizeof(DevInfo.fdSysPath)-1);
+            return LE_FAULT;
+        }
+
         // try to get device stats
         if (fstat(DevInfo.fd, &fdStats) == -1)
         {
@@ -111,9 +129,9 @@ static le_result_t GetDeviceInformation
 
         DevInfo.major = major(fdStats.st_rdev);
         DevInfo.minor = minor(fdStats.st_rdev);
-        snprintf(DevInfo.uName, DSIZE, "%s", passwd->pw_name);
-        snprintf(DevInfo.gName, DSIZE, "%s", group->gr_name);
-        snprintf(DevInfo.devInfoStr, DSIZE, "%s, %s [%u, %u], (u: %s, g: %s)",
+        snprintf(DevInfo.uName, sizeof(DevInfo.uName), "%s", passwd->pw_name);
+        snprintf(DevInfo.gName, sizeof(DevInfo.gName), "%s", group->gr_name);
+        snprintf(DevInfo.devInfoStr, sizeof(DevInfo.devInfoStr), "%s, %s [%u, %u], (u: %s, g: %s)",
             DevInfo.fdSysPath,
             DevInfo.linkName,
             DevInfo.major,
@@ -143,43 +161,59 @@ static void PrintBuffer
     if(le_log_GetFilterLevel() == LE_LOG_DEBUG)
     {
         uint32_t i;
-        char dev[DSIZE];
-
+        uint32_t dataLen = 1;
         DevInfo.fd = fd;
 
-        if (GetDeviceInformation())
-        {
-            snprintf(dev, DSIZE, "%d", fd);
-        }
-        else
-        {
-            snprintf(dev, DSIZE, "%s", DevInfo.linkName);
-        }
-
-        LE_DEBUG("R/W (%d bytes) on %s", bufferSize, dev);
-
-        for(i=0; i<bufferSize; i++)
+        for(i=0;i<bufferSize;i++)
         {
             if (bufferPtr[i] == '\r' )
             {
-                LE_DEBUG("'%s' -> [%d] '0x%.2x' '%s'",
-                    dev, i, bufferPtr[i], "CR");
+                dataLen+=4;
             }
             else if (bufferPtr[i] == '\n')
             {
-                LE_DEBUG("'%s' -> [%d] '0x%.2x' '%s'",
-                    dev, i, bufferPtr[i], "LF");
+                dataLen+=4;
             }
             else if (bufferPtr[i] == 0x1A)
             {
-                LE_DEBUG("'%s' -> [%d] '0x%.2x' '%s'",
-                    dev, i, bufferPtr[i], "CTRL+Z");
+                dataLen+=8;
             }
             else
             {
-                LE_DEBUG("'%s' -> [%d] '0x%.2x' '%c'",
-                    dev, i, bufferPtr[i], bufferPtr[i]);
+                dataLen+=1;
             }
+        }
+
+        char string[dataLen];
+        memset(string, 0, dataLen);
+
+        for(i=0;i<bufferSize;i++)
+        {
+            if (bufferPtr[i] == '\r' )
+            {
+                snprintf(string+strlen(string), dataLen-strlen(string), "<CR>");
+            }
+            else if (bufferPtr[i] == '\n')
+            {
+                snprintf(string+strlen(string), dataLen-strlen(string), "<LF>");
+            }
+            else if (bufferPtr[i] == 0x1A)
+            {
+                snprintf(string+strlen(string), dataLen-strlen(string), "<CTRL+Z>");
+            }
+            else
+            {
+                snprintf(string+strlen(string), dataLen-strlen(string), "%c", bufferPtr[i]);
+            }
+        }
+
+        if (GetDeviceInformation())
+        {
+            LE_DEBUG("'%d' -> %s", fd, string);
+        }
+        else
+        {
+            LE_DEBUG("'%s' -> %s", DevInfo.linkName, string);
         }
     }
 }
@@ -230,10 +264,28 @@ ssize_t le_dev_Read
 (
     Device_t*   devicePtr,    ///< device pointer
     uint8_t*    rxDataPtr,    ///< Buffer where to read
-    ssize_t     size          ///< size of buffer
+    size_t      size          ///< size of buffer
 )
 {
     ssize_t count;
+
+    if (NULL == devicePtr)
+    {
+        LE_ERROR("devicePtr is NULL!");
+        return -1;
+    }
+
+    if (NULL == rxDataPtr)
+    {
+        LE_ERROR("rxDataPtr is NULL!");
+        return -1;
+    }
+
+    if (0 == size)
+    {
+        LE_ERROR("size is 0!");
+        return -1;
+    }
 
     DevInfo.fd = devicePtr->fd;
     if (!GetDeviceInformation())
@@ -242,10 +294,10 @@ ssize_t le_dev_Read
     }
 
     count = read(devicePtr->fd, rxDataPtr, size);
-    if (count == -1)
+    if (-1 == count)
     {
         LE_ERROR("read error: %s", StrError(errno));
-        return 0;
+        return -1;
     }
 
     PrintBuffer(devicePtr->fd, rxDataPtr, count);
@@ -276,7 +328,7 @@ int32_t le_dev_Write
     DevInfo.fd = devicePtr->fd;
     if (!GetDeviceInformation())
     {
-        LE_INFO("%s", DevInfo.devInfoStr);
+        LE_DEBUG("%s", DevInfo.devInfoStr);
     }
 
     LE_FATAL_IF(devicePtr->fd==-1,"Write Handle error\n");
@@ -333,7 +385,7 @@ le_result_t le_dev_AddFdMonitoring
     DevInfo.fd = devicePtr->fd;
     if (!GetDeviceInformation())
     {
-        LE_INFO("%s", DevInfo.devInfoStr);
+        LE_DEBUG("%s", DevInfo.devInfoStr);
     }
 
     if (devicePtr->fdMonitor)
@@ -357,7 +409,7 @@ le_result_t le_dev_AddFdMonitoring
     fdMonitorRef = le_fdMonitor_Create(monitorName,
                                        devicePtr->fd,
                                        handlerFunc,
-                                       POLLIN | POLLRDHUP);
+                                       POLLIN | POLLPRI | POLLRDHUP);
 
     devicePtr->fdMonitor = fdMonitorRef;
 
@@ -393,7 +445,7 @@ void le_dev_RemoveFdMonitoring
     DevInfo.fd = devicePtr->fd;
     if (!GetDeviceInformation())
     {
-        LE_INFO("%s", DevInfo.devInfoStr);
+        LE_DEBUG("%s", DevInfo.devInfoStr);
     }
 
     if (devicePtr->fdMonitor)

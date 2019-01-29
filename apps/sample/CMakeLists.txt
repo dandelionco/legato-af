@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
 # Contributors:
 #     Sierra Wireless - initial API and implementation
@@ -10,15 +10,30 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/samples/bin)
 set(APP_OUTPUT_PATH ${CMAKE_BINARY_DIR}/samples)
 file(MAKE_DIRECTORY ${EXECUTABLE_OUTPUT_PATH})
 
+add_custom_target(samples_c
+    COMMENT "Generated C & C++ samples in ${EXECUTABLE_OUTPUT_PATH}"
+)
+
+add_custom_target(samples_java
+    COMMENT "Generated Java samples in ${EXECUTABLE_OUTPUT_PATH}"
+)
+
 add_custom_target(samples
-    COMMENT "Generated samples in ${EXECUTABLE_OUTPUT_PATH}"
+    DEPENDS samples_c samples_java
+    COMMENT "Generated all samples in ${EXECUTABLE_OUTPUT_PATH}"
 )
 
 # Simple client/server application
 add_subdirectory(helloWorld)
 
+# Simple client/server java application
+add_subdirectory(javaHelloWorld)
+
 # Simple client application + server application
 add_subdirectory(helloIpc)
+
+# Legacy porting example
+add_subdirectory(legacy)
 
 # Application using Modem Services
 add_subdirectory(modemDemo)
@@ -27,7 +42,7 @@ add_subdirectory(modemDemo)
 add_subdirectory(commandLine)
 
 # Application using eCall
-if((INCLUDE_ECALL EQUAL 1) AND ((LEGATO_TARGET MATCHES "ar7") OR (LEGATO_TARGET MATCHES "ar86")))
+if(INCLUDE_ECALL EQUAL 1)
     add_subdirectory(eCallDemo)
 endif()
 
@@ -37,13 +52,34 @@ add_subdirectory(sms)
 # Simple shell piping application
 add_subdirectory(shellPiping)
 
+# lwm2m airvantage asset data sample application
+add_subdirectory(assetData)
+
 # lwm2m airvantage control applcation
-add_subdirectory(lwm2mAirVantageControl)
+add_subdirectory(avcControl)
 
 # Simple GPIO Cf3 application using GPIO Service
-if((LEGATO_TARGET MATCHES "wp85") OR (LEGATO_TARGET MATCHES "wp750x"))
+if((LEGATO_TARGET STREQUAL "wp85") OR (LEGATO_TARGET STREQUAL "wp750x"))
     add_subdirectory(gpioCf3Demo)
 endif()
 
 # Application showing ultra low power mode entry/exit
-add_subdirectory(textLoc)
+if (NOT (LEGATO_TARGET MATCHES "ar7"))
+    add_subdirectory(textLoc)
+endif()
+
+# Watchdog
+add_subdirectory(watchdog)
+
+# Application adding the streamMedia API which allows audio streaming through RTP
+add_subdirectory(streamMedia)
+
+# Application that gets online and fetches an URL with curl
+if (NOT (LEGATO_TARGET STREQUAL "ar7" OR LEGATO_TARGET STREQUAL "ar86"))
+    add_subdirectory(httpGet)
+endif()
+
+# Application that exposes a webserver (lighttpd) and few sample pages
+if (NOT (LEGATO_TARGET STREQUAL "ar7" OR LEGATO_TARGET STREQUAL "ar86" OR LEGATO_TARGET STREQUAL "localhost"))
+    add_subdirectory(httpServer)
+endif()

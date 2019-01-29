@@ -4,7 +4,7 @@
  *
  * Functions shared by multiple modeller modules.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -163,6 +163,17 @@ void SetStart
     const parseTree::SimpleSection_t* sectionPtr
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Sets whether the Supervisor will load the module automatically at system start-up,
+ * or only when asked to do so, based on the contents of a "load:" section in the parse tree.
+ */
+//--------------------------------------------------------------------------------------------------
+void SetLoad
+(
+    model::Module_t* modulePtr,
+    const parseTree::SimpleSection_t* sectionPtr
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -190,6 +201,18 @@ void SetWatchdogTimeout
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Set the app-level watchdog timeout setting.
+ */
+//--------------------------------------------------------------------------------------------------
+void SetMaxWatchdogTimeout
+(
+    model::App_t* appPtr,
+    const parseTree::SimpleSection_t* sectionPtr  ///< Ptr to section in parse tree.
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Get a pointer to the API File object for a given .api file path.
  **/
 //--------------------------------------------------------------------------------------------------
@@ -201,6 +224,17 @@ model::ApiFile_t* GetApiFilePtr
 );
 
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Add required kernel module section from "requires:" "kernelModules:" section to a given object.
+ **/
+//--------------------------------------------------------------------------------------------------
+void AddRequiredKernelModules
+(
+    std::set<std::string>& requiredModules,
+    const std::list<const parseTree::CompoundItem_t*>& reqKernelModulesSections,
+    const mk::BuildParams_t& buildParams
+);
 
 } // namespace modeller
 

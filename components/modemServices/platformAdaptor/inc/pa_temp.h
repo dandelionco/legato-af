@@ -11,7 +11,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 
@@ -19,7 +19,7 @@
  *
  * Legato @ref c_pa_temp include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PATEMP_INCLUDE_GUARD
@@ -177,6 +177,21 @@ LE_SHARED le_event_HandlerRef_t* pa_temp_AddTempEventHandler
 (
     pa_temp_ThresholdHandlerFunc_t  handlerFunc, ///< [IN] The handler function.
     void*                           contextPtr   ///< [IN] The context to be given to the handler.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reset the temperature sensor handle.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed.
+ *      - LE_UNSUPPORTED   The function does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_temp_ResetHandle
+(
+    const char*         sensorPtr  ///< [IN] Name of the temperature sensor.
 );
 
 //--------------------------------------------------------------------------------------------------

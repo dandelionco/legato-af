@@ -2,7 +2,7 @@
 /**
  * @file modeller.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -124,6 +124,17 @@ void PrintSummary
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Print a summary of a kernel module object.
+ **/
+//--------------------------------------------------------------------------------------------------
+void PrintSummary
+(
+    model::Module_t* modulePtr
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Print a summary of a system object.
  **/
 //--------------------------------------------------------------------------------------------------
@@ -131,8 +142,6 @@ void PrintSummary
 (
     model::System_t* systemPtr
 );
-
-
 
 } // namespace modeller
 

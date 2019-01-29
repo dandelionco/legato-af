@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
 # Contributors:
 #     Sierra Wireless - initial API and implementation
@@ -7,7 +7,7 @@
 
 set(TEST_EXEC mrcUnitTest)
 
-set(LEGATO_MODEM_SERVICES "${LEGATO_ROOT}/components/modemServices/")
+set(LEGATO_MODEM_SERVICES "${LEGATO_ROOT}/components/modemServices")
 
 if(TEST_COVERAGE EQUAL 1)
     set(CFLAGS "--cflags=\"--coverage\"")
@@ -19,11 +19,16 @@ mkexe(${TEST_EXEC}
     -i ${LEGATO_MODEM_SERVICES}/modemDaemon
     -i ${LEGATO_MODEM_SERVICES}/platformAdaptor/inc
     -i ${LEGATO_ROOT}/components/cfgEntries
-    -i ${LEGATO_ROOT}/framework/c/src
+    -i ${LEGATO_ROOT}/framework/liblegato
     -i ${PA_DIR}/simu/components/le_pa
+    -i ${PA_DIR}/simu/components/simuConfig
+    -s ${PA_DIR}
+    --cflags="-DWITHOUT_SIMUCONFIG"
     ${CFLAGS}
     ${LFLAGS}
 )
 
 add_test(${TEST_EXEC} ${EXECUTABLE_OUTPUT_PATH}/${TEST_EXEC})
 
+# This is a C test
+add_dependencies(tests_c ${TEST_EXEC})

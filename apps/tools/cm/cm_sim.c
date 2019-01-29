@@ -4,7 +4,7 @@
  *
  * Handle sim related functionality
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -32,10 +32,12 @@ void cm_sim_PrintSimHelp
             "\tcm sim status\n\n"
             "To get sim information:\n"
             "\tcm sim info\n\n"
-            "To get the sim imsi:\n"
+            "To get the SIM IMSI (International Mobile Subscriber Identity):\n"
             "\tcm sim imsi\n\n"
-            "To get the sim iccid:\n"
+            "To get the SIM ICCID (integrated circuit card identifier):\n"
             "\tcm sim iccid\n\n"
+            "To get the SIM EID (identifier for the embedded Universal Integrated Circuit Card):\n"
+            "\tcm sim eid\n\n"
             "To get the sim phone number:\n"
             "\tcm sim number\n\n"
             "To enter pin code:\n"
@@ -52,13 +54,19 @@ void cm_sim_PrintSimHelp
             "\tcm sim storepin <pin>\n\n"
             "To select SIM:\n"
             "\tcm sim select <EMBEDDED | EXTERNAL_SLOT_1 | EXTERNAL_SLOT_2 | REMOTE>\n\n"
-            "Enter PIN: Enters the PIN code that is required before any Mobile equipment functionality can be used.\n"
+            "Enter PIN: Enters the PIN code that is required before any Mobile equipment "
+            "functionality can be used.\n"
             "Change PIN: Change the PIN code of the SIM card.\n"
-            "Lock: Enable security of the SIM card, it will request for a PIN code upon insertion.\n"
-            "Unlock: Disable security of the SIM card, it won't request a PIN code upon insertion (unsafe).\n"
-            "Unblock: Unblocks the SIM card. The SIM card is blocked after X unsuccessful attempts to enter the PIN.\n\n"
-            "Whether security is enabled or not, the SIM card has a PIN code that must be entered for every operations.\n"
-            "Only ways to change this PIN code are through 'changepin' and 'unblock' operations.\n\n"
+            "Lock: Enable security of the SIM card, it will request for a PIN code upon insertion."
+            "\n"
+            "Unlock: Disable security of the SIM card, it won't request a PIN code upon insertion "
+            "(unsafe).\n"
+            "Unblock: Unblocks the SIM card. The SIM card is blocked after X unsuccessful attempts "
+            "to enter the PIN.\n\n"
+            "Whether security is enabled or not, the SIM card has a PIN code that must be entered "
+            "for every operations.\n"
+            "Only ways to change this PIN code are through 'changepin' and 'unblock' operations."
+            "\n\n"
             );
 }
 
@@ -170,6 +178,9 @@ int cm_sim_GetSimStatus()
         case LE_SIM_BUSY:
             printf("SIM card is busy (LE_SIM_BUSY).\n");
             break;
+        case LE_SIM_POWER_DOWN:
+            printf("SIM card is powered down (LE_SIM_POWER_DOWN).\n");
+            break;
         default:
             printf("Unknown SIM state.\n");
             break;
@@ -269,6 +280,35 @@ int cm_sim_GetSimIccid
 
 //-------------------------------------------------------------------------------------------------
 /**
+ * This function will attempt to get the SIM EID.
+ *
+ * @return EXIT_SUCCESS if the call was successful, EXIT_FAILURE otherwise.
+ */
+//-------------------------------------------------------------------------------------------------
+int cm_sim_GetSimEid
+(
+    void
+)
+{
+    char eid[LE_SIM_EID_BYTES];
+    le_result_t res;
+    int ret = EXIT_SUCCESS;
+
+    res = le_sim_GetEID(SimId, eid, sizeof(eid));
+
+    if (LE_OK != res)
+    {
+        eid[0] = '\0';
+        ret = EXIT_FAILURE;
+    }
+
+    cm_cmn_FormatPrint("EID", eid);
+
+    return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
  * This function will attempt to get the SIM phone number.
  *
  * @return EXIT_SUCCESS if the call was successful, EXIT_FAILURE otherwise.
@@ -328,19 +368,26 @@ int cm_sim_GetSimInfo
 
     cm_sim_GetCardType();
 
-    if (cm_sim_GetSimIccid() != EXIT_SUCCESS)
+    if (EXIT_SUCCESS != cm_sim_GetSimIccid())
     {
         ret = EXIT_FAILURE;
     }
-
-    if (cm_sim_GetNetworkOperator() != EXIT_SUCCESS)
+    if (EXIT_SUCCESS != cm_sim_GetNetworkOperator())
     {
         ret = EXIT_FAILURE;
     }
-
-    cm_sim_GetSimImsi();
-
-    cm_sim_GetSimPhoneNumber();
+    if (EXIT_SUCCESS != cm_sim_GetSimEid())
+    {
+        ret = EXIT_FAILURE;
+    }
+    if (EXIT_SUCCESS != cm_sim_GetSimImsi())
+    {
+        ret = EXIT_FAILURE;
+    }
+    if (EXIT_SUCCESS != cm_sim_GetSimPhoneNumber())
+    {
+        ret = EXIT_FAILURE;
+    }
 
     return ret;
 }
@@ -513,14 +560,13 @@ int cm_sim_UnlockSim
 //-------------------------------------------------------------------------------------------------
 int cm_sim_UnblockSim
 (
-    const char * puk,       ///< [IN] PUK code
-    const char * newpin     ///< [IN] New PIN code
+    const char * pukPtr,       ///< [IN] PUK code
+    const char * newPinPtr     ///< [IN] New PIN code
 )
 {
     le_result_t     res = LE_OK;
 
-    res = le_sim_Unblock(SimId, puk, newpin);
-
+    res = le_sim_Unblock(SimId, pukPtr, newPinPtr);
     switch (res)
     {
         case LE_OK:
@@ -528,6 +574,9 @@ int cm_sim_UnblockSim
             return EXIT_SUCCESS;
         case LE_NOT_FOUND:
             printf("Failed to select the SIM card for this operation.\n");
+            break;
+        case LE_BAD_PARAMETER:
+            printf("Invalid SIM Identifier.\n");
             break;
         case LE_OVERFLOW:
             printf("The PIN code is too long (max 8 digits).\n");
@@ -539,8 +588,22 @@ int cm_sim_UnblockSim
             printf("The PUK code length is not correct (8 digits).\n");
             break;
         default:
+        {
+            uint32_t remainingPukTries = 0;
+
             printf("Error: %s\n", LE_RESULT_TXT(res));
+            res = le_sim_GetRemainingPUKTries(SimId, &remainingPukTries);
+
+            if (LE_OK == res)
+            {
+                printf("Remaining PUK tries: %d\n", remainingPukTries);
+            }
+            else
+            {
+                printf("Failed to get the remaining PUK tries: error = %d\n", res);
+            }
             break;
+        }
     }
 
     return EXIT_FAILURE;
@@ -619,6 +682,12 @@ void cm_sim_ProcessSimCommand
 )
 {
     SimId = le_sim_GetSelectedCard();
+    const char* pinPtr = le_arg_GetArg(2);
+    if ((numArgs > 2) && (NULL == pinPtr))
+    {
+        LE_ERROR("pinPtr is NULL");
+        exit(EXIT_FAILURE);
+    }
 
     if (strcmp(command, "help") == 0)
     {
@@ -633,42 +702,56 @@ void cm_sim_ProcessSimCommand
     {
         if (cm_cmn_CheckEnoughParams(1, numArgs, "PIN code missing. e.g. cm sim enterpin <pin>"))
         {
-            exit(cm_sim_EnterPin(le_arg_GetArg(2)));
+            exit(cm_sim_EnterPin(pinPtr));
         }
     }
     else if (strcmp(command, "changepin") == 0)
     {
         if (cm_cmn_CheckEnoughParams(2, numArgs, "PIN code missing. e.g. cm sim changepin <pin>"))
         {
-            exit(cm_sim_ChangePin(le_arg_GetArg(2), le_arg_GetArg(3)));
+            const char* newPinPtr = le_arg_GetArg(3);
+            if (NULL == newPinPtr)
+            {
+                LE_ERROR("newPinPtr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            exit(cm_sim_ChangePin(pinPtr, newPinPtr));
         }
     }
     else if (strcmp(command, "lock") == 0)
     {
         if (cm_cmn_CheckEnoughParams(1, numArgs, "PIN code missing. e.g. cm sim lock <pin>"))
         {
-            exit(cm_sim_LockSim(le_arg_GetArg(2)));
+            exit(cm_sim_LockSim(pinPtr));
         }
     }
     else if (strcmp(command, "unlock") == 0)
     {
         if (cm_cmn_CheckEnoughParams(1, numArgs, "PIN code missing. e.g. cm sim unlock <pin>"))
         {
-            exit(cm_sim_UnlockSim(le_arg_GetArg(2)));
+            exit(cm_sim_UnlockSim(pinPtr));
         }
     }
     else if (strcmp(command, "unblock") == 0)
     {
-        if (cm_cmn_CheckEnoughParams(2, numArgs, "PUK/PIN code missing. e.g. cm sim unblock <puk> <newpin>"))
+        if (cm_cmn_CheckEnoughParams(2,
+                                     numArgs,
+                                     "PUK/PIN code missing. e.g. cm sim unblock <puk> <newpin>"))
         {
-            exit(cm_sim_UnblockSim(le_arg_GetArg(2), le_arg_GetArg(3)));
+            const char* newPinPtr = le_arg_GetArg(3);
+            if (NULL == newPinPtr)
+            {
+                LE_ERROR("newPinPtr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            exit(cm_sim_UnblockSim(pinPtr, newPinPtr));
         }
     }
     else if (strcmp(command, "storepin") == 0)
     {
         if (cm_cmn_CheckEnoughParams(1, numArgs, "PIN code missing. e.g. cm sim storepin <pin>"))
         {
-            exit(cm_sim_StorePin(le_arg_GetArg(2)));
+            exit(cm_sim_StorePin(pinPtr));
         }
     }
     else if (strcmp(command, "info") == 0)
@@ -678,6 +761,10 @@ void cm_sim_ProcessSimCommand
     else if (strcmp(command, "iccid") == 0)
     {
         exit(cm_sim_GetSimIccid());
+    }
+    else if (strcmp(command, "eid") == 0)
+    {
+        exit(cm_sim_GetSimEid());
     }
     else if (strcmp(command, "imsi") == 0)
     {
@@ -691,7 +778,7 @@ void cm_sim_ProcessSimCommand
     {
         if (cm_cmn_CheckEnoughParams(1, numArgs, "SIM type missing. e.g. cm sim select <type>"))
         {
-            exit(cm_sim_Select(le_arg_GetArg(2)));
+            exit(cm_sim_Select(pinPtr));
         }
     }
     else

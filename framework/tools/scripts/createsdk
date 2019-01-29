@@ -1,6 +1,6 @@
 #!/bin/bash
 copyright="
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 "
 
 if ! [ $LEGATO_ROOT ]; then echo "Run bin/legs first" >&2; exit 1; fi
@@ -55,6 +55,11 @@ cd framework/tools/ifgen
 for tool in $(find -type f -and -not -name "*.pyc" | sed 's/^\.\///' | grep -v "langSample"); do
     install -D $tool ${STAGING_DIR}/bin/$tool
 done
+
+# IMA
+cd $LEGATO_ROOT
+install 3rdParty/ima-support-tools/ima-sign.sh ${STAGING_DIR}/bin/
+install 3rdParty/ima-support-tools/ima-gen-keys.sh ${STAGING_DIR}/bin/
 
 echo "Releasing ..."
 mkdir -p $RELEASE_DIR

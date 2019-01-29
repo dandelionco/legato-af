@@ -5,14 +5,21 @@ requires:
         modemServices/le_mdmDefs.api       [types-only]
         modemServices/le_sim.api           [types-only]
         modemServices/le_mrc.api           [types-only]
+        le_cfg.api                         [types-only]
     }
+}
+
+cflags:
+{
+    -I${LEGATO_ROOT}/components/watchdogChain
 }
 
 sources:
 {
     main.c
+    mrcStub.c
     ${LEGATO_ROOT}/components/modemServices/modemDaemon/le_mrc.c
     ${LEGATO_ROOT}/components/modemServices/modemDaemon/le_sim.c
-    ${PA_DIR}/simu/components/le_pa/pa_mrc_simu.c
-    ${PA_DIR}/simu/components/le_pa/pa_sim_simu.c
+    simu/components/le_pa/pa_mrc_simu.c
+    simu/components/le_pa/pa_sim_simu.c
 }

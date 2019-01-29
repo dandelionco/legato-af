@@ -2,7 +2,7 @@
 /**
  * Class that holds a thread priority.
  *
- * Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ class Priority_t : public Limit_t
 
     public:
 
-        void operator =(const std::string& value);
+        Priority_t& operator =(const std::string& value);
 
         const std::string& Get() const;
 

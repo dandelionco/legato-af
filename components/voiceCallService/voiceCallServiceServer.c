@@ -2,7 +2,7 @@
 /**
  *  Voice Call Server
  *
- *  Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless Inc.
  *
  * todo:
  *  - assumes that there is a valid SIM and the modem is registered on the network
@@ -13,6 +13,7 @@
 #include "legato.h"
 
 #include "interfaces.h"
+#include "watchdogChain.h"
 
 
 // Todo => Add Option to set Sim Profile.
@@ -33,6 +34,12 @@
 #define END_CALL_COMMAND            2
 #define ANSWER_CALL_COMMAND         3
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * The timer interval to kick the watchdog chain.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MS_WDOG_INTERVAL 8
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -167,7 +174,7 @@ static void SendConnStateEvent
     VoiceCallState_t eventVoiceCall;
 
     eventVoiceCall.callObjRef = call_ctx->callObjRef;
-    strncpy(eventVoiceCall.identifier, call_ctx->destination, MAX_DESTINATION_LEN_BYTE);
+    le_utf8_Copy(eventVoiceCall.identifier, call_ctx->destination, MAX_DESTINATION_LEN_BYTE, NULL);
     eventVoiceCall.callEvent = event;
 
     // Send the event to interested applications
@@ -268,7 +275,7 @@ static void VoiceSessionStateHandler
                 LE_WARN("No more resource ");
                 ctx_temp.callObjRef = NULL;
                 strncpy(ctx_temp.destination, "TODO", MAX_DESTINATION_LEN_BYTE);
-                newCtxPtr->lastEvent = LE_VOICECALL_EVENT_RESOURCE_BUSY;
+                ctx_temp.lastEvent = LE_VOICECALL_EVENT_RESOURCE_BUSY;
 
                 // Send error event to application.
                 SendConnStateEvent(&ctx_temp, ctx_temp.lastEvent);
@@ -617,7 +624,7 @@ le_voicecall_CallRef_t le_voicecall_Start
     {
         memset(msgCommand.callCtxPtr, 0, sizeof(VoiceCallContext_t));
         msgCommand.command = REQUEST_CALL_COMMAND;
-        strncpy(msgCommand.destination, DestinationID, MAX_DESTINATION_LEN_BYTE);
+        le_utf8_Copy(msgCommand.destination, DestinationID, MAX_DESTINATION_LEN_BYTE, NULL);
 
         // Need to return a unique reference that will be used by
         // le_voicecall_GetTerminationReason() or le_voicecall_End().  Don't actually have any
@@ -745,6 +752,12 @@ le_result_t le_voicecall_GetTerminationReason
         ///< Termination reason of the voice call.
 )
 {
+    if (reasonPtr == NULL)
+    {
+        LE_KILL_CLIENT("reasonPtr is NULL.");
+        return LE_FAULT;
+    }
+
     le_result_t result;
 
     VoiceCallContext_t * ctxPtr = le_ref_Lookup(VoiceCallRefMap, reference);
@@ -931,6 +944,11 @@ COMPONENT_INIT
 
     // Register for command events
     le_event_AddHandler("VoiceCallProcessCommand", CommandEvent, ProcessCommand);
+
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_Init(1);
+    le_wdogChain_MonitorEventLoop(0, watchdogInterval);
 
     LE_INFO("Voice Call Service is ready");
 }

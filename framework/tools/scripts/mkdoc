@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 
 # run every executable file in scripts with option -h except legs and this file
 # redirect help output to a page in docs
@@ -26,6 +26,9 @@ for file in $(find -L $TOOLS_DIR -type f -executable | sort); do
         echo "Skipping - $file"
     elif [[ $file = *mkinfo ]]; then
         # mkinfo is not a user run tool. It will become a part of build.
+        echo "Skipping - $file"
+    elif [[ $file = *cextgenerator.py ]]; then
+        # Python wrapper is for internal use
         echo "Skipping - $file"
     elif [[ $(basename "$file") = $(basename $0) ]]; then
         echo "Skipping - $file"

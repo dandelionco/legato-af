@@ -38,8 +38,11 @@
  *
  * The following APIs can be used to manage incoming or outgoing calls:
  * - le_mcc_GetTerminationReason() - termination reason.
- * - le_mcc_GetPlatformSpecificTerminationCode() - the platform specific termination code (refer
- * to your platform documentation for further details).
+ * - le_mcc_GetPlatformSpecificTerminationCode() - let you get the platform specific
+ *   termination code by retrieving the termination code from @c le_mcc_CallRef_t.
+ * Please refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * termination code description.
+ *
  * - le_mcc_IsConnected() - connection status.
  * - le_mcc_GetRemoteTel() - displays remote party telephone number associated with the call.
  * - le_mcc_HangUp() will disconnect this call.
@@ -54,7 +57,14 @@
  * threads are being used to work with the same call, a comparison of the call references themselves
  * can't be used to tell whether or not they refer to the same call.
  *
+ * The Adaptive Multi Rate (AMR) is an audio compression format optimized for speech coding and used
+ * during a voice call. Two AMRs are supported:
+ * An AMR Narrowband that encodes a bandwidth of 200–3400 Hz signals at variable bitrates ranging
+ * from 4.75 to 12.2 kbit/s and an AMR Wideband that encodes a wider bandwidth of 50–7000 Hz and
+ * thus improves the speech quality.
  *
+ * le_mcc_SetAmrWbCapability() function enables or disables the AMR Wideband supported capability.
+ * le_mcc_GetAmrWbCapability() function returns the AMR Wideband capability status.
  *
  * @section le_mcc_answering_a_call Answering a call
  *
@@ -75,9 +85,10 @@
  * @section le_mcc_ss Supplementary service
  *
  * Calling Line Identification Restriction (CLIR) can be activated or deactivated by
- *  le_mcc_SetCallerIdRestrict API. The status is independent for each call object reference.
- *  Status can be read with the le_mcc_GetCallerIdRestrict() API.
- * Default value is LE_OFF (Enable presentation of own phone number to remote).
+ * le_mcc_SetCallerIdRestrict() API. The status is independent for each call object reference.
+ * Status can be read with the le_mcc_GetCallerIdRestrict() API. If the status is not set,
+ * le_mcc_GetCallerIdRestrict() API returns LE_UNAVAILABLE.
+ * By default the CLIR status is not set.
  *
  * Call waiting supplementary service can be activated or deactivated by
  * le_mcc_SetCallWaitingService(). Its status can be given by le_mcc_GetCallWaitingService().
@@ -97,7 +108,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -107,7 +118,7 @@
  *
  * Legato @ref c_mcc include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -328,6 +339,9 @@ FUNCTION TerminationReason GetTerminationReason
 /**
  * Called to get the platform specific termination code.
  *
+ * Refer to @ref platformConstraintsSpecificErrorCodes for platform specific
+ * termination code description.
+ *
  * @return The platform specific termination code.
  *
  * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
@@ -400,8 +414,9 @@ FUNCTION le_result_t HangUpAll
  *    - LE_OFF Enable presentation of own phone number to remote.
  *
  * @return
- *    - LE_OK        The function succeed.
- *    - LE_NOT_FOUND The call reference was not found.
+ *    - LE_OK          The function succeed.
+ *    - LE_NOT_FOUND   The call reference was not found.
+ *    - LE_UNAVAILABLE CLIR status was not set.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetCallerIdRestrict
@@ -413,7 +428,7 @@ FUNCTION le_result_t GetCallerIdRestrict
 //--------------------------------------------------------------------------------------------------
 /**
  * This function set the Calling Line Identification Restriction (CLIR) status on the specific call.
- * Default value is LE_OFF (Enable presentation of own phone number to remote).
+ * By default the CLIR status is not set.
  *
  * @return
  *     - LE_OK        The function succeed.
@@ -506,3 +521,34 @@ FUNCTION le_result_t ActivateCall
     Call callRef IN                 ///< The call reference.
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function enables/disables the audio AMR Wideband capability.
+ *
+ * @return
+ *     -  LE_OK             The function succeeded.
+ *     -  LE_UNAVAILABLE    The service is not available.
+ *     -  LE_FAULT          On any other failure.
+ *
+ * @note The capability setting takes effect immediately and is not persistent to reset.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetAmrWbCapability
+(
+    bool enable IN   ///< True enables the AMR Wideband capability, false disables it.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function gets the audio AMR Wideband capability.
+ *
+ * @return
+ *     - LE_OK            The function succeeded.
+ *     - LE_UNAVAILABLE   The service is not available.
+ *     - LE_FAULT         On any other failure.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetAmrWbCapability
+(
+    bool enabled OUT  ///< True if AMR Wideband capability is enabled, false otherwise.
+);

@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 set(TEST_EXEC ecallUnitTest)
@@ -12,17 +12,23 @@ if(TEST_COVERAGE EQUAL 1)
     set(LFLAGS "--ldflags=\"--coverage\"")
 endif()
 
+set(CFLAGS "--cflags=-DINCLUDE_ECALL=1")
+
 mkexe(${TEST_EXEC}
     .
     -i ${LEGATO_MODEM_SERVICES}/modemDaemon
     -i ${LEGATO_MODEM_SERVICES}/platformAdaptor/inc
-    -i ${LEGATO_ROOT}/framework/c/src
+    -i ${LEGATO_ROOT}/framework/liblegato
     -i ${LEGATO_ROOT}/components/cfgEntries
     -i ${PA_DIR}/simu/components/le_pa
+    -i ${PA_DIR}/simu/components/le_pa_ecall
     -i ${SIMU_CONFIG_TREE}
+    -s ${PA_DIR}
     ${CFLAGS}
     ${LFLAGS}
 )
 
 add_test(${TEST_EXEC} ${EXECUTABLE_OUTPUT_PATH}/${TEST_EXEC})
 
+# This is a C test
+add_dependencies(tests_c ${TEST_EXEC})

@@ -1,7 +1,7 @@
 /**
  * This module implements the unit tests for AUDIO API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -97,12 +97,12 @@ void le_pm_ConnectService
  *
  */
 //--------------------------------------------------------------------------------------------------
-void le_pm_StayAwake
+le_result_t le_pm_StayAwake
 (
     le_pm_WakeupSourceRef_t w
 )
 {
-    return;
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -111,12 +111,12 @@ void le_pm_StayAwake
  *
  */
 //--------------------------------------------------------------------------------------------------
-void le_pm_Relax
+le_result_t le_pm_Relax
 (
     le_pm_WakeupSourceRef_t w
 )
 {
-    return;
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -271,7 +271,7 @@ static void* TestThread
         (TestCase == TEST_PLAY_FILES) ||
         (TestCase == TEST_PLAY_DTMF))
     {
-        // for play tests, subscribe to recorder stream
+        // For play tests, subscribe to recorder stream
         FakeStreamRef = le_audio_OpenRecorder();
     }
     else
@@ -311,10 +311,10 @@ static void* TestThread
         break;
     }
 
-    // unlock CreateTestThread() function
+    // Unlock CreateTestThread() function
     le_sem_Post(ThreadSemaphore);
 
-    // run the event loop
+    // Run the event loop
     le_event_RunLoop();
 }
 
@@ -556,7 +556,7 @@ void Testle_audio_Connector
     // Sub-test 4
     //------------
 
-    // create a new connector
+    // Create a new connector
     connectorRef = le_audio_CreateConnector();
 
     // Connect all streams
@@ -603,10 +603,10 @@ void Testle_audio_PlaySamples
 
     LE_ASSERT(pipe(Pipefd) == 0);
 
-    // init the pcm buffer in pa_pcm_simu side.
+    // Init the pcm buffer in pa_pcm_simu side.
     pa_pcmSimu_InitData(BUFFER_LEN);
 
-    // open the player stream
+    // Open the player stream
     playbackStreamRef = le_audio_OpenPlayer();
     LE_ASSERT(playbackStreamRef != NULL);
 
@@ -636,14 +636,14 @@ void Testle_audio_PlaySamples
     // Stop
     LE_ASSERT(le_audio_Stop(playbackStreamRef) == LE_OK);
 
-    // Close the input pipe
-    close(Pipefd[1]);
+    // Closing the input pipe is unncessary since the messaging infrastructure underneath
+    // le_audio_PlaySamples would close it.
 
     // Stop the test thread
     le_thread_Cancel(TestThreadRef);
     le_thread_Join(TestThreadRef,NULL);
 
-    // close the player stream
+    // Close the player stream
     le_audio_Close(playbackStreamRef);
 
     // Check that no more call of the semaphore
@@ -687,10 +687,10 @@ void Testle_audio_PlayFile
     FileFd = open("./test.amrwb", O_RDONLY);
     LE_ASSERT(FileFd != -1);
 
-    // init the pcm buffer in pa_pcm_simu side.
+    // Init the pcm buffer in pa_pcm_simu side.
     pa_pcmSimu_InitData(BUFFER_LEN);
 
-    // open the player stream
+    // Open the player stream
     playbackStreamRef = le_audio_OpenPlayer();
     LE_ASSERT(playbackStreamRef != NULL);
 
@@ -703,13 +703,13 @@ void Testle_audio_PlayFile
     // Wait the event LE_AUDIO_MEDIA_ENDED
     le_sem_Wait(ThreadSemaphore);
 
-    // Close the fd
-    close(FileFd);
+    // Closing the fd is unncessary since the messaging infrastructure underneath
+    // le_audio_PlayFile would close it.
 
     // Get the buffer address of the received data in the pa_pcm_simu
     uint8_t* sentPcmPtr = pa_pcmSimu_GetDataPtr();
 
-    // check data
+    // Check data
     LE_ASSERT(memcmp(Buffer, sentPcmPtr, BUFFER_LEN) == 0);
 
     // Release buffer in pa_pcm_simu
@@ -719,7 +719,7 @@ void Testle_audio_PlayFile
     le_thread_Cancel(TestThreadRef);
     le_thread_Join(TestThreadRef,NULL);
 
-    // close the player stream
+    // Close the player stream
     le_audio_Close(playbackStreamRef);
 
     // Delete the created file
@@ -754,7 +754,7 @@ void Testle_audio_CaptureSamples
 
     LE_ASSERT(pipe(Pipefd) == 0);
 
-    // init the pcm buffer in pa_pcm_simu side.
+    // Init the pcm buffer in pa_pcm_simu side.
     pa_pcmSimu_InitData(BUFFER_LEN);
 
     // Init the data in the pa_pcm_simu
@@ -762,7 +762,7 @@ void Testle_audio_CaptureSamples
 
     memcpy(dataToReceivePtr, Buffer, BUFFER_LEN);
 
-    // open the recorder stream
+    // Open the recorder stream
     captureStreamRef = le_audio_OpenRecorder();
     LE_ASSERT(captureStreamRef != NULL);
 
@@ -773,6 +773,7 @@ void Testle_audio_CaptureSamples
     CreateTestThread(captureStreamRef);
 
     uint8_t* receivedPcmFramesPtr = malloc(BUFFER_LEN);
+    LE_ASSERT(NULL != receivedPcmFramesPtr);
 
     // Read the data on the pipe
     for (i=0; i < BUFFER_LEN; i+=10)
@@ -783,10 +784,10 @@ void Testle_audio_CaptureSamples
     // All the expected data are received: stop the recoding
     LE_ASSERT(le_audio_Stop(captureStreamRef) == LE_OK);
 
-    // Close the output pipe
-    close(Pipefd[0]);
+    // Closing the output pipe is unncessary since the messaging infrastructure underneath
+    // le_audio_CaptureSamples would close it.
 
-    // check data
+    // Check data
     LE_ASSERT(memcmp(Buffer, receivedPcmFramesPtr, BUFFER_LEN) == 0);
 
     // Release buffer in pa_pcm_simu
@@ -796,11 +797,46 @@ void Testle_audio_CaptureSamples
     le_thread_Cancel(TestThreadRef);
     le_thread_Join(TestThreadRef,NULL);
 
-    // close the recorder stream
+    // Close the recorder stream
     le_audio_Close(captureStreamRef);
 
     // Check that no more call of the semaphore
     LE_ASSERT(le_sem_GetValue(ThreadSemaphore) == 0);
+
+    free(receivedPcmFramesPtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Test play to invalid destination.
+ *
+ * Should return an error.
+ *
+ * API tested:
+ * - le_audio_AddMediaHandler
+ *
+ * Exit if failed
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void Testle_audio_PlayInvalid
+(
+    void
+)
+{
+    le_audio_StreamRef_t playbackStreamRef = NULL;
+
+    // Open the player stream
+    playbackStreamRef = le_audio_OpenUsbTx();
+    LE_ASSERT(playbackStreamRef != NULL);
+
+    // Try to attach a media handler
+    MediaHandlerRef = le_audio_AddMediaHandler(playbackStreamRef,
+                                               MyMediaHandler, playbackStreamRef);
+    LE_ASSERT(MediaHandlerRef == NULL);
+
+    // Close the player stream
+    le_audio_Close(playbackStreamRef);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -841,10 +877,10 @@ void Testle_audio_RecordFile
     FileFd = open("./test.wav", O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR );
     LE_ASSERT(FileFd != -1);
 
-    // init the pcm buffer in pa_pcm_simu side.
+    // Init the pcm buffer in pa_pcm_simu side.
     pa_pcmSimu_InitData(BUFFER_LEN);
 
-    // open the recorder stream
+    // Open the recorder stream
     captureStreamRef = le_audio_OpenRecorder();
     LE_ASSERT(captureStreamRef != NULL);
 
@@ -857,7 +893,8 @@ void Testle_audio_RecordFile
     LE_ASSERT(le_audio_GetSamplePcmSamplingRate(captureStreamRef, &tmpSampleRate) == LE_OK);
     LE_ASSERT(sampleRate == tmpSampleRate);
     LE_ASSERT(le_audio_SetSamplePcmSamplingResolution(captureStreamRef, bitsPerSample) == LE_OK);
-    LE_ASSERT(le_audio_GetSamplePcmSamplingResolution(captureStreamRef, &tmpBitsPerSample) == LE_OK);
+    LE_ASSERT(le_audio_GetSamplePcmSamplingResolution(captureStreamRef,
+              &tmpBitsPerSample) == LE_OK);
     LE_ASSERT(bitsPerSample == tmpBitsPerSample);
 
     // Send the semaphore to the pa_pcm_simu
@@ -887,11 +924,12 @@ void Testle_audio_RecordFile
     le_thread_Cancel(TestThreadRef);
     le_thread_Join(TestThreadRef,NULL);
 
-    // close the recorder stream
+    // Close the recorder stream
     le_audio_Close(captureStreamRef);
 
     // Close the fd
-    close(FileFd);
+    // Closing the fd is unncessary since the messaging infrastructure underneath
+    // le_audio_RecordFiles would close it.
 
     // Check recording file
     FileFd = open("./test.wav", O_RDONLY);
@@ -907,7 +945,7 @@ void Testle_audio_RecordFile
 
     WavHeader_t* hdPtr = (WavHeader_t*) file;
 
-    // check data
+    // Check data
     LE_ASSERT(memcmp(&hdPtr->riffId, "RIFF", sizeof(hdPtr->riffId)) == 0);
     LE_ASSERT(memcmp(&hdPtr->riffFmt, "WAVE", sizeof(hdPtr->riffFmt)) == 0);
     LE_ASSERT(memcmp(&hdPtr->fmtId, "fmt ", sizeof(hdPtr->fmtId)) == 0);
@@ -960,7 +998,7 @@ void Testle_audio_DecodingDtmf
     void
 )
 {
-    // open the modem voice RX stream
+    // Open the modem voice RX stream
     le_audio_StreamRef_t streamVoiceRxRef = le_audio_OpenModemVoiceRx();
 
     char dtmfList[]="0123456789ABCD*#";
@@ -984,7 +1022,7 @@ void Testle_audio_DecodingDtmf
     le_thread_Cancel(TestThreadRef);
     le_thread_Join(TestThreadRef,NULL);
 
-    // close the modem voice RX stream
+    // Close the modem voice RX stream
     le_audio_Close(streamVoiceRxRef);
 
     // Check that no more call of the semaphore
@@ -1024,7 +1062,7 @@ void Testle_audio_PlayDtmf
 
     // Try to play a dtmf in local
 
-    // open the player stream
+    // Open the player stream
     le_audio_StreamRef_t  playbackStreamRef = le_audio_OpenPlayer();
 
     // Init the buffer in the pa_pcm_simu
@@ -1053,7 +1091,7 @@ void Testle_audio_PlayDtmf
     le_thread_Cancel(TestThreadRef);
     le_thread_Join(TestThreadRef,NULL);
 
-    // close the player stream
+    // Close the player stream
     le_audio_Close(playbackStreamRef);
 
     // Check that no more call of the semaphore
@@ -1154,7 +1192,7 @@ void* MainThread
 COMPONENT_INIT
 {
     // To reactivate for all DEBUG logs
-  //  le_log_SetFilterLevel(LE_LOG_DEBUG);
+    // le_log_SetFilterLevel(LE_LOG_DEBUG);
 
     ThreadSemaphore = le_sem_Create("HandlerSem",0);
 
@@ -1187,6 +1225,9 @@ COMPONENT_INIT
 
     LE_INFO("======== Test play file ========");
     Testle_audio_PlayFile();
+
+    LE_INFO("======== Test play to invalid destination ========");
+    Testle_audio_PlayInvalid();
 
     LE_INFO("======== Test capture samples ========");
     Testle_audio_CaptureSamples();

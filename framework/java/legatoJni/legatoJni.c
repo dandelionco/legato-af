@@ -6,7 +6,7 @@
  *  Shim layer to provide access to the Legato C library from Java.
  *
  *  Copyright (C) Sierra Wireless, Inc. 2014. All rights reserved.
- *  Use of this work is subject to license.
+ *
  */
 // -------------------------------------------------------------------------------------------------
 
@@ -38,7 +38,8 @@ void _HexDump
     for (i = 0; i < dataSize; i += 16)
     {
         _le_log_Send(LE_LOG_INFO, NULL, LE_LOG_SESSION, filenamePtr, functionNamePtr, lineNumber,
-                     "%02x %02x %02x %02x %02x %02x %02x %02x -- %02x %02x %02x %02x %02x %02x %02x %02x",
+                     "%02x %02x %02x %02x %02x %02x %02x %02x -- %02x %02x %02x %02x %02x %02x"
+                     " %02x %02x",
                      ptr[i +  0], ptr[i +  1], ptr[i +  2], ptr[i +  3],
                      ptr[i +  4], ptr[i +  5], ptr[i +  6], ptr[i +  7],
                      ptr[i +  8], ptr[i +  9], ptr[i + 10], ptr[i + 11],
@@ -1341,7 +1342,7 @@ JNIEXPORT jlong JNICALL Java_io_legato_LegatoJni_GetSession
  * @return A Java FileDescritpor object.
  */
 //--------------------------------------------------------------------------------------------------
-JNIEXPORT jobject JNICALL Java_io_legato_LegatoJni_GetFd
+JNIEXPORT jobject JNICALL Java_io_legato_LegatoJni_GetMessageFd
 (
     JNIEnv* envPtr,       ///< [IN] The Java environment to work out of.
     jclass callClassPtr,  ///< [IN] The java class that called this function.
@@ -1367,7 +1368,7 @@ JNIEXPORT jobject JNICALL Java_io_legato_LegatoJni_GetFd
  * At most one file descriptor is allowed to be sent per message.
  */
 //--------------------------------------------------------------------------------------------------
-JNIEXPORT void JNICALL Java_io_legato_LegatoJni_SetFd
+JNIEXPORT void JNICALL Java_io_legato_LegatoJni_SetMessageFd
 (
     JNIEnv* envPtr,         ///< [IN] The Java environment to work out of.
     jclass callClassPtr,    ///< [IN] The java class that called this function.
@@ -1717,6 +1718,10 @@ JNIEXPORT jobject JNICALL Java_io_legato_LegatoJni_GetMessageString
     {
         // TODO: Check for realistic size.
         char* charBuffer = malloc(strSize + 1);
+        if (!charBuffer)
+        {
+           return 0;
+        }
 
         memcpy(charBuffer, msgBufferPtr, strSize);
         charBuffer[strSize] = 0;

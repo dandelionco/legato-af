@@ -2,7 +2,7 @@
 /**
  * @file module.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -11,6 +11,7 @@
 namespace model
 {
 
+ std::map<std::string, Module_t*> Module_t::ModuleMap;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -19,24 +20,67 @@ namespace model
 //--------------------------------------------------------------------------------------------------
 Module_t::Module_t(parseTree::MdefFile_t *filePtr)
 //--------------------------------------------------------------------------------------------------
-: defFilePtr(filePtr)
+: defFilePtr(filePtr),
+  dir(path::GetContainingDir(filePtr->path)),
+  moduleBuildType(Invalid),
+  loadTrigger(AUTO)
 //--------------------------------------------------------------------------------------------------
 {
+    std::string canonicalPath = path::MakeCanonical(filePtr->path);
+    std::string moduleName;
+
+    moduleName = path::RemoveSuffix(path::GetLastNode(canonicalPath), ".mdef");
+    ModuleMap[moduleName] = this;
 }
 
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set path to module binary and build artifacts related to this module.
+ * Get a pre-existing module object for the given module name found.
+ *
+ * @return Pointer to the object or NULL if not found.
  **/
 //--------------------------------------------------------------------------------------------------
-void Module_t::SetPath(std::string modulePath)
+
+Module_t* Module_t::GetModule
+(
+    const std::string& name
+)
+//--------------------------------------------------------------------------------------------------
 {
-    path = modulePath;
-    name = path::RemoveSuffix(path::GetLastNode(path), ".ko");
+    auto i = ModuleMap.find(name);
+
+    if (i == ModuleMap.end())
+    {
+        return NULL;
+    }
+    else
+    {
+        return i->second;
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set build environment and artifacts related to this module.
+ **/
+//--------------------------------------------------------------------------------------------------
+void Module_t::SetBuildEnvironment(ModuleBuildType_t type, std::string path)
+{
+    if (type == Prebuilt)
+    {
+        name = path::RemoveSuffix(path::GetLastNode(path), ".ko");
+    }
+    else
+    {
+        name = path::RemoveSuffix(path::GetLastNode(path), ".mdef");
+    }
+
     workingDir = "modules/" + name;
-    auto objFilePath = workingDir + "/" + name + ".ko";
-    objFilePtr = new model::ObjectFile_t(objFilePath, path);
+    auto koFilePath = workingDir + "/" + name + ".ko";
+    auto koFileObj = new model::ObjectFile_t(koFilePath, path);
+    koFiles.insert(std::make_pair(path, koFileObj));
 }
 
 
@@ -49,6 +93,5 @@ void Module_t::AddParam(std::string name, std::string value)
 {
     params[name] = value;
 }
-
 
 } // namespace modeller

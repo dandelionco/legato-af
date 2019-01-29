@@ -7,7 +7,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -240,6 +240,7 @@ le_avdata_AssetInstanceRef_t GetInstRefFromSafeRef
     if ( instRefDataPtr == NULL )
     {
         LE_KILL_CLIENT("Invalid reference %p from %s", safeRef, funcNamePtr);
+        return NULL;
     }
 
     return instRefDataPtr->instRef;

@@ -1,6 +1,6 @@
 #!/bin/bash
 copyright="
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 "
 
 if ! [ $LEGATO_ROOT ]; then echo "Run bin/legs first" >&2; exit 1; fi
@@ -74,17 +74,17 @@ while read comp_name; do
     fi
 
     echo "Analyzing $comp_name $comp_info"
-    $OBJDUMP -x $comp_path | grep ' pa_' | grep '.text' | awk '{print $6}' | sort > $PA_DIFF_DIR/${comp_name}.actual
+    $OBJDUMP -TC $comp_path | grep ' pa_' | grep '.text' | awk '{print $7}' | grep -Ev 'Simu_' | sort > $PA_DIFF_DIR/${comp_name}.actual
 
     # Find default
     default_name=$(echo $comp_name | sed 's/.so/_default.so/')
     default_path=$(grep $default_name $PA_PATH_LIST)
     if [ -z "$default_path" ]; then
-        echo "Unable to find default PA for $comp_name"
-        exit 1
+        echo "WARN: Unable to find default PA for $comp_name"
+        continue
     fi
 
-    $OBJDUMP -x $default_path | grep ' pa_' | grep '.text' | awk '{print $6}' | sort > $PA_DIFF_DIR/${comp_name}.default
+    $OBJDUMP -TC $default_path | grep ' pa_' | grep '.text' | awk '{print $7}' | sort > $PA_DIFF_DIR/${comp_name}.default
 
     diff $PA_DIFF_DIR/${comp_name}.actual $PA_DIFF_DIR/${comp_name}.default | grep -E '[<>]' | grep -Ev '_Init$' | sed 's/^</ [obsolete]/' | sed 's/^>/ [default]/' | tee $PA_DIFF_DIR/${comp_name}.diff
 

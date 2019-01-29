@@ -4,7 +4,7 @@
  *
  * Default implementation of @ref pa_avc interface
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -78,6 +78,26 @@ void pa_avc_EnableUserAgreement
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_StopSession
+(
+    void
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Disable the AirVantage agent.
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_BUSY if the agent cannot be interrupted at the moment
+ *      - LE_FAULT on error
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_avc_Disable
 (
     void
 )
@@ -438,8 +458,8 @@ le_avc_SessionType_t pa_avc_GetSessionType
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_GetRetryTimers
 (
-    uint16_t* timerValuePtr,
-    size_t* numTimers
+    uint16_t* timerValuePtr,                ///< [OUT] Array of 8 retry timers in minutes
+    size_t* numTimers                       ///< [OUT] Number of retry timers
 )
 {
     LE_ERROR("Unsupported function called");
@@ -458,8 +478,8 @@ le_result_t pa_avc_GetRetryTimers
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_SetRetryTimers
 (
-    const uint16_t* timerValuePtr,
-    size_t timerValue
+    const uint16_t* timerValuePtr,                  ///< [IN] Array of 8 retry timers in minutes
+    size_t numTimers                                ///< [IN] Number of retry timers
 )
 {
     LE_ERROR("Unsupported function called");
@@ -478,7 +498,7 @@ le_result_t pa_avc_SetRetryTimers
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_GetPollingTimer
 (
-    uint32_t* pollingTimerPtr
+    uint32_t* pollingTimerPtr                       ///< [OUT] polling timer value in minutes
 )
 {
     LE_ERROR("Unsupported function called");
@@ -497,13 +517,30 @@ le_result_t pa_avc_GetPollingTimer
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_SetPollingTimer
 (
-    uint32_t pollingTimerPtr
+    uint32_t pollingTimer                            ///< [IN] polling timer value in minutes
 )
 {
     LE_ERROR("Unsupported function called");
     return LE_FAULT;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Function to read the user agreement status
+ *
+ * @return
+ *      - LE_OK on success
+ *      - LE_FAULT if not available
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_avc_GetUserAgreement
+(
+    pa_avc_UserAgreement_t* configPtr           ///< [OUT] user agreement configuration from modem
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -517,12 +554,12 @@ le_result_t pa_avc_SetPollingTimer
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_GetApnConfig
 (
-    char* apnName,
-    size_t apnNameNumElements,
-    char* userName,
-    size_t uNameNumElements,
-    char* userPwd,
-    size_t userPwdNumElements
+    char* apnName,                      ///< [OUT] APN name string
+    size_t apnNameNumElements,          ///< [IN]  Buffer size
+    char* userName,                     ///< [OUT] User name string
+    size_t uNameNumElements,            ///< [IN]  Buffer size
+    char* userPwd,                      ///< [OUT] Password string
+    size_t userPwdNumElements           ///< [IN]  Buffer size
 )
 {
     LE_ERROR("Unsupported function called");
@@ -543,9 +580,9 @@ le_result_t pa_avc_GetApnConfig
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_avc_SetApnConfig
 (
-    const char* apnName,
-    const char* userName,
-    const char* userPwd
+    const char* apnName,                ///< [IN] APN name string
+    const char* userName,               ///< [IN] User name string
+    const char* userPwd                 ///< [IN] Password string
 )
 {
     LE_ERROR("Unsupported function called");

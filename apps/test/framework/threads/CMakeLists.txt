@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 set(APP_COMPONENT threadTest)
@@ -16,6 +16,8 @@ add_legato_executable(${APP_TARGET} ${APP_SOURCES})
 
 add_test(${APP_TARGET} ${EXECUTABLE_OUTPUT_PATH}/${APP_TARGET})
 
+add_dependencies(tests_c ${APP_TARGET})
+
 set(APP_TARGET testFwThreadLimit)
 set(APP_SOURCES
     limit.c
@@ -24,3 +26,6 @@ set(APP_SOURCES
 add_legato_executable(${APP_TARGET} ${APP_SOURCES})
 
 add_test(${APP_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/limit.sh ${EXECUTABLE_OUTPUT_PATH}/${APP_TARGET})
+
+# This is a C test
+add_dependencies(tests_c ${APP_TARGET})

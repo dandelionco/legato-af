@@ -1,6 +1,6 @@
 version: 0.1.0
 sandboxed: true
-start: auto
+start: manual
 
 executables:
 {
@@ -20,17 +20,44 @@ processes:
     }
 
     faultAction: restart
+    #if ${LEGATO_SERVICES_WDOG_DISABLE} = 1
+        watchdogTimeout: never
+    #else
+        watchdogTimeout: 120000
+    #endif
 }
 
 requires:
 {
+#if ${LEGATO_FEATURE_SPISVC} = ""
+#else
+    kernelModules:
+    {
+        $LEGATO_ROOT/drivers/spisvc/spisvc.mdef
+    }
+#endif
+
     device:
     {
+#if ${SPI_PRIMARY_BUS} = ""
         [rw] /dev/spidev0.0 /dev/
+#else
+        [rw] /dev/spidev${SPI_PRIMARY_BUS}.0 /dev/
+#endif
+
+#if ${SPI_SECONDARY_BUS} = ""
+#else
+        [rw] /dev/spidev${SPI_SECONDARY_BUS}.0 /dev/
+#endif
     }
 }
 
 extern:
 {
     spiService.spiService.le_spi
+}
+
+bindings:
+{
+    spiService.watchdogChain.le_wdog -> <root>.le_wdog
 }

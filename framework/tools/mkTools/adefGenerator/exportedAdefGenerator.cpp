@@ -8,68 +8,6 @@
 
 #include "mkTools.h"
 
-
-
-namespace std
-{
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Explicit specialization of the template std::less.  This is for use in the collection
- * std::set<FileSystemObject_t*>.
- **/
-//--------------------------------------------------------------------------------------------------
-template <>
-struct less<model::FileSystemObject_t*>
-{
-    //----------------------------------------------------------------------------------------------
-    /**
-     * Function call operator that handles the actual comparisons of the object.
-     *
-     * @return true if a is < b, false otherwise.
-     **/
-    //----------------------------------------------------------------------------------------------
-    bool operator ()
-    (
-        model::FileSystemObject_t* const& a,
-        model::FileSystemObject_t* const& b
-    )
-    const
-    //----------------------------------------------------------------------------------------------
-    {
-        // Test srcPath, is a < b?
-
-        if (a->srcPath < b->srcPath)
-        {
-            return true;
-        }
-        else if (a->srcPath > b->srcPath)
-        {
-            return false;
-        }
-
-        // srcPath is equal, so test destPath.
-
-        if (a->destPath < b->destPath)
-        {
-            return true;
-        }
-        else if (a->destPath > b->destPath)
-        {
-            return false;
-        }
-
-        // destPath is equal, so test the permissions.
-
-        return a->permissions < b->permissions;
-    }
-};
-
-
-}  // namespace std
-
-
 namespace adefGen
 {
 
@@ -79,7 +17,7 @@ namespace
 
 
 // Type mapping std collections to our types to make referring to them easier.
-typedef std::set<model::FileSystemObject_t*> FsObjectSet_t;
+typedef model::FileObjectPtrSet_t FsObjectSet_t;
 typedef std::list<model::FileSystemObject_t*> FsObjectList_t;
 
 typedef std::list<model::Process_t*> ProcessList_t;
@@ -106,13 +44,13 @@ struct RequiredFsObject_t
 //--------------------------------------------------------------------------------------------------
 /**
  * Structure for recording the FS objects that have been bundled in with the application.
- .
  **/
 //--------------------------------------------------------------------------------------------------
 struct BundledFsObject_t
 {
     FsObjectSet_t files;
     FsObjectSet_t dirs;
+    FsObjectSet_t binaries;
 };
 
 
@@ -154,7 +92,7 @@ enum class RemapSrc_t
 template <typename ValueType_t>
 static bool GenerateValue
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const std::string& name,
     const ValueType_t& value,
     const std::string& indent = ""
@@ -183,7 +121,7 @@ static bool GenerateValue
 template <>
 bool GenerateValue
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const std::string& name,
     const std::string& value,
     const std::string& indent
@@ -211,7 +149,7 @@ bool GenerateValue
 template <>
 bool GenerateValue
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const std::string& name,
     const bool& value,
     const std::string& indent
@@ -231,7 +169,7 @@ bool GenerateValue
 //--------------------------------------------------------------------------------------------------
 static void GenerateBasicInfo
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -246,6 +184,7 @@ static void GenerateBasicInfo
     GenerateValue(defStream, "sandboxed", appPtr->isSandboxed);
     GenerateValue(defStream, "watchdogAction", appPtr->watchdogAction);
     GenerateValue(defStream, "watchdogTimeout", appPtr->watchdogTimeout);
+    GenerateValue(defStream, "maxWatchdogTimeout", appPtr->maxWatchdogTimeout);
     GenerateValue(defStream, "cpuShare", appPtr->cpuShare);
     GenerateValue(defStream, "maxFileSystemBytes", appPtr->maxFileSystemBytes);
     GenerateValue(defStream, "maxMemoryBytes", appPtr->maxMemoryBytes);
@@ -260,7 +199,7 @@ static void GenerateBasicInfo
                      "groups:\n"
                      "{\n";
 
-        for (auto group : appPtr->groups)
+        for (auto const &group : appPtr->groups)
         {
             defStream << "    " << group << "\n";
         }
@@ -277,7 +216,7 @@ static void GenerateBasicInfo
 //--------------------------------------------------------------------------------------------------
 static void GenerateConfigPermissions
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const ConfigPermissionMap_t& configTrees
 )
 //--------------------------------------------------------------------------------------------------
@@ -312,7 +251,7 @@ static void GenerateConfigPermissions
 //--------------------------------------------------------------------------------------------------
 static void GenerateFsObjectItem
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::FileSystemObject_t& item,
     WritePerm_t writePermissions
 )
@@ -340,7 +279,7 @@ static void GenerateFsObjectItem
 //--------------------------------------------------------------------------------------------------
 static void GenerateFsObjectItems
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const std::string& sectionName,
     const FsObjectSet_t& items,
     WritePerm_t writePermissions
@@ -372,9 +311,9 @@ static void GenerateFsObjectItems
 //--------------------------------------------------------------------------------------------------
 static void GenerateRequiresSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     model::App_t* appPtr,
-    RequiredFsObject_t required
+    RequiredFsObject_t& required
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -398,9 +337,9 @@ static void GenerateRequiresSection
 //--------------------------------------------------------------------------------------------------
 static void GenerateBundlesSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     model::App_t* appPtr,
-    BundledFsObject_t bundled
+    const BundledFsObject_t& bundled
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -408,6 +347,7 @@ static void GenerateBundlesSection
                  "bundles:\n"
                  "{";
 
+    GenerateFsObjectItems(defStream, "binary", bundled.binaries, WritePerm_t::Yes);
     GenerateFsObjectItems(defStream, "file", bundled.files, WritePerm_t::Yes);
     GenerateFsObjectItems(defStream, "dir", bundled.dirs, WritePerm_t::No);
 
@@ -422,7 +362,7 @@ static void GenerateBundlesSection
 //--------------------------------------------------------------------------------------------------
 static bool GenerateEnvVars
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const std::map<std::string, std::string>& envVars
 )
 //--------------------------------------------------------------------------------------------------
@@ -436,7 +376,7 @@ static bool GenerateEnvVars
     defStream << "    envVars:\n"
                  "    {\n";
 
-    for (auto envVar : envVars)
+    for (auto const &envVar : envVars)
     {
         defStream << "        " << envVar.first << " = \"" << envVar.second << "\"\n";
     }
@@ -454,7 +394,7 @@ static bool GenerateEnvVars
 //--------------------------------------------------------------------------------------------------
 static void GenerateRunSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const ProcessList_t& processes
 )
 //--------------------------------------------------------------------------------------------------
@@ -511,7 +451,7 @@ static void GenerateRunSection
 //--------------------------------------------------------------------------------------------------
 static void GenerateProcessesSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -538,6 +478,7 @@ static void GenerateProcessesSection
         w |= GenerateValue(defStream, "maxFileDescriptors", procEnv->maxFileDescriptors, ind);
         w |= GenerateValue(defStream, "watchdogAction", procEnv->watchdogAction, ind);
         w |= GenerateValue(defStream, "watchdogTimeout", procEnv->watchdogTimeout, ind);
+        w |= GenerateValue(defStream, "maxWatchdogTimeout", procEnv->maxWatchdogTimeout, ind);
         w |= GenerateValue(defStream, "priority", procEnv->GetStartPriority(), ind);
         w |= GenerateValue(defStream, "maxPriority", procEnv->GetMaxPriority(), ind);
 
@@ -567,7 +508,7 @@ static void GenerateProcessesSection
 template <typename ApiObject_t>
 static void GenerateApiUsage
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const std::string& apiAlias,
     ApiObject_t apiObject,
     bool isOptional = false
@@ -601,25 +542,30 @@ static void GenerateApiUsage
  * Generate an API requirement for a component interface that has been bound to an external source.
  **/
 //--------------------------------------------------------------------------------------------------
-static void GenerateExternComponentApiUsage
+static bool GenerateExternComponentApiUsage
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::ComponentInstance_t* componentInstPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
+    bool generatedCode = false;
+
     for (auto clientApiInstPtr : componentInstPtr->clientApis)
     {
         auto bindingPtr = clientApiInstPtr->bindingPtr;
 
         if (bindingPtr->serverType != model::Binding_t::INTERNAL)
         {
+            generatedCode = true;
             GenerateApiUsage(defStream,
                              bindingPtr->clientIfName,
                              clientApiInstPtr,
                              clientApiInstPtr->ifPtr->optional);
         }
     }
+
+    return generatedCode;
 }
 
 
@@ -633,35 +579,37 @@ static void GenerateExternComponentApiUsage
 //--------------------------------------------------------------------------------------------------
 static bool GenerateExternRequiresSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
-    if (appPtr->externClientInterfaces.empty())
-    {
-        return false;
-    }
-
-    defStream << "    requires:\n"
-                 "    {\n";
+    bool generatedCode = false;
+    std::stringstream substream;
 
     for (auto mapItem : appPtr->executables)
     {
         for (auto componentInstPtr : mapItem.second->componentInstances)
         {
-            GenerateExternComponentApiUsage(defStream, componentInstPtr);
+            generatedCode |= GenerateExternComponentApiUsage(substream, componentInstPtr);
         }
     }
 
     for (auto mapItem : appPtr->externClientInterfaces)
     {
-        GenerateApiUsage(defStream, mapItem.first, mapItem.second, mapItem.second->ifPtr->optional);
+        GenerateApiUsage(substream, mapItem.first, mapItem.second, mapItem.second->ifPtr->optional);
+        generatedCode = true;
     }
 
-    defStream << "    }\n";
+    if (generatedCode)
+    {
+        defStream << "    requires:\n"
+                     "    {\n"
+                  << substream.str()
+                  << "    }\n";
+    }
 
-    return true;
+    return generatedCode;
 }
 
 
@@ -672,7 +620,7 @@ static bool GenerateExternRequiresSection
 //--------------------------------------------------------------------------------------------------
 static void GenerateExternProvidesSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -702,7 +650,7 @@ static void GenerateExternProvidesSection
 //--------------------------------------------------------------------------------------------------
 static void GenerateExternSection
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -729,7 +677,7 @@ static void GenerateExternSection
 //--------------------------------------------------------------------------------------------------
 static void GenerateBinding
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::Binding_t* bindingPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -760,7 +708,7 @@ static void GenerateBinding
 //--------------------------------------------------------------------------------------------------
 static void GenerateBindings
 (
-    std::ofstream& defStream,
+    std::ostream& defStream,
     const model::App_t* appPtr
 )
 //--------------------------------------------------------------------------------------------------
@@ -782,45 +730,148 @@ static void GenerateBindings
     defStream << "}\n";
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get staging path for an app
+ */
+static std::string GetStagingPath
+(
+    const model::App_t* appPtr
+)
+{
+    path::Path_t stagingPath = "$builddir";
+    stagingPath += appPtr->workingDir;
+    stagingPath += "staging";
+
+    return stagingPath.str;
+}
+
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Append one list of FS objects to another.
- **/
+ * Make the source of a file system object the object's location in the staging directory.
+ */
 //--------------------------------------------------------------------------------------------------
-static void FsSetAppend
+static std::shared_ptr<model::FileSystemObject_t> MakeSourceStaging
 (
-    FsObjectSet_t& dest,
-    const FsObjectList_t& src,
-    RemapSrc_t remap
+    const std::shared_ptr<model::FileSystemObject_t> originalFilePtr
 )
-//--------------------------------------------------------------------------------------------------
 {
-    for (auto item : src)
+    auto dirName = (originalFilePtr->permissions.IsWriteable()?"writeable":"read-only");
+
+    return std::make_shared<model::FileSystemObject_t>(path::Combine(path::Combine(".",dirName),
+                                                                     originalFilePtr->destPath),
+                                                       originalFilePtr->destPath,
+                                                       originalFilePtr->permissions);
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Gather up the bundled FS objects from the app
+ */
+//--------------------------------------------------------------------------------------------------
+static void GatherBundledFsObjects
+(
+    const model::App_t* appPtr,
+    BundledFsObject_t& bundled
+)
+{
+    std::transform(appPtr->bundledFiles.begin(), appPtr->bundledFiles.end(),
+                   inserter(bundled.files, bundled.files.end()),
+                   MakeSourceStaging);
+    std::transform(appPtr->bundledDirs.begin(), appPtr->bundledDirs.end(),
+                   inserter(bundled.dirs, bundled.dirs.end()),
+                   MakeSourceStaging);
+
+    for (auto componentPtr : appPtr->components)
     {
-        if (remap == RemapSrc_t::Yes)
+        std::transform(componentPtr->bundledFiles.begin(), componentPtr->bundledFiles.end(),
+                       inserter(bundled.files, bundled.files.end()),
+                       MakeSourceStaging);
+        std::transform(componentPtr->bundledDirs.begin(), componentPtr->bundledDirs.end(),
+                       inserter(bundled.dirs, bundled.dirs.end()),
+                       MakeSourceStaging);
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Gather a single binary from an application.
+ */
+//--------------------------------------------------------------------------------------------------
+static void GatherBinary
+(
+    std::string binaryPath,
+    std::string stagingPath,
+    BundledFsObject_t& bundled
+)
+{
+    // Binaries are always read-only
+    auto stagingPrefix = stagingPath + "read-only/";
+
+    if (binaryPath.compare(0, stagingPrefix.length(), stagingPrefix) != 0)
+    {
+        // Internal error
+        throw mk::Exception_t(
+            mk::format(LE_I18N("INTERNAL ERROR: Executable file '%s' is outside the"
+                               " staging directory '%s'."),
+                       binaryPath, stagingPrefix)
+        );
+    }
+
+    auto basePath = binaryPath.substr(stagingPrefix.length() - 1);
+    auto newPath = std::string(".") + binaryPath.substr(stagingPath.length() - 1);
+
+    bundled.binaries.insert(
+        std::make_shared<model::FileSystemObject_t>(newPath,
+                                                    basePath,
+                                                    model::Permissions_t(true, /* r */
+                                                                         false, /* !w */
+                                                                         true /* x */)));
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Gather up the binaries from an application.
+ *
+ * Although these are included on the target they are never added to the bundled files list.
+ */
+//--------------------------------------------------------------------------------------------------
+static void GatherBinaries
+(
+    const model::App_t* appPtr,
+    BundledFsObject_t& bundled,
+    const mk::BuildParams_t& buildParams
+)
+{
+    auto stagingPath = GetStagingPath(appPtr) + "/";
+
+    for (auto mapItem : appPtr->executables)
+    {
+        auto exePtr = mapItem.second;
+        auto exeName = exePtr->name;
+        if (exePtr->hasJavaCode)
         {
-            std::string dirName;
-
-            if (item->permissions.IsWriteable())
-            {
-                dirName = "writeable";
-            }
-            else
-            {
-                dirName = "read-only";
-            }
-
-            dest.insert(new model::FileSystemObject_t
-                        {
-                            "./" + dirName + item->destPath,
-                            item->destPath,
-                            item->permissions
-                        });
+            exeName += ".jar";
         }
-        else
+        auto exePath = "$builddir/" + appPtr->workingDir + "/staging/read-only/bin/" + exeName;
+        GatherBinary(exePath,
+                     stagingPath,
+                     bundled);
+    }
+
+    stagingPath = path::Combine(buildParams.workingDir, "staging") + "/";
+    for (auto componentPtr : appPtr->components)
+    {
+        auto libPath = componentPtr->getTargetInfo<target::LinuxComponentInfo_t>()->lib;
+        if (!libPath.empty())
         {
-            dest.insert(item);
+            GatherBinary(libPath,
+                         stagingPath,
+                         bundled);
         }
     }
 }
@@ -828,91 +879,22 @@ static void FsSetAppend
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Gather up the required/bundled FS objects for a single component and it's sub-components.
- **/
+ * Gather up the required FS objects from the app
+ */
 //--------------------------------------------------------------------------------------------------
-static void GatherFsObjects
+static void GatherRequiredFsObjects
 (
-    const model::Component_t* componentPtr,
-    RequiredFsObject_t& required,
-    BundledFsObject_t& bundled
-);
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Gather up all the required/bundled FS objects for a component collection.
- **/
-//--------------------------------------------------------------------------------------------------
-template <typename CollectionType_t>
-static void GatherFsObjectsFromComponents
-(
-    const CollectionType_t& components,
-    RequiredFsObject_t& required,
-    BundledFsObject_t& bundled
+    const model::App_t* appPtr,
+    RequiredFsObject_t& required
 )
-//--------------------------------------------------------------------------------------------------
 {
-    for (auto component : components)
-    {
-        GatherFsObjects(component, required, bundled);
-    }
+    std::copy(appPtr->requiredFiles.begin(), appPtr->requiredFiles.end(),
+              std::inserter(required.files, required.files.end()));
+    std::copy(appPtr->requiredDirs.begin(), appPtr->requiredDirs.end(),
+              std::inserter(required.dirs, required.dirs.end()));
+    std::copy(appPtr->requiredDevices.begin(), appPtr->requiredDevices.end(),
+              std::inserter(required.devices, required.devices.end()));
 }
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Gather up the required/bundled FS objects for a given application or component object.
- **/
-//--------------------------------------------------------------------------------------------------
-template <typename ModelObject_t>
-static void AppendFromModelObject
-(
-    const ModelObject_t* modelObjectPtr,
-    RequiredFsObject_t& required,
-    BundledFsObject_t& bundled
-)
-//--------------------------------------------------------------------------------------------------
-{
-    FsSetAppend(required.files, modelObjectPtr->requiredFiles, RemapSrc_t::No);
-    FsSetAppend(required.dirs, modelObjectPtr->requiredDirs, RemapSrc_t::No);
-    FsSetAppend(required.devices, modelObjectPtr->requiredDevices, RemapSrc_t::No);
-
-    FsSetAppend(bundled.files, modelObjectPtr->bundledFiles, RemapSrc_t::Yes);
-    FsSetAppend(bundled.dirs, modelObjectPtr->bundledDirs, RemapSrc_t::Yes);
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Gather up the required/bundled FS objects for a given component and it's subcomponents.
- **/
-//--------------------------------------------------------------------------------------------------
-static void GatherFsObjects
-(
-    const model::Component_t* componentPtr,
-    RequiredFsObject_t& required,
-    BundledFsObject_t& bundled
-)
-//--------------------------------------------------------------------------------------------------
-{
-    AppendFromModelObject(componentPtr, required, bundled);
-    GatherFsObjectsFromComponents(componentPtr->subComponents, required, bundled);
-
-    if (!componentPtr->lib.empty())
-    {
-        size_t pos = componentPtr->lib.find("read-only/lib/");
-        std::string newPath = path::Combine(".", componentPtr->lib.substr(pos));
-
-        model::Permissions_t perm;
-
-        perm.SetReadable();
-        perm.SetExecutable();
-
-        bundled.files.insert(new model::FileSystemObject_t { newPath, "/lib/", perm });
-    }
-}
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -923,27 +905,14 @@ static void GatherFsObjects
 (
     const model::App_t* appPtr,
     RequiredFsObject_t& required,
-    BundledFsObject_t& bundled
+    BundledFsObject_t& bundled,
+    const mk::BuildParams_t& buildParams
 )
 //--------------------------------------------------------------------------------------------------
 {
-    AppendFromModelObject(appPtr, required, bundled);
-    GatherFsObjectsFromComponents(appPtr->components, required, bundled);
-
-    for (auto exeIter : appPtr->executables)
-    {
-        model::Exe_t* exePtr = exeIter.second;
-
-        size_t pos = exePtr->path.find("read-only/bin/");
-        std::string newPath = path::Combine(".", exePtr->path.substr(pos));
-
-        model::Permissions_t perm;
-
-        perm.SetReadable();
-        perm.SetExecutable();
-
-        bundled.files.insert(new model::FileSystemObject_t { newPath, "/bin/", perm });
-    }
+    GatherBundledFsObjects(appPtr, bundled);
+    GatherRequiredFsObjects(appPtr, required);
+    GatherBinaries(appPtr, bundled, buildParams);
 }
 
 
@@ -977,7 +946,7 @@ void GenerateExportedAdef
     RequiredFsObject_t required;
     BundledFsObject_t bundled;
 
-    GatherFsObjects(appPtr, required, bundled);
+    GatherFsObjects(appPtr, required, bundled, buildParams);
 
     GenerateBasicInfo(defStream, appPtr);
     GenerateRequiresSection(defStream, appPtr, required);
@@ -985,6 +954,7 @@ void GenerateExportedAdef
     GenerateProcessesSection(defStream, appPtr);
     GenerateExternSection(defStream, appPtr);
     GenerateBindings(defStream, appPtr);
+
 }
 
 

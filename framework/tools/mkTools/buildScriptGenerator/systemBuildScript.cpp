@@ -6,7 +6,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -16,6 +16,7 @@
 #include "appBuildScript.h"
 #include "moduleBuildScript.h"
 #include "componentBuildScript.h"
+#include "systemBuildScript.h"
 
 namespace ninja
 {
@@ -27,10 +28,9 @@ namespace ninja
  * Generate comment header for a system build script.
  */
 //--------------------------------------------------------------------------------------------------
-static void GenerateCommentHeader
+void SystemBuildScriptGenerator_t::GenerateCommentHeader
 (
-    std::ofstream& script,  ///< Build script to write the variable definition to.
-    const model::System_t* systemPtr
+    model::System_t* systemPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -46,21 +46,18 @@ static void GenerateCommentHeader
  * Generate system-specific build rules.
  */
 //--------------------------------------------------------------------------------------------------
-static void GenerateSystemBuildRules
+void SystemBuildScriptGenerator_t::GenerateSystemBuildRules
 (
-    std::ofstream& script,
-    const model::System_t* systemPtr
+    model::System_t* systemPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
-    // Generate build rule for creating a system update pack.
+    // Generate build rule for creating system info.properties.
     // This must be run if any of the apps have changed (which will show up in a change to their
     // info.properties) or if the users.cfg has changed.
-    // $out is the system update file to generate.
-    // $in is a list of all the app update packs to include in the system.
     script <<
-    "rule PackSystem\n"
-    "  description = Packaging system\n"
+    "rule MakeSystemInfoProperties\n"
+    "  description = Creating system info.properties\n"
     "  command = $\n"
 
     // Copy the framework bin and lib directories into the system's staging area.
@@ -71,10 +68,18 @@ static void GenerateSystemBuildRules
     "            find $$LEGATO_ROOT/build/$target/framework/lib/* -type d -prune -o"
                        " \\( -type f -o -type l \\) -print | xargs cp -P -t $stagingDir/lib && $\n"
 
+    // Copy liblegato Python files into the system's staging area.
+    // cd in a subshell is used because it allows us to use the --parents option to recreate the
+    // relative directory structure inside $stagingDir. Without cd, --parents would reproduce the
+    // full path relative to LEGATO_ROOT, while we want it relative to lib/
+    "            (cd $$LEGATO_ROOT/build/$target/framework/lib/ ; "
+    "             find . -path './*/site-packages/*'"
+    "             -exec cp -P --parents -t $$LEGATO_ROOT/$stagingDir/lib/ {} \\; ; ) && $\n"
+
     // Create modules directory and copy kernel modules into it
     "            mkdir -p $stagingDir/modules && $\n"
-    "            if [ -d $$LEGATO_ROOT/build/$target/system/modules ] ; then $\n"
-    "                find $$LEGATO_ROOT/build/$target/system/modules/*/*.ko -print"
+    "            if [ -d $builddir/modules ] ; then $\n"
+    "                find $builddir/modules/*/*.ko -print"
                           "| xargs cp -P -t $stagingDir/modules ; $\n"
     "            fi && $\n"
 
@@ -123,15 +128,15 @@ static void GenerateSystemBuildRules
 
     script <<
     // Delete the old info.properties file, if there is one.
-    "            rm -f $stagingDir/info.properties && $\n"
+    "            rm -f $out && $\n"
 
     // Compute the MD5 checksum of the staging area.
     // Don't follow symlinks (-P), and include the directory structure and the contents of symlinks
     // as part of the MD5 hash.
     "            md5=$$( ( cd $stagingDir && $\n"
-    "                      find -P | sort && $\n"
-    "                      find -P -type f | sort | xargs cat && $\n"
-    "                      find -P -type l | sort | xargs -r -n 1 readlink $\n"
+    "                      find -P -print0 |LC_ALL=C sort -z && $\n"
+    "                      find -P -type f -print0 |LC_ALL=C sort -z |xargs -0 md5sum && $\n"
+    "                      find -P -type l -print0 |LC_ALL=C sort -z |xargs -0 -r -n 1 readlink $\n"
     "                    ) | md5sum) && $\n"
     "            md5=$${md5%% *} && $\n"
 
@@ -142,13 +147,26 @@ static void GenerateSystemBuildRules
     // Generate the system's info.properties file.
     "            ( echo \"system.name=" << systemPtr->name << "\" && $\n"
     "              echo \"system.md5=$$md5\" $\n"
-    "            ) > $stagingDir/info.properties && $\n"
-
+    "            ) > $out && $\n"
     // Generate the system's version file
-    "            printf '%s\\n' \"$$version\" > $stagingDir/version && $\n"
+    "            printf '%s\\n' \"$$version\" > $stagingDir/version\n"
+    "\n";
 
-    // Pack the system's staging area into a compressed tarball in the working directory.
-    "            tar cjf $builddir/" << systemPtr->name << ".$target -C $stagingDir . && $\n"
+    // New generate the unsigned system package
+    // $out is the system update file to generate.
+    // $in is a list of all the app update packs to include in the system.
+    script <<
+    "rule PackSystem\n"
+    "  description = Packaging system\n"
+    "  command = $\n"
+    // Change all file time stamp to generate reproducible build. Can't use gnu tar --mtime option
+    // as it is not available in other tar (e.g bsdtar)
+    "            mtime=`stat -c %Y " << systemPtr->defFilePtr->path <<"` && $\n"
+    "            find $stagingDir -exec touch  --no-dereference --date=@$$mtime {} \\; && $\n"
+    // Pack the system's staging area into a compressed tarball.
+    "           (cd $stagingDir && find . -print0 | LC_ALL=C sort -z"
+                                 " |tar --no-recursion --null -T -"
+                                 " -cjf - ) > $builddir/"<< systemPtr->name <<".$target && $\n"
 
     // Get the size of the tarball.
     "            tarballSize=`stat -c '%s' $builddir/" << systemPtr->name << ".$target` && $\n"
@@ -167,6 +185,90 @@ static void GenerateSystemBuildRules
     "              cat $in $\n"
     "            ) > $out\n"
     "\n";
+
+    if (buildParams.signPkg)
+    {
+
+        // Generate the signed system update package
+        script <<
+        "rule PackSignedSystem\n"
+        "  description = Signing and packaging system\n"
+        "  command = rm -rf $stagingDir.signed ; mkdir $stagingDir.signed && "
+                    "cp -r $stagingDir/* $stagingDir.signed/ && $\n"
+        "            cp " << buildParams.pubCert << " $stagingDir.signed/ima_pub.cert  && $\n"
+        // Remove the contents inside apps directory as we need to recreate the symlinks again
+        "            rm -rf $stagingDir.signed/apps/* && $\n";
+
+        // Create symlinks inside the system's "apps" directory that point to the apps actual
+        // install location on target (under /legato/apps/).
+        for (auto& mapEntry : systemPtr->apps)
+        {
+            auto appPtr = mapEntry.second;
+            std::string appInfoFile = "$builddir/app/" + appPtr->name +
+                                       "/staging.signed/info.properties";
+            std::string symLink = "$stagingDir.signed/apps/" + appPtr->name;
+
+            // If the app is "preloaded" on the target and its MD5 is specified in the .sdef file,
+            // then "hard code" the specified MD5 into the build script.
+            // Otherwise, extract the app's MD5 hash from the info.properties file.
+            if (appPtr->isPreloaded && !appPtr->preloadedMd5.empty())
+            {
+                script <<
+                "            md5=" << appPtr->preloadedMd5 << " && $\n";
+            }
+            else
+            {
+                script <<
+                "            md5=`grep '^app.md5=' " << appInfoFile
+                             << " | sed 's/^app.md5=//'` && $\n";
+            }
+
+            // Add a symlink to /legato/apps/$HASH from staging/system/apps/appName.
+            script <<
+            "            ln -sf /legato/apps/$$md5 " << symLink << " && $\n";
+        }
+
+        script <<
+        // Recompute the MD5 checksum of the staging area.
+        // Don't follow symlinks (-P), and include the directory structure and the contents
+        // of symlinks as part of the MD5 hash.
+        "            md5signed=$$( ( cd $stagingDir.signed && $\n"
+        "                      find -P -print0 |LC_ALL=C sort -z && $\n"
+        "                      find -P -type f -print0 |LC_ALL=C sort -z |xargs -0 md5sum && $\n"
+        "                      find -P -type l -print0 |LC_ALL=C sort -z "
+                               "|xargs -0 -r -n 1 readlink $\n"
+        "                    ) | md5sum) && $\n"
+        "            md5signed=$${md5signed%% *} && $\n"
+        // Get the systems's MD5 hash from its info.properties file and replace with signed one
+        "            md5=`grep '^system.md5=' $stagingDir.signed/info.properties | "
+                                                          "sed 's/^system.md5=//'` && $\n"
+        "            sed -i \"s/$$md5/$$md5signed/g\" $stagingDir.signed/info.properties && $\n"
+        // Change all file time stamp to generate reproducible build. Can't use gnu tar --mtime
+        // option as it is not available in other tar (e.g bsdtar)
+        "            mtime=`stat -c %Y " << systemPtr->defFilePtr->path <<"` && $\n"
+        "            find $stagingDir.signed -exec touch  --no-dereference "
+                    "--date=@$$mtime {} \\; && $\n"
+        // No need to recompute the md5 hash again as it is used for app/system version and
+        // enable signing shouldn't change the app/system version.
+        // Require signing image. Sign the staging area and create tarball
+        "            "<< baseGeneratorPtr->GetPathEnvVarDecl() << " && $\n"
+        "            fakeroot ima-sign.sh --sign -y legato -d $stagingDir.signed -t $builddir/"
+        << systemPtr->name << ".signed.$target" << " -p "  << buildParams.privKey << " && $\n" <<
+        // Get the size of the tarball.
+        "            tarballSize=`stat -c '%s' $builddir/" << systemPtr->name
+        << ".signed.$target` && $\n"
+        // Generate a JSON header and concatenate the tarball and all the app update packs to it
+        // to create the system update pack.
+        "            ( printf '{\\n' && $\n"
+        "              printf '\"command\":\"updateSystem\",\\n' && $\n"
+        "              printf '\"md5\":\"%s\",\\n' \"$$md5signed\" && $\n"
+        "              printf '\"size\":%s\\n' \"$$tarballSize\" && $\n"
+        "              printf '}' && $\n"
+        "              cat $builddir/" << systemPtr->name << ".signed.$target && $\n"
+        "              cat $in $\n"
+        "            ) > $out\n"
+        "\n";
+    }
 }
 
 
@@ -175,23 +277,25 @@ static void GenerateSystemBuildRules
  * Write to a given script the build statements for packing up everything into a system udpate pack.
  **/
 //--------------------------------------------------------------------------------------------------
-static void GenerateSystemPackBuildStatement
+void SystemBuildScriptGenerator_t::GenerateSystemPackBuildStatement
 (
-    std::ofstream& script,
-    const model::System_t* systemPtr,
-    const mk::BuildParams_t& buildParams,
-    const std::string& outputDir    ///< Path to the directory into which the bundle will be put.
+    model::System_t* systemPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
     // Generate build statement for zipping up the staging area into a system bundle.
-    // This depends on the system's info.properties file, which is the last thing to be added to
-    // the system's staging area.
-    auto outputFile = path::MakeAbsolute(path::Combine(outputDir,
-                                                       systemPtr->name + ".$target.update"));
-    script << "build " << outputFile << ": PackSystem";
+    // Build the system staging area by adding framework binaries, app symlink and generate
+    // system info.properties file which is the last thing to be added to the system staging dir.
+
+    // Compute the info.properties file path.
+    std::string infoPropertiesPath = "$stagingDir/info.properties";
+
+    // Generate build statement for generating the info.properties file.
+    script << "build " << infoPropertiesPath << " : MakeSystemInfoProperties |";
 
     // Input to this is the app update packs to be included in the system update pack.
+    std::string sysAppsUpdates = " ";
+
     for (auto& mapEntry : systemPtr->apps)
     {
         auto appPtr = mapEntry.second;
@@ -200,12 +304,14 @@ static void GenerateSystemPackBuildStatement
         {
             auto& appName = appPtr->name;
 
-            script << " $builddir/app/" << appName << "/" << appName << ".$target.update";
+            sysAppsUpdates += " $builddir/app/" + appName + "/" + appName + ".$target.update";
         }
     }
 
+    script << sysAppsUpdates;
+
     // This also must be run if the users.cfg has changed.
-    script << " | $builddir/staging/config/users.cfg";
+    script << " $builddir/staging/config/users.cfg";
 
     // It must also be run again if any preloaded apps have changed.
     for (auto& mapEntry : systemPtr->apps)
@@ -220,19 +326,67 @@ static void GenerateSystemPackBuildStatement
         }
     }
 
-    // Also re-package system if any module binaries changed.
+    // Also recompute info.properties if any module binaries changed.
     for (auto& mapEntry : systemPtr->modules)
     {
         auto modulePtr = mapEntry.second;
 
-        script << " $builddir/" << modulePtr->objFilePtr->path;
+        for (auto const& it: modulePtr->koFiles)
+        {
+            script << " $builddir/" << it.second->path;
+        }
+        for (auto filePath : modulePtr->getTargetInfo<target::FileSystemInfo_t>()->allBundledFiles)
+        {
+            script << " " << filePath.destPath;
+        }
     }
 
     // This must also be done again if any of the Legato framework daemons or on-target
     // tools has changed.  We can detect that by checking the "md5" file in the framework's
     // build directory.
     script << " " << path::Combine(envVars::Get("LEGATO_ROOT"), "build/$target/framework/md5")
+           << "\n"
            << "\n";
+
+    // Now package the system
+    auto outputFile = path::MakeAbsolute(path::Combine(buildParams.outputDir,
+                                                       systemPtr->name + ".$target.update"));
+    script << "build " << outputFile << ": PackSystem " << sysAppsUpdates << " | "
+           << infoPropertiesPath << "\n"
+           "\n";
+
+    if (buildParams.signPkg)
+    {
+        // Now create the signed system package.
+        auto outputFileSigned = path::MakeAbsolute(path::Combine(buildParams.outputDir,
+                                                                 systemPtr->name +
+                                                                 ".$target.signed.update"));
+        script << "build " << outputFileSigned << ": PackSignedSystem";
+
+        // Input to this is the app update packs to be included in the system update pack.
+        for (auto& mapEntry : systemPtr->apps)
+        {
+            auto appPtr = mapEntry.second;
+
+            if (appPtr->isPreloaded == false)
+            {
+                auto& appName = appPtr->name;
+
+                script << " $builddir/app/" << appName << "/" << appName
+                       << ".$target.signed.update";
+            }
+        }
+
+        // This must be run if the public certificate has been changed. No need to include private
+        // key in dependency as public and private key come in pair. Must run if system staging
+        // directory info.properties has been changed.
+        script << " | "  << buildParams.pubCert << " " << infoPropertiesPath << "\n"
+               "\n";
+
+        // No need to check kernel module, cfg file, preloaded app  or md5 change as it is already
+        // taken care by while generating info.properties.
+
+    }
 }
 
 
@@ -241,11 +395,9 @@ static void GenerateSystemPackBuildStatement
  * Write to a given build script the build statements for the build script itself.
  **/
 //--------------------------------------------------------------------------------------------------
-static void GenerateNinjaScriptBuildStatement
+void SystemBuildScriptGenerator_t::GenerateNinjaScriptBuildStatement
 (
-    std::ofstream& script,
-    const model::System_t* systemPtr,
-    const std::string& filePath     ///< Path to the build.ninja file.
+    model::System_t* systemPtr
 )
 //--------------------------------------------------------------------------------------------------
 {
@@ -302,57 +454,50 @@ static void GenerateNinjaScriptBuildStatement
     // It also depends on changes to the mk tools.
     dependencies.insert(path::Combine(envVars::Get("LEGATO_ROOT"), "build/tools/mk"));
 
-    // Generate a build statement for the build.ninja.
-    script << "build " << filePath << ": RegenNinjaScript | ";
-    for (auto dep : dependencies)
-    {
-        script << " " << dep;
-    }
-    script << "\n\n";
+    baseGeneratorPtr->GenerateNinjaScriptBuildStatement(dependencies);
 }
-
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Generate build script for the system.
- **/
+ * Generate build rules required for a system
+ */
 //--------------------------------------------------------------------------------------------------
-void Generate
+void SystemBuildScriptGenerator_t::GenerateBuildRules
 (
-    const model::System_t* systemPtr,
-    const mk::BuildParams_t& buildParams,
-    const std::string& outputDir,   ///< Path to the directory where the built system will be put.
-    int argc,           ///< Count of the number of command line parameters.
-    const char** argv   ///< Pointer to array of pointers to command line argument strings.
+    model::System_t* systemPtr
 )
-//--------------------------------------------------------------------------------------------------
 {
-    std::string filePath = path::Minimize(buildParams.workingDir + "/build.ninja");
+    appGeneratorPtr->GenerateBuildRules();
+    GenerateSystemBuildRules(systemPtr);
+}
 
-    std::ofstream script;
-    OpenFile(script, filePath, buildParams.beVerbose);
-
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate build script for system
+ */
+//--------------------------------------------------------------------------------------------------
+void SystemBuildScriptGenerator_t::Generate
+(
+    model::System_t* systemPtr
+)
+{
     // Start the script with a comment
-    GenerateCommentHeader(script, systemPtr);
+    GenerateCommentHeader(systemPtr);
 
     // Add file-level variable definitions.
     std::string includes;
+    includes = " -I " + buildParams.workingDir;
     for (const auto& dir : buildParams.interfaceDirs)
     {
         includes += " -I" + dir;
     }
-    script << "builddir = " << buildParams.workingDir << "\n\n";
+    script << "builddir = " << path::MakeAbsolute(buildParams.workingDir) << "\n\n";
     script << "stagingDir = " << path::Combine(buildParams.workingDir, "staging") << "\n\n";
     script << "cFlags = " << buildParams.cFlags << includes << "\n\n";
     script << "cxxFlags = " << buildParams.cxxFlags << includes << "\n\n";
     script << "ldFlags = " << buildParams.ldFlags << "\n\n";
     script << "target = " << buildParams.target << "\n\n";
-    GenerateIfgenFlagsDef(script, buildParams.interfaceDirs);
-
-    // Add a set of generic rules.
-    GenerateBuildRules(script, buildParams.target, argc, argv);
-    GenerateAppBuildRules(script);
-    GenerateSystemBuildRules(script, systemPtr);
+    GenerateBuildRules(systemPtr);
 
     // If we are not just generating code,
     if (!buildParams.codeGenOnly)
@@ -362,7 +507,7 @@ void Generate
         {
             auto modulePtr = mapEntry.second;
 
-            GenerateBuildStatements(script, modulePtr, buildParams);
+            moduleGeneratorPtr->GenerateBuildStatements(modulePtr);
         }
 
         // For each app built by the mk tools for this system,
@@ -371,30 +516,45 @@ void Generate
             auto appPtr = mapEntry.second;
 
             // Generate build statements for the app's executables.
-            GenerateExeBuildStatements(script, appPtr, buildParams);
+            appGeneratorPtr->GenerateExeBuildStatements(appPtr);
 
             // Generate build statements for bundling files into the app's staging area.
             auto appWorkingDir = "$builddir/" + appPtr->workingDir;
-            GenerateAppBundleBuildStatement(script, appPtr, buildParams, appWorkingDir);
+            appGeneratorPtr->GenerateAppBundleBuildStatement(appPtr, appWorkingDir);
         }
 
         // For each component in the system.
         for (auto& mapEntry : model::Component_t::GetComponentMap())
         {
-            GenerateBuildStatements(script, mapEntry.second, buildParams);
+            componentGeneratorPtr->GenerateBuildStatements(mapEntry.second);
+            componentGeneratorPtr->GenerateIpcBuildStatements(mapEntry.second);
         }
 
         // Generate build statement for packing everything into a system update pack.
-        GenerateSystemPackBuildStatement(script, systemPtr, buildParams, outputDir);
+        GenerateSystemPackBuildStatement(systemPtr);
     }
 
-    // Add build statements for all the IPC interfaces' generated files.
-    GenerateIpcBuildStatements(script, buildParams);
-
     // Add a build statement for the build.ninja file itself.
-    GenerateNinjaScriptBuildStatement(script, systemPtr, filePath);
+    GenerateNinjaScriptBuildStatement(systemPtr);
+}
 
-    CloseFile(script);
+//--------------------------------------------------------------------------------------------------
+/**
+ * Generate build script for the system.
+ **/
+//--------------------------------------------------------------------------------------------------
+void Generate
+(
+    model::System_t* systemPtr,
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    std::string filePath = path::Minimize(buildParams.workingDir + "/build.ninja");
+
+    SystemBuildScriptGenerator_t systemGenerator(filePath, buildParams);
+
+    systemGenerator.Generate(systemPtr);
 }
 
 

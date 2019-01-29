@@ -1,7 +1,7 @@
 /**
  * This module implements the integration tests for AT commands client API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -86,6 +86,11 @@ COMPONENT_INIT
     if (le_arg_NumArgs() == 1)
     {
         phoneNumber = le_arg_GetArg(0);
+        if (NULL == phoneNumber)
+        {
+            LE_ERROR("phoneNumber is NULL");
+            exit(EXIT_FAILURE);
+        }
     }
     else
     {
@@ -95,6 +100,7 @@ COMPONENT_INIT
         exit(EXIT_FAILURE);
     }
 
+    //! [DeviceBinding]
     //! [binding]
     int fd = open("/dev/ttyAT", O_RDWR | O_NOCTTY | O_NONBLOCK);
 
@@ -123,6 +129,8 @@ COMPONENT_INIT
     LE_ASSERT(le_atClient_SetDevice(cmdRef, DevRef) == LE_OK);
     LE_ASSERT(le_atClient_SetCommand(cmdRef, "AT+CGSN") == LE_OK);
     LE_ASSERT(le_atClient_SetFinalResponse(cmdRef, "OK|ERROR|+CME ERROR") == LE_OK);
+    //! [DeviceBinding]
+
     LE_ASSERT(le_atClient_Send(cmdRef) == LE_OK);
     LE_ASSERT(le_atClient_GetFinalResponse( cmdRef,buffer, LE_ATDEFS_RESPONSE_MAX_BYTES) == LE_OK);
     LE_INFO("final rsp: %s", buffer);
@@ -234,5 +242,6 @@ COMPONENT_INIT
     //! [delete]
     LE_ASSERT(le_atClient_Delete(cmdRef) == LE_OK);
     //! [delete]
-
+    // Close the fd
+    close(fd);
 }

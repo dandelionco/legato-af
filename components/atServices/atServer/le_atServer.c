@@ -2,12 +2,15 @@
  *
  * Implementation of AT commands server API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
 #include "interfaces.h"
 #include "le_dev.h"
+#include "bridge.h"
+#include "le_atServer_local.h"
+#include "watchdogChain.h"
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -15,12 +18,6 @@
  */
 //--------------------------------------------------------------------------------------------------
 #define ERR_MSG_MAX 256
-//--------------------------------------------------------------------------------------------------
-/**
- * Max length of thread name
- */
-//--------------------------------------------------------------------------------------------------
-#define THREAD_NAME_MAX_LENGTH  30
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -52,12 +49,17 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Command responses types
+ * User-defined error strings pool size
  */
 //--------------------------------------------------------------------------------------------------
-#define RSP_TYPE_OK         0
-#define RSP_TYPE_ERROR      1
-#define RSP_TYPE_RESPONSE   2
+#define USER_ERROR_POOL_SIZE       50
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Number of standard error strings defined in 3GPP TS 27.007 9.2 and 3GPP TS 27.005 3.2.5
+ */
+//--------------------------------------------------------------------------------------------------
+#define STD_ERROR_CODE_SIZE       512
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -114,13 +116,6 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Is character a letter ?
- */
-//--------------------------------------------------------------------------------------------------
-#define IS_CHAR(X)              ((X>='A')&&(X<='Z'))||((X>='a')&&(X<='z')) /*[A-Z]||[a-z]*/
-
-//--------------------------------------------------------------------------------------------------
-/**
  * Is character '&' ?
  */
 //--------------------------------------------------------------------------------------------------
@@ -135,6 +130,13 @@
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Is basic syntax command ?
+ */
+//--------------------------------------------------------------------------------------------------
+#define IS_BASIC(X)           (IS_CHAR(X) || IS_AND(X) || IS_SLASH(X))
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Is character expected as a parameter ?
  */
 //--------------------------------------------------------------------------------------------------
@@ -143,6 +145,68 @@
                                     IS_PLUS_OR_MINUS(X) || \
                                     IS_HEXA(X) || \
                                     IS_BETWEEN_A_AND_F(X) )
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Text prompt definition.
+ */
+//--------------------------------------------------------------------------------------------------
+#define TEXT_PROMPT         "\r\n> "
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Text prompt len.
+ */
+//--------------------------------------------------------------------------------------------------
+#define TEXT_PROMPT_LEN     4
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * ASCII substitute control code.
+ */
+//--------------------------------------------------------------------------------------------------
+#define SUBSTITUTE          0x1a
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * ASCII escape code.
+ */
+//--------------------------------------------------------------------------------------------------
+#define ESCAPE              0x1b
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * ASCII line feed code.
+ */
+//--------------------------------------------------------------------------------------------------
+#define NEWLINE             0x0a
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * ASCII backspace code.
+ */
+//--------------------------------------------------------------------------------------------------
+#define BACKSPACE           0x08
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * The timer interval to kick the watchdog chain.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MS_WDOG_INTERVAL 8
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Error codes modes enum
+ */
+//--------------------------------------------------------------------------------------------------
+typedef enum
+{
+    MODE_DISABLED,
+    MODE_EXTENDED,
+    MODE_VERBOSE
+}
+ErrorCodesMode_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -175,13 +239,19 @@ static le_mem_PoolRef_t  RspStringPool;
 
 //--------------------------------------------------------------------------------------------------
 /**
- * The memory pool for EventIdList objects
+ * Pool for user-defined error codes
  */
 //--------------------------------------------------------------------------------------------------
-static le_mem_PoolRef_t EventIdPool;
+static le_mem_PoolRef_t UserErrorPool;
 
 //--------------------------------------------------------------------------------------------------
+/**
+ * Map for user-defined error codes
+ */
+//--------------------------------------------------------------------------------------------------
+static le_ref_MapRef_t UserErrorRefMap;
 
+//--------------------------------------------------------------------------------------------------
 /**
  * Map for devices
  */
@@ -204,25 +274,245 @@ static le_hashmap_Ref_t   CmdHashMap;
 
 //--------------------------------------------------------------------------------------------------
 /**
- * List for all eventId objects
+ * Error codes current mode
  */
 //--------------------------------------------------------------------------------------------------
-static le_dls_List_t    EventIdList;
+static ErrorCodesMode_t ErrorCodesMode = MODE_DISABLED;
 
 //--------------------------------------------------------------------------------------------------
 /**
- * EventIdList structure.
- * Objects use to manage a pool of eventId.
+ * Pre-formatted strings corresponding to AT commands +CME error codes
+ * (see 3GPP TS 27.007 9.2)
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+const char* const CmeErrorCodes[STD_ERROR_CODE_SIZE] =
+{
+    ///< 3GPP TS 27.007 §9.2.1: General errors
+    [0]   =   "Phone failure",
+    [1]   =   "No connection to phone",
+    [2]   =   "Phone-adaptor link reserved",
+    [3]   =   "Operation not allowed",
+    [4]   =   "Operation not supported",
+    [5]   =   "PH-SIM PIN required",
+    [6]   =   "PH-FSIM PIN required",
+    [7]   =   "PH-FSIM PUK required",
+    [10]  =   "SIM not inserted",
+    [11]  =   "SIM PIN required",
+    [12]  =   "SIM PUK required",
+    [13]  =   "SIM failure",
+    [14]  =   "SIM busy",
+    [15]  =   "SIM wrong",
+    [16]  =   "Incorrect password",
+    [17]  =   "SIM PIN2 required",
+    [18]  =   "SIM PUK2 required",
+    [20]  =   "Memory full",
+    [21]  =   "Invalid index",
+    [22]  =   "Not found",
+    [23]  =   "Memory failure",
+    [24]  =   "Text string too long",
+    [25]  =   "Invalid characters in text string",
+    [26]  =   "Dial string too long",
+    [27]  =   "Invalid characters in dial string",
+    [30]  =   "No network service",
+    [31]  =   "Network timeout",
+    [32]  =   "Network not allowed - emergency calls only",
+    [40]  =   "Network personalization PIN required",
+    [41]  =   "Network personalization PUK required",
+    [42]  =   "Network subset personalization PIN required",
+    [43]  =   "Network subset personalization PUK required",
+    [44]  =   "Service provider personalization PIN required",
+    [45]  =   "Service provider personalization PUK required",
+    [46]  =   "Corporate personalization PIN required",
+    [47]  =   "Corporate personalization PUK required",
+    [48]  =   "Hidden key required",
+    [49]  =   "EAP method not supported",
+    [50]  =   "Incorrect parameters",
+    [51]  =   "Command implemented but currently disabled",
+    [52]  =   "Command aborted by user",
+    [53]  =   "Not attached to network due to MT functionality restrictions",
+    [54]  =   "Modem not allowed - MT restricted to emergency calls only",
+    [55]  =   "Operation not allowed because of MT functionality restrictions",
+    [56]  =   "Fixed dial number only allowed - called number is not a fixed dial number",
+    [57]  =   "Temporarily out of service due to other MT usage",
+    [58]  =   "Language/alphabet not supported",
+    [59]  =   "Unexpected data value",
+    [60]  =   "System failure",
+    [61]  =   "Data missing",
+    [62]  =   "Call barred",
+    [63]  =   "Message waiting indication subscription failure",
+    [100] =   "Unknown",
+
+    ///< 3GPP TS 27.007 §9.2.2.1: GPRS and EPS errors related to a failure to perform an attach
+    [103] =   "Illegal MS",
+    [106] =   "Illegal ME",
+    [107] =   "GPRS services not allowed",
+    [108] =   "GPRS services and non-GPRS services not allowed",
+    [111] =   "PLMN not allowed",
+    [112] =   "Location area not allowed",
+    [113] =   "Roaming not allowed in this location area",
+    [114] =   "GPRS services not allowed in this PLMN",
+    [115] =   "No Suitable Cells In Location Area",
+    [122] =   "Congestion",
+    [125] =   "Not authorized for this CSG",
+    [172] =   "Semantically incorrect message",
+    [173] =   "Mandatory information element error",
+    [174] =   "Information element non-existent or not implemented",
+    [175] =   "Conditional IE error",
+    [176] =   "Protocol error, unspecified",
+
+    ///< 3GPP TS 27.007 §9.2.2.2: GPRS and EPS errors related to a failure to activate a context
+    [177] =   "Operator Determined Barring",
+    [126] =   "Insufficient resources",
+    [127] =   "Missing or unknown APN",
+    [128] =   "Unknown PDP address or PDP type",
+    [129] =   "User authentication failed",
+    [130] =   "Activation rejected by GGSN, Serving GW or PDN GW",
+    [131] =   "Activation rejected, unspecified",
+    [132] =   "Service option not supported",
+    [133] =   "Requested service option not subscribed",
+    [134] =   "Service option temporarily out of order",
+    [140] =   "Feature not supported",
+    [141] =   "Semantic error in the TFT operation",
+    [142] =   "Syntactical error in the TFT operation",
+    [143] =   "Unknown PDP context",
+    [144] =   "Semantic errors in packet filter(s)",
+    [145] =   "Syntactical errors in packet filter(s)",
+    [146] =   "PDP context without TFT already activated",
+    [149] =   "PDP authentication failure",
+    [178] =   "Maximum number of PDP contexts reached",
+    [179] =   "Requested APN not supported in current RAT and PLMN combination",
+    [180] =   "Request rejected, Bearer Control Mode violation",
+    [181] =   "Unsupported QCI value",
+
+    ///< 3GPP TS 27.007 §9.2.2.2: GPRS and EPS errors related to a failure to disconnect a PDN
+    [171] =   "Last PDN disconnection not allowed",
+
+    ///< 3GPP TS 27.007 §9.2.2.4: Other GPRS errors
+    [148] =   "Unspecified GPRS error",
+    [150] =   "Invalid mobile class",
+    [182] =   "User data transmission via control plane is congested",
+
+    ///< 3GPP TS 27.007 §9.2.3: VBS, VGCS and eMLPP-related errors
+    [151] =   "VBS/VGCS not supported by the network",
+    [152] =   "No service subscription on SIM",
+    [153] =   "No subscription for group ID",
+    [154] =   "Group Id not activated on SIM",
+    [155] =   "No matching notification",
+    [156] =   "VBS/VGCS call already present",
+    [157] =   "Congestion",
+    [158] =   "Network failure",
+    [159] =   "Uplink busy",
+    [160] =   "No access rights for SIM file",
+    [161] =   "No subscription for priority",
+    [162] =   "Operation not applicable or not possible",
+    [163] =   "Group Id prefixes not supported",
+    [164] =   "Group Id prefixes not usable for VBS",
+    [165] =   "Group Id prefix value invalid",
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Pre-formatted strings corresponding to AT commands +CMS error codes
+ * (see 3GPP TS 27.005 3.2.5, 3GPP TS 24.011 E-2 and 3GPP TS 23.040 9.2.3.22)
+ *
+ */
+const char* const CmsErrorCodes[STD_ERROR_CODE_SIZE] =
+{
+    ///< 3GPP TS 24.011 §E-2:  RP-cause definition mobile originating SM-transfer
+    [1]    = "Unassigned (unallocated) number",
+    [8]    =  "Operator determined barring",
+    [10]   = "Call barred",
+    [21]   = "Short message transfer rejected",
+    [27]   = "Destination out of service",
+    [28]   = "Unidentified subscriber",
+    [29]   = "Facility rejected",
+    [30]   = "Unknown subscriber",
+    [38]   = "Network out of order",
+    [41]   = "Temporary failure",
+    [42]   = "Congestion",
+    [47]   = "Resources unavailable, unspecified",
+    [50]   = "Requested facility not subscribed",
+    [69]   = "Requested facility not implemented",
+    [81]   = "Invalid short message transfer reference value",
+    [95]   = "Invalid message, unspecified",
+    [96]   = "Invalid mandatory information",
+    [97]   = "Message type non-existent or not implemented",
+    [98]   = "Message not compatible with short message protocol state",
+    [99]   = "Information element non-existent or not implemented",
+    [111]  = "Protocol error, unspecified",
+    [17]   = "Network failure",
+    [22]   = "Congestion",
+    [127]  = "Interworking, unspecified",
+
+    ///< 3GPP TS 23.040 §9.2.3.22: TP-Failure-Cause
+    [128]   = "Telematic interworking not supported",
+    [129]   = "Short message Type 0 not supported",
+    [130]   = "Cannot replace short message",
+    [143]   = "Unspecified TP-PID error",
+    [144]   = "Data coding scheme (alphabet) not supported",
+    [145]   = "Message class not supported",
+    [159]   = "Unspecified TP-DCS error",
+    [160]   = "Command cannot be actioned",
+    [161]   = "Command unsupported",
+    [175]   = "Unspecified TP-Command error",
+    [176]   = "TPDU not supported",
+    [192]   = "SC busy",
+    [193]   = "No SC subscription",
+    [194]   = "SC system failure ",
+    [195]   = "Invalid SME address",
+    [196]   = "Destination SME barred",
+    [197]   = "SM Rejected-Duplicate SM",
+    [198]   = "TP-VPF not supported",
+    [199]   = "TP-VP not supported",
+    [208]   = "(U)SIM SMS storage full",
+    [209]   = "No SMS storage capability in (U)SIM",
+    [210]   = "Error in MS",
+    [211]   = "Memory Capacity Exceeded",
+    [212]   = "(U)SIM Application Toolkit Busy",
+    [213]   = "(U)SIM data download error",
+    [255]   = "Unspecified error cause",
+
+    ///< 3GPP TS 27.005 §3.2.5: Message service failure errors
+    [300] =   "ME failure",
+    [301] =   "SMS service of ME reserved",
+    [302] =   "Operation not allowed",
+    [303] =   "Operation not supported",
+    [304] =   "Invalid PDU mode parameter",
+    [305] =   "Invalid text mode parameter",
+    [310] =   "(U)SIM not inserted",
+    [311] =   "(U)SIM PIN required",
+    [312] =   "PH-(U)SIM PIN required",
+    [313] =   "(U)SIM failure",
+    [314] =   "(U)SIM busy",
+    [315] =   "(U)SIM wrong",
+    [316] =   "(U)SIM PUK required",
+    [317] =   "(U)SIM PIN2 required",
+    [318] =   "(U)SIM PUK2 required",
+    [320] =   "Memory failure",
+    [321] =   "Invalid memory index",
+    [322] =   "Memory full",
+    [330] =   "SMSC address unknown",
+    [331] =   "No network service",
+    [332] =   "Network timeout",
+    [340] =   "No +CNMA acknowledgement expected",
+    [500] =   "Unknown error",
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Structure used to hold user-defined error codes
  *
  */
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    le_event_Id_t   eventId; ///< the eventId
-    bool            isUsed;  ///< is it used?
-    le_dls_Link_t   link;    ///< link for eventIdList
+    le_atServer_ErrorCodeRef_t ref;                                      ///< Ref of the error code
+    uint32_t                   errorCode;                                ///< Error code identifier
+    char                       pattern[LE_ATDEFS_RESPONSE_MAX_BYTES];    ///< Response prefix
+    char                       verboseMsg[LE_ATDEFS_RESPONSE_MAX_BYTES]; ///< Verbose message
 }
-EventIdList_t;
+UserErrorCode_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -272,16 +562,16 @@ RxParserState_t;
 //--------------------------------------------------------------------------------------------------
 typedef enum
 {
-    AT_PARSE_CMDNAME,
-    AT_PARSE_EQUAL,
-    AT_PARSE_QUESTIONMARK,
-    AT_PARSE_COMMA,
-    AT_PARSE_SEMICOLON,
-    AT_PARSE_BASIC,
-    AT_PARSE_BASIC_PARAM,
-    AT_PARSE_BASIC_END,
-    AT_PARSE_LAST,
-    AT_PARSE_MAX
+    PARSE_CMDNAME,
+    PARSE_EQUAL,
+    PARSE_QUESTIONMARK,
+    PARSE_COMMA,
+    PARSE_SEMICOLON,
+    PARSE_BASIC,
+    PARSE_BASIC_PARAM,
+    PARSE_BASIC_END,
+    PARSE_LAST,
+    PARSE_MAX
 }
 CmdParserState_t;
 
@@ -302,6 +592,22 @@ RspState_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Text processing state.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef enum
+{
+    CONTINUE,
+    END_OF_LINE,
+    CANCEL,
+    INVALID_CHARACTER,
+    INVALID_SEQUENCE,
+}
+TextProcessingState_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Subscribed AT Command structure.
  *
  */
@@ -310,14 +616,18 @@ typedef struct
 {
     le_atServer_CmdRef_t    cmdRef;                                 ///< cmd refrence
     char                    cmdName[LE_ATDEFS_COMMAND_MAX_BYTES];   ///< Command to send
-    le_event_Id_t           eventId;
     le_atServer_AvailableDevice_t availableDevice;                  ///< device to send unsol rsp
     le_atServer_Type_t      type;                                   ///< cmd type
     le_dls_List_t           paramList;                              ///< parameters list
     bool                    processing;                             ///< is command processing
     le_atServer_DeviceRef_t deviceRef;                              ///< device refrence
+    bool                    bridgeCmd;                              ///< is command created by the
+                                                                    ///< AT bridge
     le_msg_SessionRef_t     sessionRef;                             ///< session reference
-    bool                    handlerExists;
+    bool                    isDialCommand;                          ///< specific dial command
+    le_atServer_CommandHandlerFunc_t handlerFunc;                   ///< Handler associated with the
+                                                                    ///< AT command
+    void*                   handlerContextPtr;                      ///< client handler context
 }
 ATCmdSubscribed_t;
 
@@ -332,11 +642,14 @@ typedef struct
     char                    foundCmd[LE_ATDEFS_COMMAND_MAX_LEN];    ///< cmd found in input string
     RxParserState_t         rxState;                                ///< input string parser state
     CmdParserState_t        cmdParser;                              ///< cmd parser state
-    CmdParserState_t        lastCmdParserState;
-    char*                   currentAtCmdPtr;
-    char*                   currentCharPtr;
-    char*                   lastCharPtr;
-    ATCmdSubscribed_t*      currentCmdPtr;
+    CmdParserState_t        lastCmdParserState;                     ///< previous cmd parser state
+    char*                   currentAtCmdPtr;                        ///< current AT cmd position
+                                                                    ///< in foundCmd buffer
+    char*                   currentCharPtr;                         ///< current parsing position
+                                                                    ///< in foundCmd buffer
+    char*                   lastCharPtr;                            ///< last received character
+                                                                    ///< position in foundCmd buffer
+    ATCmdSubscribed_t*      currentCmdPtr;                          ///< current command context
 }
 CmdParser_t;
 
@@ -348,11 +661,32 @@ CmdParser_t;
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    le_atServer_FinalRsp_t  final;
-    bool                    customStringAvailable;
-    char                    resp[LE_ATDEFS_RESPONSE_MAX_BYTES];  ///< string value
+    le_atServer_FinalRsp_t final;                                 ///< Final result code
+    uint32_t               errorCode;                             ///< Final error code
+    char                   pattern[LE_ATDEFS_RESPONSE_MAX_BYTES]; ///< Prefix to the return string
+    bool                   customStringAvailable;                 ///< Custom string available(kept
+                                                                  ///  for legacy purpose)
+    char                   resp[LE_ATDEFS_RESPONSE_MAX_BYTES];    ///< Response string
 }
 FinalRsp_t;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Text structure definition.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    bool                                mode;                           ///< Is text mode
+    ssize_t                             offset;                         ///< Buffer offset
+    char                                buf[LE_ATDEFS_TEXT_MAX_BYTES];  ///< Text buffer
+    le_atServer_GetTextCallbackFunc_t   callback;                       ///< Callback function
+    void*                               ctxPtr;                         ///< Context
+    le_atServer_CmdRef_t                cmdRef;                         ///< Received AT command
+    le_result_t                         result;                         ///< Text processing result
+}
+Text_t;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -362,19 +696,26 @@ FinalRsp_t;
 //--------------------------------------------------------------------------------------------------
 typedef struct
 {
-    Device_t                device;             ///< data of the connected device
-    le_atServer_DeviceRef_t ref;                ///< reference of the device context
-    char                    currentCmd[LE_ATDEFS_COMMAND_MAX_LEN];
-    uint32_t                indexRead;
-    uint32_t                parseIndex;
-    CmdParser_t             cmdParser;
-    FinalRsp_t              finalRsp;
-    bool                    processing;         ///< is device peocessed?
-    le_dls_List_t           unsolicitedList;
-    bool                    isFirstIntermediate;
-    RspState_t              rspState;
-    le_msg_SessionRef_t     sessionRef;         ///< session reference
-    bool                    suspended;          /// is device in data mode?
+    Device_t                device;                               ///< data of the connected device
+    le_atServer_DeviceRef_t ref;                                  ///< reference of the device
+    char                    currentCmd[LE_ATDEFS_COMMAND_MAX_LEN];///< input buffer
+    uint32_t                indexRead;                            ///< last read character position
+                                                                  ///< in currentCmd
+    uint32_t                parseIndex;                           ///< current index in currentCmd
+    CmdParser_t             cmdParser;                            ///< parsing context
+    FinalRsp_t              finalRsp;                             ///< final response to be sent
+    bool                    processing;                           ///< is an AT command in progress
+                                                                  ///< on the device
+    le_dls_List_t           unsolicitedList;                      ///< unsolicited list to be sent
+                                                                  ///< when the AT command will be
+                                                                  ///< over
+    bool                    isFirstIntermediate;                  ///< is first intermediate sent
+    RspState_t              rspState;                             ///< sending response state
+    le_atServer_BridgeRef_t bridgeRef;                            ///< bridge reference
+    le_msg_SessionRef_t     sessionRef;                           ///< session reference
+    bool                    suspended;                            ///< is device in data mode
+    bool                    echo;                                 ///< is echo enabled
+    Text_t                  text;                                 ///< text data
 }
 DeviceContext_t;
 
@@ -385,193 +726,114 @@ DeviceContext_t;
  */
 //--------------------------------------------------------------------------------------------------
 typedef le_result_t (*CmdParserFunc_t)(CmdParser_t* cmdParserPtr);
-static le_result_t AtPArserTypeTest(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserError(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserContinue(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserParam(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserEqual(CmdParser_t* cmdParserPtr);
-static le_result_t AtPArserTypeRead(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserParam(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserSemicolon(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserLastChar(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserBasic(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserBasicEnd(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserNone(CmdParser_t* cmdParserPtr);
-static le_result_t AtParserBasicParam(CmdParser_t* cmdParserPtr);
+static le_result_t ParseTypeTest(CmdParser_t* cmdParserPtr);
+static le_result_t ParseError(CmdParser_t* cmdParserPtr);
+static le_result_t ParseContinue(CmdParser_t* cmdParserPtr);
+static le_result_t ParseParam(CmdParser_t* cmdParserPtr);
+static le_result_t ParseEqual(CmdParser_t* cmdParserPtr);
+static le_result_t ParseTypeRead(CmdParser_t* cmdParserPtr);
+static le_result_t ParseParam(CmdParser_t* cmdParserPtr);
+static le_result_t ParseSemicolon(CmdParser_t* cmdParserPtr);
+static le_result_t ParseLastChar(CmdParser_t* cmdParserPtr);
+static le_result_t ParseBasic(CmdParser_t* cmdParserPtr);
+static le_result_t ParseBasicEnd(CmdParser_t* cmdParserPtr);
+static le_result_t ParseNone(CmdParser_t* cmdParserPtr);
+static le_result_t ParseBasicParam(CmdParser_t* cmdParserPtr);
 static void ParseAtCmd(DeviceContext_t* devPtr);
 
-CmdParserFunc_t CmdParserTab[AT_PARSE_MAX][AT_PARSE_MAX] =
+CmdParserFunc_t CmdParserTab[PARSE_MAX][PARSE_MAX] =
 {
-/*AT_PARSE_CMDNAME*/        {   AtParserContinue,                   /*AT_PARSE_CMDNAME*/
-                                AtParserEqual,                      /*AT_PARSE_EQUAL*/
-                                AtPArserTypeRead,                   /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserSemicolon,                  /*AT_PARSE_SEMICOLON*/
-                                AtParserBasic,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserLastChar                    /*AT_PARSE_LAST*/
-                            },
-/*AT_PARSE_EQUAL*/          {   AtParserError,                      /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtPArserTypeTest,                   /*AT_PARSE_QUESTIONMARK*/
-                                AtParserParam,                      /*AT_PARSE_COMMA*/
-                                AtParserError,                      /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserNone                        /*AT_PARSE_LAST*/
-                            },
-/*AT_PARSE_QUESTIONMARK*/   {   AtParserBasicEnd,                   /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtParserError,                      /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserSemicolon,                  /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserNone                        /*AT_PARSE_LAST*/
-                            },
-/*AT_PARSE_COMMA*/          {   AtParserError,                      /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtParserError,                      /*AT_PARSE_QUESTIONMARK*/
-                                AtParserParam,                      /*AT_PARSE_COMMA*/
-                                AtParserSemicolon,                  /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserNone                        /*AT_PARSE_LAST*/
-                            },
-/*AT_PARSE_SEMICOLON*/      {   AtParserContinue,                   /*AT_PARSE_CMDNAME*/
-                                AtParserSemicolon,                  /*AT_PARSE_EQUAL*/
-                                AtParserError,                      /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserError,                      /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserNone                        /*AT_PARSE_LAST*/
-                            },
-/* AT_PARSE_BASIC */        {   AtParserContinue,                   /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtPArserTypeRead,                   /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserSemicolon,                  /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserBasicParam,                 /*AT_PARSE_BASIC_PARAM*/
-                                AtParserBasicEnd,                   /*AT_PARSE_BASIC_END*/
-                                AtParserNone                       /*AT_PARSE_LAST*/
-                            },
-/* AT_PARSE_BASIC_PARAM */  {   AtParserError,                      /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtPArserTypeRead,                   /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserSemicolon,                  /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserBasicParam,                 /*AT_PARSE_BASIC_PARAM*/
-                                AtParserBasicEnd,                   /*AT_PARSE_BASIC_END*/
-                                AtParserError                       /*AT_PARSE_LAST*/
-                            },
-/* AT_PARSE_BASIC_END */    {   AtParserError,                      /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtParserError,                      /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserError,                      /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserNone                        /*AT_PARSE_LAST*/
-                            },
-/* AT_PARSE_LAST  */        {   AtParserContinue,                   /*AT_PARSE_CMDNAME*/
-                                AtParserError,                      /*AT_PARSE_EQUAL*/
-                                AtParserError,                      /*AT_PARSE_QUESTIONMARK*/
-                                AtParserError,                      /*AT_PARSE_COMMA*/
-                                AtParserError,                      /*AT_PARSE_SEMICOLON*/
-                                AtParserError,                      /*AT_PARSE_BASIC*/
-                                AtParserError,                      /*AT_PARSE_BASIC_PARAM*/
-                                AtParserError,                      /*AT_PARSE_BASIC_END*/
-                                AtParserNone                        /*AT_PARSE_LAST*/
-                            }
+/*PARSE_CMDNAME*/        {   ParseContinue,                   /*PARSE_CMDNAME*/
+                             ParseEqual,                      /*PARSE_EQUAL*/
+                             ParseTypeRead,                   /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseSemicolon,                  /*PARSE_SEMICOLON*/
+                             ParseBasic,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseLastChar                    /*PARSE_LAST*/
+                         },
+/*PARSE_EQUAL*/          {   ParseError,                      /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseTypeTest,                   /*PARSE_QUESTIONMARK*/
+                             ParseParam,                      /*PARSE_COMMA*/
+                             ParseError,                      /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         },
+/*PARSE_QUESTIONMARK*/   {   ParseBasicEnd,                   /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseError,                      /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseSemicolon,                  /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         },
+/*PARSE_COMMA*/          {   ParseError,                      /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseError,                      /*PARSE_QUESTIONMARK*/
+                             ParseParam,                      /*PARSE_COMMA*/
+                             ParseSemicolon,                  /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         },
+/*PARSE_SEMICOLON*/      {   ParseContinue,                   /*PARSE_CMDNAME*/
+                             ParseSemicolon,                  /*PARSE_EQUAL*/
+                             ParseError,                      /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseError,                      /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         },
+/* PARSE_BASIC */        {   ParseContinue,                   /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseTypeRead,                   /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseSemicolon,                  /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseBasicParam,                 /*PARSE_BASIC_PARAM*/
+                             ParseBasicEnd,                   /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         },
+/* PARSE_BASIC_PARAM */  {   ParseError,                      /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseTypeRead,                   /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseSemicolon,                  /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseBasicParam,                 /*PARSE_BASIC_PARAM*/
+                             ParseBasicEnd,                   /*PARSE_BASIC_END*/
+                             ParseError                       /*PARSE_LAST*/
+                         },
+/* PARSE_BASIC_END */    {   ParseError,                      /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseError,                      /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseError,                      /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         },
+/* PARSE_LAST  */        {   ParseContinue,                   /*PARSE_CMDNAME*/
+                             ParseError,                      /*PARSE_EQUAL*/
+                             ParseError,                      /*PARSE_QUESTIONMARK*/
+                             ParseError,                      /*PARSE_COMMA*/
+                             ParseError,                      /*PARSE_SEMICOLON*/
+                             ParseError,                      /*PARSE_BASIC*/
+                             ParseError,                      /*PARSE_BASIC_PARAM*/
+                             ParseError,                      /*PARSE_BASIC_END*/
+                             ParseNone                        /*PARSE_LAST*/
+                         }
 };
-
-//--------------------------------------------------------------------------------------------------
-/**
- * This function finds or creates an eventId into the EventIdList
- *
- */
-//--------------------------------------------------------------------------------------------------
-static le_event_Id_t GetEventId
-(
-    void
-)
-{
-    EventIdList_t*      currentPtr=NULL;
-    le_dls_Link_t*      linkPtr = le_dls_Peek(&EventIdList);
-    char                eventIdName[24];
-    int32_t             eventIdIdx = 1;
-
-    while (linkPtr!=NULL)
-    {
-        currentPtr = CONTAINER_OF(linkPtr,
-                                  EventIdList_t,
-                                  link);
-
-        if (!currentPtr->isUsed)
-        {
-            LE_DEBUG("Found one unused eventId (%p)", currentPtr->eventId);
-            currentPtr->isUsed = true;
-            return currentPtr->eventId;
-        }
-        linkPtr = le_dls_PeekNext(&EventIdList,linkPtr);
-
-        eventIdIdx++;
-    }
-
-    snprintf(eventIdName, sizeof(eventIdName), "atCmd-%d", eventIdIdx);
-
-    currentPtr = le_mem_ForceAlloc(EventIdPool);
-    currentPtr->eventId = le_event_CreateId(eventIdName, sizeof(ATCmdSubscribed_t*));
-    currentPtr->isUsed = true;
-    currentPtr->link = LE_DLS_LINK_INIT;
-
-    le_dls_Queue(&EventIdList, &(currentPtr->link));
-
-    LE_DEBUG("Create a new eventId (%p)", currentPtr->eventId);
-
-    return currentPtr->eventId;
-}
-
-//--------------------------------------------------------------------------------------------------
-/**
- * This function releases an eventId from the EventIdList
- *
- */
-//--------------------------------------------------------------------------------------------------
-static void ReleaseEventId
-(
-    le_event_Id_t eventId
-)
-{
-    le_dls_Link_t* linkPtr = le_dls_Peek(&EventIdList);
-
-    while (linkPtr!=NULL)
-    {
-        EventIdList_t* currentPtr = CONTAINER_OF(linkPtr,
-                                                    EventIdList_t,
-                                                    link);
-
-        if (currentPtr->eventId == eventId)
-        {
-            LE_DEBUG("Found eventId to release (%p)", currentPtr->eventId);
-            currentPtr->isUsed = false;
-            return;
-        }
-        linkPtr = le_dls_PeekNext(&EventIdList,linkPtr);
-    }
-
-    LE_DEBUG("could not found eventId to release");
-    return;
-}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -601,9 +863,6 @@ static void AtCmdPoolDestructor
         le_mem_Release(paramPtr);
     }
 
-    // release eventID
-    ReleaseEventId(cmdPtr->eventId);
-
     le_ref_DeleteRef(SubscribedCmdRefMap, cmdPtr->cmdRef);
 }
 
@@ -616,41 +875,102 @@ static void AtCmdPoolDestructor
 static void SendRspString
 (
     DeviceContext_t* devPtr,
-    uint8_t rspType,
     const char* rspPtr
 )
 {
-    char string[LE_ATDEFS_RESPONSE_MAX_BYTES+4];
+    char string[LE_ATDEFS_RESPONSE_MAX_BYTES+4] = {0};
 
-    memset(string,0,LE_ATDEFS_RESPONSE_MAX_BYTES+4);
-
-    switch (rspType)
+    if ((devPtr->rspState == AT_RSP_FINAL) || (devPtr->rspState == AT_RSP_UNSOLICITED) ||
+        ((devPtr->rspState == AT_RSP_INTERMEDIATE) && devPtr->isFirstIntermediate))
     {
-        case RSP_TYPE_OK:
-            snprintf(string,LE_ATDEFS_RESPONSE_MAX_BYTES,"\r\nOK\r\n");
-            break;
-        case RSP_TYPE_ERROR:
-            snprintf(string,LE_ATDEFS_RESPONSE_MAX_BYTES,"\r\nERROR\r\n");
-            break;
-        case RSP_TYPE_RESPONSE:
-            if ( (devPtr->rspState == AT_RSP_FINAL) ||
-                (devPtr->rspState == AT_RSP_UNSOLICITED) ||
-                ((devPtr->rspState == AT_RSP_INTERMEDIATE) &&
-                    devPtr->isFirstIntermediate) )
-            {
-                snprintf(string, LE_ATDEFS_RESPONSE_MAX_BYTES+4, \
-                    "\r\n%s\r\n", rspPtr);
-                devPtr->isFirstIntermediate = false;
-            }
-            else
-            {
-                snprintf(string, LE_ATDEFS_RESPONSE_MAX_BYTES+2, \
-                    "%s\r\n", rspPtr);
-            }
-            break;
+        snprintf(string, LE_ATDEFS_RESPONSE_MAX_BYTES+4, "\r\n%s\r\n", rspPtr);
+        devPtr->isFirstIntermediate = false;
+    }
+    else
+    {
+        snprintf(string, LE_ATDEFS_RESPONSE_MAX_BYTES+2, "%s\r\n", rspPtr);
     }
 
     le_dev_Write(&devPtr->device, (uint8_t*)string, strlen(string));
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the pointer of a custom error code using its error code and pattern
+ *
+ * @return
+  *      - UserErrorCode_t Pointer to the error code, NULL if it doesn't exist
+ */
+//--------------------------------------------------------------------------------------------------
+static UserErrorCode_t* GetCustomErrorCode
+(
+    uint32_t errorCode,
+         ///< [IN] Numerical error code
+
+    const char* patternPtr
+        ///< [IN] Prefix of the final response string
+)
+{
+    le_ref_IterRef_t iter;
+    UserErrorCode_t* errorCodePtr = NULL;
+
+    if (NULL == patternPtr)
+    {
+        return NULL;
+    }
+
+    iter = le_ref_GetIterator(UserErrorRefMap);
+    while (LE_OK == le_ref_NextNode(iter))
+    {
+        errorCodePtr = (UserErrorCode_t*)le_ref_GetValue(iter);
+        if (errorCodePtr)
+        {
+            if ((errorCode == errorCodePtr->errorCode) &&
+                (0 == strncmp(patternPtr, errorCodePtr->pattern, sizeof(errorCodePtr->pattern))))
+            {
+                return errorCodePtr;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get standard verbose message code
+ *
+ * @return
+ *      - char* pointer to the verbose message
+ *      - NULL if unable to retreive a verbose message
+ */
+//--------------------------------------------------------------------------------------------------
+static const char* GetStdVerboseMsg
+(
+    uint32_t errorCode,
+         ///< [IN] Numerical error code
+
+    const char* patternPtr
+        ///< [IN] Prefix of the final response string
+)
+{
+    if (errorCode >= STD_ERROR_CODE_SIZE)
+    {
+        return NULL;
+    }
+
+    if (0 == strcmp(patternPtr, LE_ATDEFS_CME_ERROR))
+    {
+        return CmeErrorCodes[errorCode];
+    }
+
+    if (0 == strcmp(patternPtr, LE_ATDEFS_CMS_ERROR))
+    {
+        return CmsErrorCodes[errorCode];
+    }
+
+    LE_DEBUG("Not a standard pattern");
+    return NULL;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -664,25 +984,123 @@ static void SendFinalRsp
     DeviceContext_t* devPtr
 )
 {
+    UserErrorCode_t* errorCodePtr;
+    size_t patternLength = 0;
+
     devPtr->rspState = AT_RSP_FINAL;
 
-    if (devPtr->finalRsp.customStringAvailable)
+    // This check is kept for legacy purposes since le_atServer_SendFinalResponse() is deprecated
+    // but still in use
+    if (devPtr->finalRsp.customStringAvailable && (MODE_DISABLED != ErrorCodesMode))
     {
-        SendRspString(devPtr, RSP_TYPE_RESPONSE, devPtr->finalRsp.resp);
-    }
-    else
-    {
-        switch (devPtr->finalRsp.final)
-        {
-            case LE_ATSERVER_OK:
-                SendRspString(devPtr, RSP_TYPE_OK, "");
-            break;
-            default:
-                SendRspString(devPtr, RSP_TYPE_ERROR, "");
-            break;
-        }
+        LE_DEBUG("Custom string mode");
+        SendRspString(devPtr, devPtr->finalRsp.resp);
+        goto end_processing;
     }
 
+    patternLength = strnlen(devPtr->finalRsp.pattern, sizeof(devPtr->finalRsp.pattern));
+
+    // This check is kept for legacy compatibility with old API. When a pattern is introducted
+    // and the final response is not an error, we use it as a custom string
+    if ((LE_ATSERVER_ERROR != devPtr->finalRsp.final) && patternLength)
+    {
+        SendRspString(devPtr, devPtr->finalRsp.pattern);
+        goto end_processing;
+    }
+
+    switch (devPtr->finalRsp.final)
+    {
+        case LE_ATSERVER_OK:
+            snprintf(devPtr->finalRsp.resp, LE_ATDEFS_RESPONSE_MAX_BYTES,"OK");
+            break;
+
+        case LE_ATSERVER_NO_CARRIER:
+            snprintf(devPtr->finalRsp.resp, LE_ATDEFS_RESPONSE_MAX_BYTES,"NO CARRIER");
+            break;
+
+        case LE_ATSERVER_NO_DIALTONE:
+            snprintf(devPtr->finalRsp.resp, LE_ATDEFS_RESPONSE_MAX_BYTES,"NO DIALTONE");
+            break;
+
+        case LE_ATSERVER_BUSY:
+            snprintf(devPtr->finalRsp.resp, LE_ATDEFS_RESPONSE_MAX_BYTES,"BUSY");
+            break;
+
+        case LE_ATSERVER_ERROR:
+            if ((MODE_DISABLED == ErrorCodesMode) || (0 == patternLength))
+            {
+                snprintf(devPtr->finalRsp.resp, LE_ATDEFS_RESPONSE_MAX_BYTES,"ERROR");
+                break;
+            }
+
+            // Build the response string [pattern + error code] or [pattern + verbose msg]
+            {
+                int sizeMax = sizeof(devPtr->finalRsp.resp);
+                if (sizeMax > 0)
+                {
+                    strncpy(devPtr->finalRsp.resp, devPtr->finalRsp.pattern, sizeMax - 1);
+                    // Make devPtr->finalRsp.resp string null terminated if devPtr->finalRsp.pattern
+                    // string size is bigger than sizeMax - 1.
+                    devPtr->finalRsp.resp[sizeMax-1] = '\0';
+                }
+            }
+
+            if (MODE_EXTENDED == ErrorCodesMode)
+            {
+                LE_DEBUG("Extended mode");
+                snprintf(devPtr->finalRsp.resp + patternLength,
+                         LE_ATDEFS_RESPONSE_MAX_BYTES - patternLength,
+                         "%d",
+                         devPtr->finalRsp.errorCode);
+            }
+            else if (MODE_VERBOSE == ErrorCodesMode)
+            {
+                LE_DEBUG("Verbose mode");
+                if (devPtr->finalRsp.errorCode < STD_ERROR_CODE_SIZE)
+                {
+                    const char* msgPtr = GetStdVerboseMsg(devPtr->finalRsp.errorCode,
+                                                          devPtr->finalRsp.pattern);
+                    if (NULL != msgPtr)
+                    {
+                        strncpy(devPtr->finalRsp.resp + patternLength,
+                                msgPtr,
+                                LE_ATDEFS_RESPONSE_MAX_BYTES - patternLength);
+                    }
+                    else
+                    {
+                        snprintf(devPtr->finalRsp.resp + patternLength,
+                                 LE_ATDEFS_RESPONSE_MAX_BYTES - patternLength,
+                                 "%d",
+                                 devPtr->finalRsp.errorCode);
+                    }
+                }
+                else
+                {
+                    errorCodePtr = GetCustomErrorCode(devPtr->finalRsp.errorCode,
+                                                      devPtr->finalRsp.pattern);
+                    if (errorCodePtr)
+                    {
+                        strncpy(devPtr->finalRsp.resp + patternLength,
+                                errorCodePtr->verboseMsg,
+                                LE_ATDEFS_RESPONSE_MAX_BYTES - patternLength);
+                    }
+                    else
+                    {
+                        snprintf(devPtr->finalRsp.resp + patternLength,
+                                 LE_ATDEFS_RESPONSE_MAX_BYTES - patternLength,
+                                 "%d",
+                                 devPtr->finalRsp.errorCode);
+                    }
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+    SendRspString(devPtr, devPtr->finalRsp.resp);
+
+end_processing:
     devPtr->processing = false;
 
     memset( &devPtr->cmdParser, 0, sizeof(CmdParser_t) );
@@ -697,7 +1115,7 @@ static void SendFinalRsp
                                     RspString_t,
                                     link);
 
-        SendRspString(devPtr, RSP_TYPE_RESPONSE, rspStringPtr->resp);
+        SendRspString(devPtr, rspStringPtr->resp);
         le_mem_Release(rspStringPtr);
     }
 }
@@ -714,8 +1132,6 @@ static void SendIntermediateRsp
     RspString_t* rspStringPtr
 )
 {
-    devPtr->rspState = AT_RSP_INTERMEDIATE;
-
     if (rspStringPtr == NULL)
     {
         LE_ERROR("Bad rspStringPtr");
@@ -729,6 +1145,8 @@ static void SendIntermediateRsp
         return;
     }
 
+    devPtr->rspState = AT_RSP_INTERMEDIATE;
+
     // Check if command is currently in processing
     if ((!devPtr->processing) ||
         (devPtr->cmdParser.currentCmdPtr && !((devPtr->cmdParser.currentCmdPtr)->processing)))
@@ -738,7 +1156,7 @@ static void SendIntermediateRsp
         return;
     }
 
-    SendRspString(devPtr, RSP_TYPE_RESPONSE, rspStringPtr->resp);
+    SendRspString(devPtr, rspStringPtr->resp);
     le_mem_Release(rspStringPtr);
 }
 
@@ -754,8 +1172,6 @@ static void SendUnsolRsp
     RspString_t* rspStringPtr
 )
 {
-    devPtr->rspState = AT_RSP_UNSOLICITED;
-
     if (rspStringPtr == NULL)
     {
         LE_ERROR("Bad rspStringPtr");
@@ -769,9 +1185,11 @@ static void SendUnsolRsp
         return;
     }
 
+    devPtr->rspState = AT_RSP_UNSOLICITED;
+
     if (!devPtr->processing && !devPtr->suspended)
     {
-        SendRspString(devPtr, RSP_TYPE_RESPONSE, rspStringPtr->resp);
+        SendRspString(devPtr, rspStringPtr->resp);
         le_mem_Release(rspStringPtr);
     }
     else
@@ -779,6 +1197,39 @@ static void SendUnsolRsp
         le_dls_Queue(&devPtr->unsolicitedList, &(rspStringPtr->link));
     }
 }
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Create a modem AT command using the ATBridge.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t CreateModemCommand
+(
+    CmdParser_t* cmdParserPtr,
+    char*        atCmdPtr
+)
+{
+    if ( bridge_Create(atCmdPtr) != LE_OK )
+    {
+        LE_ERROR("Error in AT command creation");
+        return LE_FAULT;
+    }
+
+    cmdParserPtr->currentCmdPtr = le_hashmap_Get(CmdHashMap,
+                                                 atCmdPtr);
+
+    if ( cmdParserPtr->currentCmdPtr == NULL )
+    {
+        LE_ERROR("At command still not exists");
+        return LE_FAULT;
+    }
+
+    (cmdParserPtr->currentCmdPtr)->bridgeCmd = true;
+
+    return LE_OK;
+}
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -791,20 +1242,37 @@ static le_result_t GetAtCmdContext
     CmdParser_t* cmdParserPtr
 )
 {
+    DeviceContext_t* devPtr = CONTAINER_OF(cmdParserPtr, DeviceContext_t, cmdParser);
+
     if (cmdParserPtr->currentCmdPtr == NULL)
     {
         cmdParserPtr->currentCmdPtr = le_hashmap_Get(CmdHashMap, cmdParserPtr->currentAtCmdPtr);
 
-        if (( cmdParserPtr->currentCmdPtr == NULL ) ||
-            ( cmdParserPtr->currentCmdPtr && cmdParserPtr->currentCmdPtr->processing ))
+        if ( cmdParserPtr->currentCmdPtr == NULL )
         {
             LE_DEBUG("AT command not found");
-            return LE_FAULT;
+            if ( devPtr->bridgeRef )
+            {
+                if (( CreateModemCommand(cmdParserPtr, cmdParserPtr->currentAtCmdPtr) != LE_OK ) ||
+                    ( cmdParserPtr->currentCmdPtr == NULL ))
+                {
+                    LE_ERROR("At command still not exists");
+                    return LE_FAULT;
+                }
+            }
+            else
+            {
+                return LE_FAULT;
+            }
+        }
+        else if ( cmdParserPtr->currentCmdPtr->processing )
+        {
+            LE_DEBUG("AT command currently in processing");
+            return LE_BUSY;
         }
 
         cmdParserPtr->currentCmdPtr->processing = true;
 
-        DeviceContext_t* devPtr = CONTAINER_OF(cmdParserPtr, DeviceContext_t, cmdParser);
         cmdParserPtr->currentCmdPtr->deviceRef = devPtr->ref;
     }
 
@@ -817,7 +1285,7 @@ static le_result_t GetAtCmdContext
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtPArserTypeTest
+static le_result_t ParseTypeTest
 (
     CmdParser_t* cmdParserPtr
 )
@@ -837,20 +1305,20 @@ static le_result_t AtPArserTypeTest
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtPArserTypeRead
+static le_result_t ParseTypeRead
 (
     CmdParser_t* cmdParserPtr
 )
 {
     *cmdParserPtr->currentCharPtr='\0';
+    le_result_t res = GetAtCmdContext(cmdParserPtr);
 
-    if (GetAtCmdContext(cmdParserPtr) == LE_OK)
+    if (res == LE_OK)
     {
         cmdParserPtr->currentCmdPtr->type = LE_ATSERVER_TYPE_READ;
-        return LE_OK;
     }
 
-    return LE_FAULT;
+    return res;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -859,7 +1327,7 @@ static le_result_t AtPArserTypeRead
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserError
+static le_result_t ParseError
 (
     CmdParser_t* cmdParserPtr
 )
@@ -873,7 +1341,7 @@ static le_result_t AtParserError
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserNone
+static le_result_t ParseNone
 (
     CmdParser_t* cmdParserPtr
 )
@@ -887,7 +1355,7 @@ static le_result_t AtParserNone
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserContinue
+static le_result_t ParseContinue
 (
     CmdParser_t* cmdParserPtr
 )
@@ -900,11 +1368,11 @@ static le_result_t AtParserContinue
 
 //--------------------------------------------------------------------------------------------------
 /**
- * AT parser transition (Get a parameter from basic command)
+ * AT parser transition (Get a parameter from basic format commands)
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserBasicParam
+static le_result_t ParseBasicCmdParam
 (
     CmdParser_t* cmdParserPtr
 )
@@ -925,6 +1393,12 @@ static le_result_t AtParserBasicParam
             else
             {
                 tokenQuote = true;
+            }
+
+            // If "bridge command", keep the quote
+            if ((cmdParserPtr->currentCmdPtr)->bridgeCmd)
+            {
+                paramPtr->param[index++] = *cmdParserPtr->currentCharPtr;
             }
         }
         else
@@ -955,11 +1429,165 @@ static le_result_t AtParserBasicParam
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Get Dial command parameter
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t ParseBasicDCmdParam
+(
+    CmdParser_t* cmdParserPtr
+)
+{
+    const char* possibleCharUpper[]={"A","B","C","D","T","P","W"};
+    const char* possibleChar[]={"0","1","2","3","4","5","6","7","8","9","*","#","+",",","!","@",";",
+                                "I","i","G","g"};
+
+    int i;
+    int index = 0;
+    ParamString_t* paramPtr = le_mem_ForceAlloc(ParamStringPool);
+    bool dialingFromPhonebook = false;
+    memset(paramPtr,0,sizeof(ParamString_t));
+    bool tokenQuote = false;
+
+    LE_DEBUG("%s", cmdParserPtr->currentCharPtr);
+
+    if ( *cmdParserPtr->currentCharPtr == '>' )
+    {
+        dialingFromPhonebook = true;
+    }
+
+    while ( cmdParserPtr->currentCharPtr <= cmdParserPtr->lastCharPtr )
+    {
+        if (dialingFromPhonebook)
+        {
+            if ( IS_QUOTE(*cmdParserPtr->currentCharPtr) )
+            {
+                if (tokenQuote)
+                {
+                    tokenQuote = false;
+                }
+                else
+                {
+                    tokenQuote = true;
+                }
+
+                paramPtr->param[index++] = *cmdParserPtr->currentCharPtr;
+            }
+            else
+            {
+                if (tokenQuote)
+                {
+                    paramPtr->param[index++] = *cmdParserPtr->currentCharPtr;
+                }
+                else
+                {
+                    if ( (*cmdParserPtr->currentCharPtr == 'i') ||
+                         ( *cmdParserPtr->currentCharPtr == 'g') )
+                    {
+                        paramPtr->param[index++] = *cmdParserPtr->currentCharPtr;
+                    }
+                    else
+                    {
+                        paramPtr->param[index++] = toupper(*cmdParserPtr->currentCharPtr);
+                    }
+                }
+            }
+        }
+        else
+        {
+
+            bool charFound = false;
+            int nbPass = 0;
+            const char** charTabPtr = possibleChar;
+            int nbValue = NUM_ARRAY_MEMBERS(possibleChar);
+            char* testCharPtr = cmdParserPtr->currentCharPtr;
+
+            // Only the valid characters are kept, other are ignored
+            while (nbPass < 2)
+            {
+                for (i=0; i<nbValue; i++)
+                {
+                    if (*testCharPtr == *charTabPtr[i])
+                    {
+                        paramPtr->param[index++] = *testCharPtr;
+                        charFound = true;
+                        break;
+                    }
+                }
+
+                if (charFound)
+                {
+                    break;
+                }
+                else
+                {
+                    *testCharPtr = toupper(*testCharPtr);
+                    charTabPtr = possibleCharUpper;
+                    nbValue = NUM_ARRAY_MEMBERS(possibleCharUpper);
+                    nbPass++;
+                }
+            }
+        }
+
+        // V25ter mentions that the end of the dial command is:
+        // - terminated by a semicolon character
+        // - the end of the command line
+        if (*cmdParserPtr->currentCharPtr == AT_TOKEN_SEMICOLON)
+        {
+            // Stop the parsing, it looks that we reach the end of ATD command parameter
+            goto end;
+        }
+
+        cmdParserPtr->currentCharPtr++;
+    }
+
+    if (index == 0)
+    {
+        LE_ERROR("empty phone number");
+        le_mem_Release(paramPtr);
+        return LE_FAULT;
+    }
+
+end:
+    cmdParserPtr->currentCmdPtr->type = LE_ATSERVER_TYPE_PARA;
+    le_dls_Queue(&(cmdParserPtr->currentCmdPtr->paramList),&(paramPtr->link));
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * AT parser transition (Get a parameter from basic command)
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t ParseBasicParam
+(
+    CmdParser_t* cmdParserPtr
+)
+{
+    if (cmdParserPtr->currentCmdPtr)
+    {
+        if (cmdParserPtr->currentCmdPtr->isDialCommand)
+        {
+            return ParseBasicDCmdParam(cmdParserPtr);
+        }
+        else
+        {
+            return ParseBasicCmdParam(cmdParserPtr);
+        }
+    }
+
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * AT parser transition (end of treatment for a basic command)
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserBasicEnd
+static le_result_t ParseBasicEnd
 (
     CmdParser_t* cmdParserPtr
 )
@@ -970,7 +1598,7 @@ static le_result_t AtParserBasicEnd
     // Put the index at the correct place for next parsing
     cmdParserPtr->currentCharPtr = cmdParserPtr->currentAtCmdPtr;
 
-    cmdParserPtr->cmdParser = AT_PARSE_LAST;
+    cmdParserPtr->cmdParser = PARSE_LAST;
 
     cmdParserPtr->currentCharPtr--;
 
@@ -979,24 +1607,43 @@ static le_result_t AtParserBasicEnd
 
 //--------------------------------------------------------------------------------------------------
 /**
- * AT parser transition (treatment of a basic command)
+ * Basic format command found, update command context
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserBasic
+static void BasicCmdFound
+(
+    CmdParser_t* cmdParserPtr
+)
+{
+    DeviceContext_t* devPtr = CONTAINER_OF(cmdParserPtr, DeviceContext_t, cmdParser);
+
+    cmdParserPtr->currentCmdPtr->deviceRef = devPtr->ref;
+    cmdParserPtr->currentCmdPtr->type = LE_ATSERVER_TYPE_ACT;
+    cmdParserPtr->currentCmdPtr->processing = true;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * AT parser transition (treatment of a basic format commands)
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t ParseBasic
 (
     CmdParser_t* cmdParserPtr
 )
 {
     while ( ( cmdParserPtr->currentCharPtr <= cmdParserPtr->lastCharPtr ) &&
-           ( !IS_NUMBER(*cmdParserPtr->currentCharPtr) ) )
+            ( !IS_NUMBER(*cmdParserPtr->currentCharPtr) ) &&
+            ( !IS_QUOTE(*cmdParserPtr->currentCharPtr) ) )
     {
-        AtParserContinue(cmdParserPtr);
+        *cmdParserPtr->currentCharPtr = toupper(*cmdParserPtr->currentCharPtr);
         cmdParserPtr->currentCharPtr++;
     }
 
     uint32_t len = cmdParserPtr->currentCharPtr-cmdParserPtr->currentAtCmdPtr+1;
-
+    char* initialPosPtr = cmdParserPtr->currentCharPtr;
     char atCmd[len];
     memset(atCmd,0,len);
     strncpy(atCmd, cmdParserPtr->currentAtCmdPtr, len-1);
@@ -1012,16 +1659,35 @@ static le_result_t AtParserBasic
         }
         else
         {
-            DeviceContext_t* devPtr = CONTAINER_OF(cmdParserPtr, DeviceContext_t, cmdParser);
-            cmdParserPtr->currentCmdPtr->deviceRef = devPtr->ref;
-
-            cmdParserPtr->currentCmdPtr->type = LE_ATSERVER_TYPE_ACT;
-            cmdParserPtr->currentCmdPtr->processing = true;
+            BasicCmdFound(cmdParserPtr);
 
             cmdParserPtr->currentCharPtr--;
 
             return LE_OK;
         }
+    }
+
+    DeviceContext_t* devPtr = CONTAINER_OF(cmdParserPtr, DeviceContext_t, cmdParser);
+
+    if ( devPtr->bridgeRef )
+    {
+        //Reset the pointer to its initial value
+        cmdParserPtr->currentCharPtr = initialPosPtr;
+
+        strncpy(atCmd, cmdParserPtr->currentAtCmdPtr, len-1);
+
+        if (( CreateModemCommand(cmdParserPtr, atCmd) != LE_OK ) ||
+            ( cmdParserPtr->currentCmdPtr == NULL ))
+        {
+            LE_ERROR("At command still not exists");
+            return LE_FAULT;
+        }
+
+        BasicCmdFound(cmdParserPtr);
+
+        cmdParserPtr->currentCharPtr--;
+
+        return LE_OK;
     }
 
     return LE_FAULT;
@@ -1033,38 +1699,38 @@ static le_result_t AtParserBasic
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserEqual
+static le_result_t ParseEqual
 (
     CmdParser_t* cmdParserPtr
 )
 {
     *cmdParserPtr->currentCharPtr='\0';
+    le_result_t res = GetAtCmdContext(cmdParserPtr);
 
-    if (GetAtCmdContext(cmdParserPtr) == LE_OK)
+    if (res == LE_OK)
     {
         cmdParserPtr->currentCmdPtr->type = LE_ATSERVER_TYPE_PARA;
-        return LE_OK;
     }
 
-    return LE_FAULT;
+    return res;
 }
 
 //--------------------------------------------------------------------------------------------------
 /**
- * AT parser transition (treat a parameter for extended commands)
+ * AT parser transition (treat a parameter for extended format commands)
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserParam
+static le_result_t ParseParam
 (
     CmdParser_t* cmdParserPtr
 )
 {
-    ParamString_t* paramPtr = le_mem_ForceAlloc(ParamStringPool);
-    memset(paramPtr,0,sizeof(ParamString_t));
     uint32_t index = 0;
     bool tokenQuote = false;
     bool loop = true;
+    ParamString_t* paramPtr = le_mem_ForceAlloc(ParamStringPool);
+    memset(paramPtr, 0, sizeof(ParamString_t));
 
     if (le_dls_NumLinks(&(cmdParserPtr->currentCmdPtr->paramList)) != 0)
     {
@@ -1092,9 +1758,21 @@ static le_result_t AtParserParam
             {
                 tokenQuote = true;
             }
+
+            // If "bridge command", keep the quote
+            if ((cmdParserPtr->currentCmdPtr)->bridgeCmd)
+            {
+                paramPtr->param[index++] = *cmdParserPtr->currentCharPtr;
+            }
         }
         else
         {
+            if (!tokenQuote)
+            {
+                // Put character in upper case
+                *cmdParserPtr->currentCharPtr = toupper(*cmdParserPtr->currentCharPtr);
+            }
+
             if ((tokenQuote) || ( IS_PARAM_CHAR(*cmdParserPtr->currentCharPtr) ))
             {
                 paramPtr->param[index++] = *cmdParserPtr->currentCharPtr;
@@ -1113,8 +1791,9 @@ static le_result_t AtParserParam
             loop = false;
         }
 
-        if (( *cmdParserPtr->currentCharPtr == AT_TOKEN_COMMA ) ||
-            ( *cmdParserPtr->currentCharPtr == AT_TOKEN_SEMICOLON ))
+        if ((tokenQuote == false) &&
+            (( *cmdParserPtr->currentCharPtr == AT_TOKEN_COMMA ) ||
+             ( *cmdParserPtr->currentCharPtr == AT_TOKEN_SEMICOLON )))
         {
             loop = false;
             cmdParserPtr->currentCharPtr--;
@@ -1132,26 +1811,26 @@ static le_result_t AtParserParam
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserLastChar
+static le_result_t ParseLastChar
 (
     CmdParser_t* cmdParserPtr
 )
 {
-    LE_DEBUG("AtParserLastChar");
-
     if ( cmdParserPtr->currentCmdPtr == NULL )
     {
+        le_result_t res;
+
         // Put character in upper case
         *cmdParserPtr->currentCharPtr = toupper(*cmdParserPtr->currentCharPtr);
 
-        if (GetAtCmdContext(cmdParserPtr) == LE_OK)
+        res = GetAtCmdContext(cmdParserPtr);
+
+        if (res == LE_OK)
         {
             cmdParserPtr->currentCmdPtr->type = LE_ATSERVER_TYPE_ACT;
         }
-        else
-        {
-            return LE_FAULT;
-        }
+
+        return res;
     }
 
     return LE_OK;
@@ -1163,7 +1842,7 @@ static le_result_t AtParserLastChar
  *
  */
 //--------------------------------------------------------------------------------------------------
-static le_result_t AtParserSemicolon
+static le_result_t ParseSemicolon
 (
     CmdParser_t* cmdParserPtr
 )
@@ -1171,7 +1850,7 @@ static le_result_t AtParserSemicolon
     *cmdParserPtr->currentCharPtr='\0';
 
     // if AT command not resolved yet, try to get it
-    if ( AtParserLastChar(cmdParserPtr) != LE_OK )
+    if ( ParseLastChar(cmdParserPtr) != LE_OK )
     {
         return LE_FAULT;
     }
@@ -1206,9 +1885,15 @@ static void ParseAtCmd
     DeviceContext_t* devPtr
 )
 {
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad device");
+        return;
+    }
+
     CmdParser_t* cmdParserPtr = &devPtr->cmdParser;
 
-    cmdParserPtr->cmdParser = AT_PARSE_CMDNAME;
+    cmdParserPtr->cmdParser = PARSE_CMDNAME;
 
     devPtr->cmdParser.currentCmdPtr = NULL;
 
@@ -1221,97 +1906,164 @@ static void ParseAtCmd
         return;
     }
 
-    while (( cmdParserPtr->cmdParser != AT_PARSE_SEMICOLON ) &&
-           ( cmdParserPtr->cmdParser != AT_PARSE_LAST ))
+    while (( cmdParserPtr->cmdParser != PARSE_SEMICOLON ) &&
+           ( cmdParserPtr->cmdParser != PARSE_LAST ))
     {
         switch (*cmdParserPtr->currentCharPtr)
         {
             case AT_TOKEN_EQUAL:
-                cmdParserPtr->cmdParser = AT_PARSE_EQUAL;
+                cmdParserPtr->cmdParser = PARSE_EQUAL;
             break;
             case AT_TOKEN_QUESTIONMARK:
-                cmdParserPtr->cmdParser = AT_PARSE_QUESTIONMARK;
+                cmdParserPtr->cmdParser = PARSE_QUESTIONMARK;
             break;
             case AT_TOKEN_COMMA:
-                cmdParserPtr->cmdParser = AT_PARSE_COMMA;
+                cmdParserPtr->cmdParser = PARSE_COMMA;
             break;
             case AT_TOKEN_SEMICOLON:
-                cmdParserPtr->cmdParser = AT_PARSE_SEMICOLON;
+                cmdParserPtr->cmdParser = PARSE_SEMICOLON;
             break;
             default:
-                if (cmdParserPtr->cmdParser >= AT_PARSE_BASIC)
+                if (cmdParserPtr->cmdParser >= PARSE_BASIC)
                 {
-                    if ( IS_NUMBER(*cmdParserPtr->currentCharPtr) ||
-                       ( IS_QUOTE(*cmdParserPtr->currentCharPtr) ) )
+                    if ( cmdParserPtr->currentCmdPtr &&
+                         cmdParserPtr->currentCmdPtr->isDialCommand )
                     {
-                        cmdParserPtr->cmdParser = AT_PARSE_BASIC_PARAM;
+                        if (cmdParserPtr->cmdParser == PARSE_BASIC)
+                        {
+                            cmdParserPtr->cmdParser = PARSE_BASIC_PARAM;
+                        }
+                        else if (cmdParserPtr->cmdParser == PARSE_BASIC_PARAM)
+                        {
+                            cmdParserPtr->cmdParser = PARSE_BASIC_END;
+                        }
+                        break;
+                    }
+
+                    if ( IS_NUMBER(*cmdParserPtr->currentCharPtr) ||
+                         IS_QUOTE(*cmdParserPtr->currentCharPtr) )
+                    {
+                         cmdParserPtr->cmdParser = PARSE_BASIC_PARAM;
                     }
                     else
                     {
-                        cmdParserPtr->cmdParser = AT_PARSE_BASIC_END;
+                         cmdParserPtr->cmdParser = PARSE_BASIC_END;
                     }
                     break;
                 }
 
                 if ((cmdParserPtr->currentCharPtr - cmdParserPtr->currentAtCmdPtr == 2) &&
-                    (IS_CHAR(*cmdParserPtr->currentCharPtr) ||
-                     IS_AND(*cmdParserPtr->currentCharPtr)  ||
-                     IS_SLASH(*cmdParserPtr->currentCharPtr)))
+                    (IS_BASIC(*cmdParserPtr->currentCharPtr)))
                 {
                     // 3rd char of the command is into [A-Z] => basic command
-                    cmdParserPtr->cmdParser = AT_PARSE_BASIC;
+                    cmdParserPtr->cmdParser = PARSE_BASIC;
                 }
 
                 else if ((cmdParserPtr->currentCmdPtr) &&
                     (cmdParserPtr->currentCmdPtr->type == LE_ATSERVER_TYPE_PARA))
                 {
-                    cmdParserPtr->cmdParser = AT_PARSE_COMMA;
+                    cmdParserPtr->cmdParser = PARSE_COMMA;
                 }
                 else if (cmdParserPtr->currentCharPtr == cmdParserPtr->lastCharPtr)
                 {
-                    cmdParserPtr->cmdParser = AT_PARSE_LAST;
+                    cmdParserPtr->cmdParser = PARSE_LAST;
                 }
                 else
                 {
-                    cmdParserPtr->cmdParser = AT_PARSE_CMDNAME;
+                    cmdParserPtr->cmdParser = PARSE_CMDNAME;
                 }
             break;
         }
 
-        if ((cmdParserPtr->lastCmdParserState >= AT_PARSE_MAX) ||
-            (cmdParserPtr->cmdParser >= AT_PARSE_MAX))
+        if ((cmdParserPtr->lastCmdParserState >= PARSE_MAX) ||
+            (cmdParserPtr->cmdParser >= PARSE_MAX))
         {
             LE_ERROR("Wrong parser state");
             return;
         }
 
-        if (CmdParserTab[cmdParserPtr->lastCmdParserState][cmdParserPtr->cmdParser](cmdParserPtr)
-                                                                                           != LE_OK)
+        le_result_t res;
+        res = CmdParserTab[cmdParserPtr->lastCmdParserState][cmdParserPtr->cmdParser](cmdParserPtr);
+
+        if (res == LE_OK)
+        {
+            cmdParserPtr->lastCmdParserState = cmdParserPtr->cmdParser;
+            cmdParserPtr->currentCharPtr++;
+
+            if (cmdParserPtr->currentCharPtr > cmdParserPtr->lastCharPtr)
+            {
+                cmdParserPtr->cmdParser = PARSE_LAST;
+            }
+        }
+        else
         {
             LE_ERROR("Error in parsing AT command, lastState %d, current state %d",
                                                         cmdParserPtr->lastCmdParserState,
                                                         cmdParserPtr->cmdParser);
-            devPtr->finalRsp.final = LE_ATSERVER_ERROR;
-            devPtr->finalRsp.customStringAvailable = false;
-            SendFinalRsp(devPtr);
 
-            return;
-        }
+            if (res == LE_BUSY)
+            {
+                LE_INFO("AT command busy");
+            }
+            else
+            {
+                if (cmdParserPtr->currentCmdPtr)
+                {
+                    cmdParserPtr->currentCmdPtr->processing = false;
+                }
+            }
 
-        cmdParserPtr->lastCmdParserState = cmdParserPtr->cmdParser;
-        cmdParserPtr->currentCharPtr++;
+            // Incurred error in parsing AT command. Clear all parsed parameters.
+            if (cmdParserPtr->currentCmdPtr)
+            {
+                ATCmdSubscribed_t* cmdPtr = cmdParserPtr->currentCmdPtr;
+                le_dls_Link_t* linkPtr;
+                while ((linkPtr = le_dls_Pop(&cmdPtr->paramList)) != NULL)
+                {
+                    ParamString_t *paraPtr = CONTAINER_OF(linkPtr, ParamString_t, link);
+                    le_mem_Release(paraPtr);
+                }
+            }
 
-        if (cmdParserPtr->currentCharPtr > cmdParserPtr->lastCharPtr)
-        {
-            cmdParserPtr->cmdParser = AT_PARSE_LAST;
+            goto sendErrorRsp;
         }
     }
 
     if (cmdParserPtr->currentCmdPtr)
     {
-        le_event_Report(cmdParserPtr->currentCmdPtr->eventId,
-                        &cmdParserPtr->currentCmdPtr, sizeof(ATCmdSubscribed_t*));
+        ATCmdSubscribed_t* cmdPtr = cmdParserPtr->currentCmdPtr;
+
+        if (cmdPtr->handlerFunc)
+        {
+            (cmdPtr->handlerFunc)( cmdPtr->cmdRef,
+                                   cmdPtr->type,
+                                   le_dls_NumLinks(&(cmdPtr->paramList)),
+                                   cmdPtr->handlerContextPtr );
+        }
+        else
+        {
+            // Command exists, but no handler associate to it
+            cmdParserPtr->currentCmdPtr->processing = false;
+
+            // Clean AT command context, not in use now
+            le_dls_Link_t* linkPtr;
+            while ((linkPtr=le_dls_Pop(&cmdPtr->paramList)) != NULL)
+            {
+                ParamString_t *paraPtr = CONTAINER_OF(linkPtr, ParamString_t, link);
+                le_mem_Release(paraPtr);
+            }
+
+            goto sendErrorRsp;
+        }
     }
+
+    return;
+
+sendErrorRsp:
+    devPtr->finalRsp.final = LE_ATSERVER_ERROR;
+    devPtr->finalRsp.customStringAvailable = false;
+
+    SendFinalRsp(devPtr);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1342,16 +2094,26 @@ static void ParseBuffer
                 }
             break;
             case PARSER_SEARCH_T:
-                if (( input == 'T' ) || ( input == 't' ))
+                switch (input)
                 {
-                    devPtr->currentCmd[1] = input;
-                    devPtr->cmdParser.rxState = PARSER_SEARCH_CR;
-                    devPtr->parseIndex = 2;
-                }
-                else
-                {
-                    devPtr->cmdParser.rxState = PARSER_SEARCH_A;
-                    devPtr->parseIndex = 0;
+                    case 'T':
+                    case 't':
+                    {
+                        devPtr->currentCmd[1] = input;
+                        devPtr->cmdParser.rxState = PARSER_SEARCH_CR;
+                        devPtr->parseIndex = 2;
+                    }
+                    break;
+                    case 'A':
+                    case 'a':
+                        // do nothing in this case
+                    break;
+                    default:
+                    {
+                        devPtr->cmdParser.rxState = PARSER_SEARCH_A;
+                        devPtr->parseIndex = 0;
+                    }
+                    break;
                 }
             break;
             case PARSER_SEARCH_CR:
@@ -1364,13 +2126,16 @@ static void ParseBuffer
 
                         devPtr->currentCmd[devPtr->parseIndex] = '\0';
                         LE_DEBUG("Command found %s", devPtr->currentCmd);
-                        strncpy(devPtr->cmdParser.foundCmd,
-                                devPtr->currentCmd,
-                                LE_ATDEFS_COMMAND_MAX_LEN);
+                        le_utf8_Copy(devPtr->cmdParser.foundCmd,
+                                     devPtr->currentCmd,
+                                     LE_ATDEFS_COMMAND_MAX_LEN,
+                                     NULL);
+
+                        ssize_t offset = strnlen(devPtr->cmdParser.foundCmd, sizeof(devPtr->cmdParser.foundCmd)) - 1;
+                        LE_ASSERT((offset >= 0) && (offset < sizeof(devPtr->cmdParser.foundCmd)));
+                        devPtr->cmdParser.lastCharPtr = devPtr->cmdParser.foundCmd + offset;
 
                         devPtr->cmdParser.currentCharPtr = devPtr->cmdParser.foundCmd;
-                        devPtr->cmdParser.lastCharPtr = devPtr->cmdParser.foundCmd +
-                                                         strlen(devPtr->cmdParser.foundCmd) - 1;
                         devPtr->cmdParser.currentAtCmdPtr = devPtr->cmdParser.foundCmd;
 
                         ParseAtCmd(devPtr);
@@ -1378,10 +2143,15 @@ static void ParseBuffer
                     else
                     {
                         LE_ERROR("Command in progress");
-                        SendRspString(devPtr, RSP_TYPE_ERROR, "");
+                        SendRspString(devPtr, "ERROR");
                     }
 
                     devPtr->parseIndex=0;
+                }
+                // backspace character
+                else if ( input == 0x7F )
+                {
+                    devPtr->parseIndex--;
                 }
                 else
                 {
@@ -1402,7 +2172,249 @@ static void ParseBuffer
     {
         devPtr->indexRead = devPtr->parseIndex = 0;
         devPtr->cmdParser.rxState = PARSER_SEARCH_A;
-        SendRspString(devPtr, RSP_TYPE_ERROR, "");
+        SendRspString(devPtr, "ERROR");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function handles receiving AT commands
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void ReceiveCmd
+(
+    DeviceContext_t *devPtr
+)
+{
+    ssize_t size;
+    // Read RX data on uart
+    size = le_dev_Read(&devPtr->device,
+                (uint8_t *)(devPtr->currentCmd + devPtr->indexRead),
+                (LE_ATDEFS_COMMAND_MAX_LEN - devPtr->indexRead));
+
+    // Value of size is negative.
+    if (0 > size)
+    {
+        LE_ERROR("le_dev_Read failed!");
+        return;
+    }
+    // Value of size is 0.
+    else if (0 == size)
+    {
+        LE_DEBUG("Read data size 0.");
+        return;
+    }
+
+    // Echo is activated
+    if (devPtr->echo)
+    {
+        le_dev_Write(&devPtr->device,
+                    (uint8_t *)(devPtr->currentCmd + devPtr->indexRead),
+                    size);
+    }
+
+    devPtr->indexRead += size;
+    ParseBuffer(devPtr);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function removes a backspace and the character before it
+ *
+ * @return
+ *      modified string
+ */
+//--------------------------------------------------------------------------------------------------
+static char* RemoveBackspace
+(
+    char* strPtr
+)
+{
+    int i = 0, ch = 0;
+
+    if (!strPtr)
+    {
+        LE_ERROR("null string");
+        return NULL;
+    }
+
+    while (*strPtr)
+    {
+        if (*strPtr == '\b')
+        {
+            while (*strPtr)
+            {
+                if (ch)
+                {
+                    *(strPtr - 1) = *(strPtr + 1);
+                }
+                else
+                {
+                    *strPtr = *(strPtr + 1);
+                }
+                strPtr++;
+                i++;
+            }
+            break;
+        }
+        strPtr++;
+        i++;
+        ch++;
+    }
+
+    return (strPtr - i);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function processes received text buffer
+ *
+ * @return
+ *      processing state.
+ */
+//--------------------------------------------------------------------------------------------------
+static TextProcessingState_t ProcessText
+(
+    Text_t*     textPtr,
+    ssize_t     count,
+    Device_t*   dev
+)
+{
+    char* copyPtr = textPtr->buf + (textPtr->offset - count);
+    TextProcessingState_t state = CONTINUE;
+
+    textPtr->result = LE_OK;
+
+    while (*copyPtr)
+    {
+        if (state)
+        {
+            LE_ERROR("Invalid sequence");
+            state = INVALID_SEQUENCE;
+            break;
+        }
+        switch (*copyPtr)
+        {
+            case NEWLINE:
+                LE_DEBUG("Linefeed");
+                le_dev_Write(dev, (uint8_t *)TEXT_PROMPT, TEXT_PROMPT_LEN);
+                break;
+            case ESCAPE:
+                LE_DEBUG("Cancel request");
+                state = CANCEL;
+                break;
+            case SUBSTITUTE:
+                LE_DEBUG("End of text");
+                state = END_OF_LINE;
+                break;
+            default:
+                if (!isprint(*copyPtr))
+                {
+                    LE_ERROR("Invalid character");
+                    state = INVALID_CHARACTER;
+                }
+                break;
+        }
+        copyPtr++;
+    }
+
+    switch (state)
+    {
+        case CANCEL:
+            memset(textPtr->buf, 0, textPtr->offset);
+            textPtr->offset = 0;
+            break;
+        case INVALID_CHARACTER:
+        case INVALID_SEQUENCE:
+            memset(textPtr->buf, 0, textPtr->offset);
+            textPtr->offset = 0;
+            textPtr->result = LE_FORMAT_ERROR;
+            break;
+        case END_OF_LINE:
+            textPtr->buf[--textPtr->offset] = 0;
+            break;
+        default:
+            break;
+    }
+
+    return state;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function handles text receiving
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void ReceiveText
+(
+    DeviceContext_t *devPtr
+)
+{
+    size_t size;
+    ssize_t count;
+    Device_t device;
+    Text_t* textPtr;
+    char* bufPtr;
+    void* ctxPtr;
+
+    textPtr = &devPtr->text;
+    bufPtr = textPtr->buf + textPtr->offset;
+    size = LE_ATDEFS_TEXT_MAX_LEN - textPtr->offset;
+    device = devPtr->device;
+    ctxPtr = NULL;
+
+    if (textPtr->ctxPtr)
+    {
+        ctxPtr = textPtr->ctxPtr;
+    }
+
+    count = le_dev_Read(&device, (uint8_t *)bufPtr, size);
+    if (count <= 0)
+    {
+        LE_ERROR("connection closed");
+        if (textPtr->callback)
+        {
+            textPtr->callback(textPtr->cmdRef, LE_IO_ERROR, "", 0, ctxPtr);
+        }
+        textPtr->mode = false;
+        return;
+    }
+
+    // Ensure the string point to by bufPtr is null-terminated
+    bufPtr[size] = '\0';
+
+    while (strchr((const char *)bufPtr, '\b'))
+    {
+        bufPtr = RemoveBackspace(bufPtr);
+        if (!bufPtr)
+        {
+            LE_ERROR("Failed to remove backspaces");
+            textPtr->callback(textPtr->cmdRef, LE_FAULT, "", 0, ctxPtr);
+            textPtr->mode = false;
+            return;
+        }
+    }
+
+    count = strlen(bufPtr);
+
+    textPtr->offset += count;
+
+    if (devPtr->echo)
+    {
+        le_dev_Write(&device, (uint8_t *)bufPtr, count);
+    }
+
+    if (ProcessText(textPtr, count, &device))
+    {
+        if (textPtr->callback)
+        {
+            textPtr->callback(textPtr->cmdRef, textPtr->result, textPtr->buf,
+                textPtr->offset, ctxPtr);
+        }
+
+        textPtr->mode = false;
     }
 }
 
@@ -1425,16 +2437,22 @@ static void RxNewData
     if (events & POLLRDHUP)
     {
         LE_INFO("fd %d: Connection reset by peer", fd);
+        le_dev_RemoveFdMonitoring(&devPtr->device);
+        return;
     }
-    else if (events & POLLIN)
+
+    if (events & (POLLIN | POLLPRI))
     {
-        ssize_t size;
-        // Read RX data on uart
-        size = le_dev_Read(&devPtr->device,
-                    (uint8_t *)(devPtr->currentCmd + devPtr->indexRead),
-                    (LE_ATDEFS_COMMAND_MAX_LEN - devPtr->indexRead));
-        devPtr->indexRead += size;
-        ParseBuffer(devPtr);
+        if (devPtr->text.mode)
+        {
+            LE_DEBUG("Receiving text");
+            ReceiveText(devPtr);
+        }
+        else
+        {
+            LE_DEBUG("Receiving AT command");
+            ReceiveCmd(devPtr);
+        }
     }
     else
     {
@@ -1461,32 +2479,11 @@ static le_result_t SendUnsolicitedResponse
     }
 
     RspString_t* rspStringPtr = le_mem_ForceAlloc(RspStringPool);
-    strncpy(rspStringPtr->resp, unsolRsp, LE_ATDEFS_RESPONSE_MAX_BYTES);
+    le_utf8_Copy(rspStringPtr->resp, unsolRsp, LE_ATDEFS_RESPONSE_MAX_BYTES, NULL);
 
     SendUnsolRsp(devPtr, rspStringPtr);
 
     return LE_OK;
-}
-
-//--------------------------------------------------------------------------------------------------
-/**
- * The first-layer AT command events Handler.
- *
- */
-//--------------------------------------------------------------------------------------------------
-static void FirstLayerAtCmdHandler
-(
-    void* reportPtr,
-    void* secondLayerHandlerFunc
-)
-{
-    ATCmdSubscribed_t** cmdPtr = reportPtr;
-    le_atServer_CommandHandlerFunc_t clientHandlerFunc = secondLayerHandlerFunc;
-
-    clientHandlerFunc((*cmdPtr)->cmdRef,
-                      (*cmdPtr)->type,
-                      le_dls_NumLinks(&((*cmdPtr)->paramList)),
-                      le_event_GetContextPtr());
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1546,6 +2543,12 @@ static le_result_t CloseServer
         le_mem_Release(unsolicitedPtr);
     }
 
+    // Remove from bridge
+    if (devPtr->bridgeRef)
+    {
+        le_atServer_RemoveDeviceFromBridge(devRef, devPtr->bridgeRef);
+    }
+
     le_ref_DeleteRef(DevicesRefMap, devPtr->ref);
 
     le_mem_Release(devPtr);
@@ -1582,6 +2585,9 @@ static void CloseSessionEventHandler
             }
         }
     }
+
+    // close associated bridge
+    bridge_CleanContext(sessionRef);
 
     iter = le_ref_GetIterator(DevicesRefMap);
     while (LE_OK == le_ref_NextNode(iter))
@@ -1688,6 +2694,91 @@ le_result_t le_atServer_Resume
     return LE_OK;
 }
 
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function gets the bridge reference on a AT command in progress.
+ *
+ * @return
+ *      - Reference to the requested device.
+ *      - NULL if the device is not available.
+ *
+ * @note
+ *  This function internal, not exposed as API
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_GetBridgeRef
+(
+    le_atServer_CmdRef_t     commandRef,
+    le_atServer_BridgeRef_t* bridgeRefPtr
+)
+{
+    ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, commandRef);
+
+    if (cmdPtr == NULL)
+    {
+        LE_ERROR("Bad reference");
+        return LE_FAULT;
+    }
+
+    if (cmdPtr->bridgeCmd && cmdPtr->processing)
+    {
+        DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, cmdPtr->deviceRef);
+
+        if (devPtr == NULL)
+        {
+            LE_ERROR("Bad device reference");
+            return LE_FAULT;
+        }
+
+        *bridgeRefPtr = devPtr->bridgeRef;
+
+        return LE_OK;
+    }
+
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function unlinks the device from the bridge.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed to unlink the device from the bridge.
+ *
+ * @note
+ *  This function internal, not exposed as API
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_UnlinkDeviceFromBridge
+(
+    le_atServer_DeviceRef_t deviceRef,
+    le_atServer_BridgeRef_t bridgeRef
+)
+{
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, deviceRef);
+
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad reference");
+        return LE_FAULT;
+    }
+
+    if (devPtr->bridgeRef == bridgeRef)
+    {
+        devPtr->bridgeRef = NULL;
+        return LE_OK;
+    }
+
+    LE_ERROR("Unable to unlink device %p from bridge %p, current association: %p",
+                                                    deviceRef, bridgeRef, devPtr->bridgeRef);
+
+    return LE_FAULT;
+
+}
+
+
 //--------------------------------------------------------------------------------------------------
 /**
  * This function opens an AT server session on the requested device.
@@ -1757,8 +2848,7 @@ le_atServer_DeviceRef_t le_atServer_Open
  *      - LE_OK             The function succeeded.
  *      - LE_BAD_PARAMETER  Invalid device reference.
  *      - LE_BUSY           The requested device is busy.
- *      - LE_FAULT          Failed to stop the server, check logs
- *                              for more information.
+ *      - LE_FAULT          Failed to stop the server, check logs for more information.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_atServer_Close
@@ -1767,6 +2857,20 @@ le_result_t le_atServer_Close
         ///< [IN] device to be unbinded
 )
 {
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, devRef);
+
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad reference");
+        return LE_BAD_PARAMETER;
+    }
+
+    if (devPtr->processing)
+    {
+        LE_ERROR("Device busy");
+        return LE_BUSY;
+    }
+
     return CloseServer(devRef);
 }
 
@@ -1813,9 +2917,17 @@ le_atServer_CmdRef_t le_atServer_Create
 
     cmdPtr->availableDevice = LE_ATSERVER_ALL_DEVICES;
     cmdPtr->paramList = LE_DLS_LIST_INIT;
-    cmdPtr->eventId = GetEventId();
     cmdPtr->sessionRef = le_atServer_GetClientSessionRef();
-    cmdPtr->handlerExists = false;
+
+    // Check for specific DIAL command
+    if (strncmp(namePtr, "ATD", 3) == 0)
+    {
+        cmdPtr->isDialCommand = true;
+    }
+    else
+    {
+        cmdPtr->isDialCommand = false;
+    }
 
     return cmdPtr->cmdRef;
 }
@@ -1837,8 +2949,7 @@ le_result_t le_atServer_Delete
         ///< [IN] AT command reference
 )
 {
-    ATCmdSubscribed_t* cmdPtr =
-        le_ref_Lookup(SubscribedCmdRefMap, commandRef);
+    ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, commandRef);
 
     if (!cmdPtr)
     {
@@ -1855,33 +2966,6 @@ le_result_t le_atServer_Delete
     le_mem_Release(cmdPtr);
 
     return LE_OK;
-}
-
-//--------------------------------------------------------------------------------------------------
-/**
- * This function sets the device(s) where the specified AT command is available.
- *
- * @return
- *      - LE_OK            The function succeeded.
- *      - LE_FAULT         The function failed to set the device.
- *
- * @note If the AT command is available for all devices (i.e. availableDevice argument is set to
- * LE_ATSERVER_ALL_DEVICES), the "device" argument is unused.
- */
-//--------------------------------------------------------------------------------------------------
-le_result_t le_atServer_SetDevice
-(
-    le_atServer_CmdRef_t commandRef,
-        ///< [IN] AT command reference
-
-    le_atServer_AvailableDevice_t availableDevice,
-        ///< [IN] device available for the AT command
-
-    le_atServer_DeviceRef_t device
-        ///< [IN] device reference where the AT command is available
-)
-{
-    return LE_FAULT;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1903,7 +2987,6 @@ le_atServer_CommandHandlerRef_t le_atServer_AddCommandHandler
         ///< [IN]
 )
 {
-    le_event_HandlerRef_t handlerRef = NULL;
     ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, commandRef);
 
     if (!cmdPtr)
@@ -1912,28 +2995,16 @@ le_atServer_CommandHandlerRef_t le_atServer_AddCommandHandler
         return NULL;
     }
 
-    if (cmdPtr->handlerExists)
+    if (cmdPtr->handlerFunc)
     {
         LE_INFO("Handler already exists");
         return NULL;
     }
 
-    char name[30];
-    memset(name,0,30);
-    snprintf(name, 30, "%s-handler", cmdPtr->cmdName);
+    cmdPtr->handlerFunc = handlerPtr;
+    cmdPtr->handlerContextPtr = contextPtr;
 
-    LE_DEBUG("Add handler to: %s", cmdPtr->cmdName);
-
-    handlerRef = le_event_AddLayeredHandler(name,
-                                            cmdPtr->eventId,
-                                            FirstLayerAtCmdHandler,
-                                            (le_event_HandlerFunc_t)handlerPtr);
-
-    le_event_SetContextPtr(handlerRef, contextPtr);
-
-    cmdPtr->handlerExists = true;
-
-    return (le_atServer_CommandHandlerRef_t)(handlerRef);
+    return (le_atServer_CommandHandlerRef_t)(cmdPtr->cmdRef);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1949,7 +3020,13 @@ void le_atServer_RemoveCommandHandler
 {
     if (handlerRef)
     {
-        le_event_RemoveHandler((le_event_HandlerRef_t) handlerRef);
+        ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, handlerRef);
+
+        if (cmdPtr)
+        {
+            cmdPtr->handlerFunc = NULL;
+            cmdPtr->handlerContextPtr = NULL;
+        }
     }
 }
 
@@ -1960,6 +3037,10 @@ void le_atServer_RemoveCommandHandler
  * @return
  *      - LE_OK            The function succeeded.
  *      - LE_FAULT         The function failed to get the requested parameter.
+ *
+ * @note If the parameter is parsed with quotes, the quotes are removed when retrieving the
+ * parameter value using this API. If a parmeter is not parsed with quotes, that parameter is
+ * converted to uppercase equivalent.
  *
  */
 //--------------------------------------------------------------------------------------------------
@@ -2053,6 +3134,45 @@ le_result_t le_atServer_GetCommandName
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * This function can be used to get the device reference in use for an AT command specified with
+ * its reference.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed to get the AT command string.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_GetDevice
+(
+    le_atServer_CmdRef_t commandRef,
+        ///< [IN] AT command reference
+
+    le_atServer_DeviceRef_t* deviceRefPtr
+        ///< [OUT] Device reference
+)
+{
+    ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, commandRef);
+
+    if ((cmdPtr == NULL) || (deviceRefPtr == NULL))
+    {
+        LE_ERROR("Bad command reference");
+        return LE_FAULT;
+    }
+
+    if (!cmdPtr->processing)
+    {
+        LE_ERROR("Command not processing");
+        return LE_FAULT;
+    }
+
+    *deviceRefPtr = cmdPtr->deviceRef;
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function can be used to send an intermediate response.
  *
  * @return
@@ -2093,7 +3213,7 @@ le_result_t le_atServer_SendIntermediateResponse
     }
 
     RspString_t* rspStringPtr = le_mem_ForceAlloc(RspStringPool);
-    strncpy(rspStringPtr->resp, intermediateRspPtr, LE_ATDEFS_RESPONSE_MAX_BYTES);
+    le_utf8_Copy(rspStringPtr->resp, intermediateRspPtr, LE_ATDEFS_RESPONSE_MAX_BYTES, NULL);
 
     SendIntermediateRsp(devPtr, rspStringPtr);
 
@@ -2103,6 +3223,9 @@ le_result_t le_atServer_SendIntermediateResponse
 //--------------------------------------------------------------------------------------------------
 /**
  * This function can be used to send the final response.
+ *
+ * @deprecated le_atServer_SendFinalResponse() should not be used anymore and will be removed soon.
+ * It has been replaced by le_atServer_SendFinalResultCode()
  *
  * @return
  *      - LE_OK            The function succeeded.
@@ -2119,7 +3242,7 @@ le_result_t le_atServer_SendFinalResponse
         ///< [IN] Final response to be sent
 
     bool customStringAvailable,
-        ///< [IN] Custom finalRsp string has to be sent
+        ///< [IN]  Custom final response has to be sent
         ///<      instead of the default one.
 
     const char* finalRspPtr
@@ -2144,9 +3267,93 @@ le_result_t le_atServer_SendFinalResponse
 
     devPtr->finalRsp.final = final;
     devPtr->finalRsp.customStringAvailable = customStringAvailable;
-    strncpy( devPtr->finalRsp.resp, finalRspPtr, LE_ATDEFS_RESPONSE_MAX_BYTES );
+
+    if (customStringAvailable)
+    {
+        le_utf8_Copy( devPtr->finalRsp.resp, finalRspPtr, LE_ATDEFS_RESPONSE_MAX_BYTES, NULL );
+    }
 
     // clean AT command context, not in use now
+    le_dls_Link_t* linkPtr;
+    while ((linkPtr = le_dls_Pop(&cmdPtr->paramList)) != NULL)
+    {
+        ParamString_t *paraPtr = CONTAINER_OF(linkPtr, ParamString_t, link);
+        le_mem_Release(paraPtr);
+    }
+
+    cmdPtr->deviceRef = NULL;
+    cmdPtr->processing = false;
+
+    if (final != LE_ATSERVER_ERROR)
+    {
+        // Parse next AT commands, if any
+        ParseAtCmd(devPtr);
+    }
+    else
+    {
+        SendFinalRsp(devPtr);
+    }
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function can be used to send the final result code
+ *
+ * @return
+ *      - LE_OK            The function succeeded
+ *      - LE_FAULT         The function failed to send the final response
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_SendFinalResultCode
+(
+    le_atServer_CmdRef_t commandRef,
+        ///< [IN] AT command reference
+
+    le_atServer_FinalRsp_t final,
+        ///< [IN] Final result code to be sent
+
+    const char* patternPtr,
+        ///< [IN] Prefix string of the return message
+
+    uint32_t errorCode
+        ///< [IN] Numeric error code
+)
+{
+    ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, commandRef);
+
+    if (NULL == cmdPtr)
+    {
+        LE_ERROR("Bad command reference");
+        return LE_FAULT;
+    }
+
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, cmdPtr->deviceRef);
+
+    if (NULL == devPtr)
+    {
+        LE_ERROR("Bad device reference");
+        return LE_FAULT;
+    }
+
+    devPtr->finalRsp.final = final;
+    devPtr->finalRsp.errorCode = errorCode;
+
+    if (NULL != patternPtr)
+    {
+        int sizeMax = sizeof(devPtr->finalRsp.pattern);
+        if (sizeMax > 0)
+        {
+            strncpy(devPtr->finalRsp.pattern, patternPtr, sizeMax - 1);
+            // Make devPtr->finalRsp.pattern string null terminated if patternPtr
+            // string size is bigger than sizeMax - 1.
+            devPtr->finalRsp.pattern[sizeMax-1] = '\0';
+        }
+    }
+
+    // Clean AT command context, not in use now
     le_dls_Link_t* linkPtr;
     while ((linkPtr=le_dls_Pop(&cmdPtr->paramList)) != NULL)
     {
@@ -2157,7 +3364,7 @@ le_result_t le_atServer_SendFinalResponse
     cmdPtr->deviceRef = NULL;
     cmdPtr->processing = false;
 
-    if (final == LE_ATSERVER_OK)
+    if (final != LE_ATSERVER_ERROR)
     {
         // Parse next AT commands, if any
         ParseAtCmd(devPtr);
@@ -2222,6 +3429,408 @@ le_result_t le_atServer_SendUnsolicitedResponse
         }
     }
 
+
+    return LE_OK;
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function enables echo on the selected device.
+ *
+ * @return
+ *      - LE_OK             The function succeeded.
+ *      - LE_BAD_PARAMETER  Invalid device reference.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_EnableEcho
+(
+    le_atServer_DeviceRef_t device
+        ///< [IN] device reference
+
+)
+{
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, device);
+
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad device reference");
+        return LE_BAD_PARAMETER;
+    }
+    else
+    {
+        devPtr->echo = true;
+        return LE_OK;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function disables echo on the selected device.
+ *
+ * @return
+ *      - LE_OK             The function succeeded.
+ *      - LE_BAD_PARAMETER  Invalid device reference.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_DisableEcho
+(
+    le_atServer_DeviceRef_t device
+        ///< [IN] device reference
+
+)
+{
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, device);
+
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad device reference");
+        return LE_BAD_PARAMETER;
+    }
+    else
+    {
+        devPtr->echo = false;
+        return LE_OK;
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function opens a AT commands server bridge.
+ * All unknown AT commands will be sent on this alternative file descriptor thanks to the AT client
+ * Service.
+ *
+ * @return
+ *      - Reference to the requested bridge.
+ *      - NULL if the device can't be bridged
+ */
+//--------------------------------------------------------------------------------------------------
+le_atServer_BridgeRef_t le_atServer_OpenBridge
+(
+    int fd
+        ///< [IN] File descriptor.
+)
+{
+    le_atServer_BridgeRef_t bridgeRef = bridge_Open(fd);
+
+    if (bridgeRef == NULL)
+    {
+        LE_ERROR("Error during bridge creation");
+    }
+
+    return bridgeRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function closes an opened bridge.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed to close the bridge.
+ *      - LE_BUSY          The bridge is in use (devices references have to be removed first).
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_CloseBridge
+(
+    le_atServer_BridgeRef_t bridgeRef
+        ///< [IN] Bridge refence
+)
+{
+    return bridge_Close(bridgeRef);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function adds a device to an opened bridge.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_BUSY          The device is already used by the bridge.
+ *      - LE_FAULT         The function failed to add the device to the bridge.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_AddDeviceToBridge
+(
+    le_atServer_DeviceRef_t deviceRef,
+        ///< [IN] Device reference to add to the bridge
+
+    le_atServer_BridgeRef_t bridgeRef
+        ///< [IN] Bridge refence
+)
+{
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, deviceRef);
+    le_result_t res;
+
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad device reference");
+        return LE_FAULT;
+    }
+
+    if (devPtr->bridgeRef != NULL)
+    {
+        return LE_BUSY;
+    }
+
+    if ( (res = bridge_AddDevice(deviceRef, bridgeRef)) != LE_OK )
+    {
+        return res;
+    }
+
+    devPtr->bridgeRef = bridgeRef;
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function removes a device from a bridge
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+        - LE_NOT_FOUND     The device is not isued by the specified bridge
+ *      - LE_FAULT         The function failed to add the device to the bridge.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_RemoveDeviceFromBridge
+(
+    le_atServer_DeviceRef_t deviceRef,
+        ///< [IN] Device reference to add to the bridge
+
+    le_atServer_BridgeRef_t bridgeRef
+        ///< [IN] Bridge refence
+)
+{
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, deviceRef);
+
+    if (devPtr == NULL)
+    {
+        LE_ERROR("Bad device reference");
+        return LE_FAULT;
+    }
+
+    if (devPtr->bridgeRef == NULL)
+    {
+        // Device not bridge
+        LE_ERROR("Device not bridged");
+        return LE_FAULT;
+    }
+
+    if (devPtr->cmdParser.currentCmdPtr
+        && devPtr->cmdParser.currentCmdPtr->processing
+        && devPtr->cmdParser.currentCmdPtr->bridgeCmd)
+    {
+        return LE_BUSY;
+    }
+
+    if (bridge_RemoveDevice(deviceRef, bridgeRef) != LE_OK)
+    {
+        return LE_FAULT;
+    }
+
+    devPtr->bridgeRef = NULL;
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function enables verbose error codes on the selected device
+ */
+//--------------------------------------------------------------------------------------------------
+void le_atServer_EnableVerboseErrorCodes
+(
+    void
+)
+{
+    ErrorCodesMode = MODE_VERBOSE;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function enables extended error codes on the selected device
+ */
+//--------------------------------------------------------------------------------------------------
+void le_atServer_EnableExtendedErrorCodes
+(
+    void
+)
+{
+    ErrorCodesMode = MODE_EXTENDED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function disables the current error codes mode on the selected device
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void le_atServer_DisableExtendedErrorCodes
+(
+    void
+)
+{
+    ErrorCodesMode = MODE_DISABLED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function creates a custom error code.
+ * @return
+ *      - ErrorCode    Reference to the created error code
+ *      - NULL         Function failed to create the error code
+ *
+ * @note This function fails to create the error code if the combinaison (errorCode, pattern)
+ * already exists or if the errorCode number is lower than 512.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_atServer_ErrorCodeRef_t le_atServer_CreateErrorCode
+(
+    uint32_t errorCode,
+         ///< [IN] Numerical error code
+
+    const char* patternPtr
+        ///< [IN] Prefix of the final response string
+)
+{
+    int patternLength = 0;
+
+    if ((errorCode < STD_ERROR_CODE_SIZE) || (NULL == patternPtr))
+    {
+        // Invalid input parameters
+        return NULL;
+    }
+
+    if (NULL != GetCustomErrorCode(errorCode, patternPtr))
+    {
+        // The error code already exists, return a NULL reference
+        return NULL;
+    }
+
+    UserErrorCode_t* newErrorCode = le_mem_ForceAlloc(UserErrorPool);
+    newErrorCode->errorCode = errorCode;
+
+    patternLength = strlen(patternPtr);
+    strncpy(newErrorCode->pattern, patternPtr, patternLength);
+    newErrorCode->pattern[patternLength] = '\0';
+
+    newErrorCode->ref = le_ref_CreateRef(UserErrorRefMap, newErrorCode);
+
+    return newErrorCode->ref;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function deletes a custom error code
+ *
+ * @return
+ *      - LE_OK            Error code deleted sucessfully
+        - LE_NOT_FOUND     Error code reference not found
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_DeleteErrorCode
+(
+    le_atServer_ErrorCodeRef_t errorCodeRef
+        ///< [IN] Reference to a custom error code
+)
+{
+    UserErrorCode_t* errorCodePtr = le_ref_Lookup(UserErrorRefMap, errorCodeRef);
+    if (NULL == errorCodePtr)
+    {
+        return LE_NOT_FOUND;
+    }
+
+    le_ref_DeleteRef(UserErrorRefMap, errorCodeRef);
+    le_mem_Release(errorCodePtr);
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function adds a verbose message to a specified error code
+ *
+ * @return
+ *      - LE_OK            The function succeeded
+ *      - LE_FAULT         The function failed to set the verbose message
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_SetVerboseErrorCode
+(
+    le_atServer_ErrorCodeRef_t  errorCodeRef,
+        ///< [IN] Reference to a custom error code
+
+    const char*  messagePtr
+        ///< [IN] Verbose string
+)
+{
+    int msgLength = 0;
+
+    if (NULL == messagePtr)
+    {
+        // Invalid input parameter
+        return LE_FAULT;
+    }
+
+    UserErrorCode_t* errorCodePtr = le_ref_Lookup(UserErrorRefMap, errorCodeRef);
+    if (NULL == errorCodePtr)
+    {
+        // Error code not found
+        return LE_FAULT;
+    }
+
+    msgLength = strlen(messagePtr);
+    strncpy(errorCodePtr->verboseMsg, messagePtr, msgLength);
+    errorCodePtr->verboseMsg[msgLength] = '\0';
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function allows the user to register a le_atServer_GetTextCallback_t callback
+ * to retrieve text and sends a prompt <CR><LF>><SPACE> on the current command's device.
+ *
+ * @return
+ *      - LE_OK             The function succeeded.
+ *      - LE_BAD_PARAMETER  Invalid device or command reference.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t le_atServer_GetTextAsync
+(
+    le_atServer_CmdRef_t cmdRef,
+    le_atServer_GetTextCallbackFunc_t callback,
+    void *ctxPtr
+)
+{
+    ATCmdSubscribed_t* cmdPtr = le_ref_Lookup(SubscribedCmdRefMap, cmdRef);
+
+    if (!cmdPtr)
+    {
+        LE_ERROR("Bad command reference");
+        return LE_BAD_PARAMETER;
+    }
+
+    DeviceContext_t* devPtr = le_ref_Lookup(DevicesRefMap, cmdPtr->deviceRef);
+
+    if (!devPtr)
+    {
+        LE_ERROR("Bad device reference");
+        return LE_BAD_PARAMETER;
+    }
+
+    devPtr->text.mode = true;
+    devPtr->text.offset = 0;
+    memset(devPtr->text.buf, 0, LE_ATDEFS_TEXT_MAX_BYTES);
+    devPtr->text.callback = callback;
+    devPtr->text.ctxPtr = ctxPtr;
+    devPtr->text.cmdRef = cmdRef;
+
+    le_dev_Write(&devPtr->device, (uint8_t *)TEXT_PROMPT, TEXT_PROMPT_LEN);
+
     return LE_OK;
 }
 
@@ -2248,8 +3857,6 @@ COMPONENT_INIT
                                     le_hashmap_HashString,
                                     le_hashmap_EqualsString
                                    );
-    EventIdPool = le_mem_CreatePool("ATServerEventIdPool", sizeof(EventIdList_t));
-    le_mem_ExpandPool(EventIdPool, CMD_POOL_SIZE);
 
     // Parameters pool allocation
     ParamStringPool = le_mem_CreatePool("ParamStringPool",sizeof(ParamString_t));
@@ -2259,10 +3866,19 @@ COMPONENT_INIT
     RspStringPool = le_mem_CreatePool("RspStringPool",sizeof(RspString_t));
     le_mem_ExpandPool(RspStringPool,RSP_POOL_SIZE);
 
-    // init EventIdList
-    EventIdList = LE_DLS_LIST_INIT;
+    // User-defined errors pool allocation
+    UserErrorPool = le_mem_CreatePool("UserErrorPool",sizeof(UserErrorCode_t));
+    le_mem_ExpandPool(UserErrorPool,USER_ERROR_POOL_SIZE);
+    UserErrorRefMap = le_ref_CreateMap("UserErrorCmdRefMap", USER_ERROR_POOL_SIZE);
 
     // Add a handler to the close session service
     le_msg_AddServiceCloseHandler(
         le_atServer_GetServiceRef(), CloseSessionEventHandler, NULL);
+
+    bridge_Init();
+
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_Init(1);
+    le_wdogChain_MonitorEventLoop(0, watchdogInterval);
 }

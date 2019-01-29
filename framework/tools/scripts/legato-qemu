@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 copyright="
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 "
 
 ## Default
@@ -8,8 +8,14 @@ OFFSET_PORT=${OFFSET_PORT:=10000}
 TELNET_PORT=${TELNET_PORT:=$(($OFFSET_PORT + 21))}
 SSH_PORT=${SSH_PORT:=$(($OFFSET_PORT + 22))}
 SIMU_PORT=${SIMU_PORT:=$(($OFFSET_PORT + 5000))}
+HTTP_PORT=${HTTP_PORT:=$(($OFFSET_PORT + 8080))}
+HTTPS_PORT=${HTTPS_PORT:=$(($OFFSET_PORT + 8443))}
+ONLY_PREPARE=${ONLY_PREPARE:-0}
+RESTART_ON_ERROR=${RESTART_ON_ERROR:-1}
 
 ROOTFS_METHOD=-sd
+
+USERFS_SIZE=${USERFS_SIZE:-2G}
 
 HOST_ARCH=$(uname -m)
 
@@ -26,20 +32,25 @@ if [[ "$1" == "--help" ]]; then
     echo -e ""
     echo -e "DESCRIPTION"
     echo -e "\tPrepare an launch qemu to host an instance of Legato."
-    echo -e "\tAlso fetch qemu images and check for updates."
+    echo -e "\tAlso fetches qemu images from official servers and check for updates."
     echo -e ""
     echo -e "ENVIRONMENT"
     echo -e "\tThis script is parametrized through environment variables."
+    echo -e "\t\tONLY_PREPARE: Do not run qemu, only prepare the environment"
+    echo -e "\t\tRESTART_ON_ERROR: If 1 (default), relaunch qemu on errors"
+    echo -e "\t\tOPT_LEGATO_IMG: Path to a Legato image"
     echo -e "\t\tOPT_TARGET: Platform to emulate"
     echo -e "\t\tOPT_PERSIST: Make changes to the image persistant or not"
     echo -e "\t\tOPT_KMESG: Kernel messages to console"
     echo -e "\t\tOPT_GDB: Launch GDB server to qemu"
+    echo -e "\t\tOPT_KVM: Enable Hardware Acceleration (KVM)"
     echo -e "\t\tOPT_SERIAL: Bearer for serial port"
     echo -e "\t\t            - (blank, default) = Serial to console"
     echo -e "\t\t            - telnet = Serial to telnet"
     echo -e "\t\tOPT_NET: Networking interface"
     echo -e "\t\t         - user (default) = simulated internal qemu networking"
     echo -e "\t\t         - tap = Uses a tap interface (requires priviledges)"
+    echo -e "\t\tOPT_IMA: Enable IMA (Integrity Measurement Architecture)"
     echo -e ""
     exit 0
 fi
@@ -70,6 +81,11 @@ if [ -z "$OPT_GDB" ]; then
     OPT_GDB=0
 fi
 
+# KVM
+if [ -z "$OPT_KVM" ]; then
+    OPT_KVM=0
+fi
+
 # Serial
 if [ -z "$OPT_SERIAL" ]; then
     OPT_SERIAL=""
@@ -89,6 +105,11 @@ if [ -z "$OPT_NET2" ]; then
     #OPT_NET2="simu"
 fi
 
+# IMA
+if [ -z "$OPT_IMA" ]; then
+    OPT_IMA=0
+fi
+
 COLOR_TITLE="\033[1;94m"
 COLOR_MSG="\033[2;37m"
 COLOR_INFO="\033[1;36m"
@@ -98,147 +119,194 @@ COLOR_OK="\033[1;32m"
 COLOR_RESET="\033[0m"
 
 function message {
-    COLOR=$1
-    MESSAGE=$2
-    echo -e $COLOR $MESSAGE $COLOR_RESET
+    local color="$1"
+    local message="$2"
+    echo -e "$color" "$message" $COLOR_RESET
 }
 
 function check_ret {
-    RETVAL=$?
-    if [ $RETVAL -ne 0 ]; then
-        echo -e $COLOR_ERROR "Exit Code $RETVAL" $COLOR_RESET
-        exit $RETVAL
+    local retval=$?
+    if [ $retval -ne 0 ]; then
+        message $COLOR_ERROR "Exit Code $RETVAL"
+        exit $retval
     fi
 }
 
 function img_url_for_target {
-    TARGET=$1
+    local target=$1
+    local img_type=$2
 
-    # Determine QEmu Image source
-    if [ -z "$IMG_MIRROR" ]; then
-        if cat /etc/resolv.conf | grep "sierrawireless.local" > /dev/null; then
-            IMG_MIRROR="http://get-legato/yocto/latest/latest/${TARGET}/images"
-        else
-            IMG_MIRROR="http://downloads.sierrawireless.com/legato/virt"
-        fi
+    local swi_dev=false
+    if grep -q "sierrawireless.local" /etc/resolv.conf; then
+        swi_dev=true
     fi
 
-    export IMG_SRC=$IMG_MIRROR/img-$TARGET.tar.bz2
-    echo $IMG_SRC
+    # Determine QEmu Image source
+    if [[ "$img_type" == "yocto" ]]; then
+        if [ -z "$IMG_MIRROR_LINUX" ]; then
+            if $swi_dev; then
+                IMG_MIRROR_LINUX="http://get-legato/lxswi/merged/latest/master-virt/${target}/images"
+            else
+                IMG_MIRROR_LINUX="http://downloads.sierrawireless.com/legato/virt"
+            fi
+        fi
+
+        IMG_SRC="${IMG_MIRROR_LINUX}/img-${target}.tar.bz2"
+
+    elif [[ "$img_type" == "legato" ]]; then
+        if [ -z "$IMG_MIRROR_LEGATO" ]; then
+            if $swi_dev; then
+                IMG_MIRROR_LEGATO="http://get-legato/legato/merged/latest/${target}"
+            else
+                IMG_MIRROR_LEGATO="http://downloads.sierrawireless.com/legato/latest/${target}"
+            fi
+        fi
+
+        IMG_SRC="${IMG_MIRROR_LEGATO}/legato.squashfs"
+
+    else
+        message $COLOR_ERROR "Unknown image type '$img_type'"
+        exit 1
+    fi
+
+    export IMG_SRC
 }
 
 function img_get_timestamp {
-    TARGET=$1
+    local target=$1
+    local img_type=$2
 
-    img_url_for_target $TARGET
+    img_url_for_target $target $img_type
 
     # Get image timestamp from server
-    export IMAGE_TS=$(curl -I $IMG_SRC 2> /dev/null |grep "Last-Modified" |sed -e 's/Last-Modified: //g' |xargs -i date -d "{}" +"%s")
+    export IMG_TIMESTAMP=$(curl -I $IMG_SRC 2> /dev/null | sed -e 's/Last-Modified: //g;t;d' | xargs -i date -d "{}" +"%s")
 }
 
-function img_set_timestamp {
-    TARGET=$1
-    IMAGE_TS=$2
+function img_save_timestamp {
+    local target=$1
+    local img_type=$2
+    local img_timestamp=$3
 
-    if [ -z "$IMAGE_TS" ]; then
+    local img_dest=$USER_DIR/img-$target
+
+    if [ -z "$img_timestamp" ]; then
         message $COLOR_ERROR "Invalid timestamp"
         return
     fi
 
-    message $COLOR_INFO "Saving image timestamp ($IMAGE_TS)"
-    echo $IMAGE_TS > $USER_DIR/img-$TARGET/.img-timestamp
+    message $COLOR_INFO "Saving image timestamp ($img_timestamp)"
+    local ts_file="$img_dest/.img-timestamp-${img_type}"
+    echo $img_timestamp > "$ts_file"
 }
 
 function check_new_image {
-    TARGET=$1
-    IMG_DEST=$USER_DIR/img-$TARGET
+    local target=$1
+    local img_type=$2
 
-    img_get_timestamp $TARGET
+    local img_dest=$USER_DIR/img-$target
 
-    if [ -e "$IMG_DEST/.img-timestamp" ]; then
-        CURRENT_IMAGE_TS=$(cat "$IMG_DEST/.img-timestamp")
+    img_get_timestamp $target $img_type
 
-        if [ -z "$CURRENT_IMAGE_TS" ]; then
+    local current_img_timestamp=0
+
+    local ts_file="$img_dest/.img-timestamp-${img_type}"
+    if [ -e "$ts_file" ]; then
+        current_img_timestamp=$(cat "$ts_file")
+
+        if [ -z "$current_img_timestamp" ]; then
             message $COLOR_WARN "Invalid timestamp"
-            m $IMG_DEST/.img-timestamp
-            CURRENT_IMAGE_TS=0
+            rm -f "$ts_file"
+            current_img_timestamp=0
         fi
-    else
-        CURRENT_IMAGE_TS=0
     fi
 
-    if [ $(($IMAGE_TS - $CURRENT_IMAGE_TS)) -ne 0 ]; then
-        message $COLOR_WARN "New image available, delete $IMG_DEST to upgrade"
+    if [ -z "$IMG_TIMESTAMP" ]; then
+        message $COLOR_WARN "Unable to determine if a new image is available"
+    elif [ $IMG_TIMESTAMP -ne $current_img_timestamp ]; then
+        message $COLOR_WARN "New image available, delete $img_dest to upgrade"
     fi
 }
 
 # Fetch image from server
 function fetch_image {
-    TARGET=$1
-    IMG_DEST=$USER_DIR/img-$TARGET
-    img_url_for_target $TARGET
+    local target=$1
+    local img_type=$2
 
-    if [ -e "$IMG_DEST/rootfs.qcow2" ]; then
-        check_new_image $TARGET
+    local img_dest=$USER_DIR/img-$target
+
+    img_url_for_target $target $img_type
+
+    if ( [[ "$img_type" == "yocto" ]] && [ -e "$img_dest/rootfs.qcow2" ] ) ||
+       ( [[ "$img_type" == "legato" ]] && [ -e "$img_dest/legato.squashfs" ] ); then
+
+        check_new_image $target $img_type
 
         return 0
     fi
 
-    message $COLOR_INFO "Fetching image from server"
+    message $COLOR_INFO "Fetching image for '$img_type' from server"
 
-    if ! [ -e "$IMG_DEST" ]; then
-        message $COLOR_INFO "Create $IMG_DEST to hold images ..."
-        mkdir -p $IMG_DEST
+    if ! [ -e "$img_dest" ]; then
+        message $COLOR_INFO "Create $img_dest to hold images ..."
+        mkdir -p $img_dest
     fi
 
     message $COLOR_INFO "Fetching images from $IMG_SRC ..."
-    (cd $IMG_DEST && curl -L $IMG_SRC | tar jx)
+    local img_dest_name="$(basename $IMG_SRC)"
+    (cd $img_dest && rm -f $img_dest_name && wget -O "$img_dest_name" -L $IMG_SRC)
     if [ $? -ne 0 ]; then
         message $COLOR_ERROR "Failed to retrieve image"
         exit 1
     fi
 
-    img_get_timestamp $TARGET
-    img_set_timestamp $TARGET $IMAGE_TS
+    if [[ "$img_dest_name" == *.tar.bz2 ]]; then
+        (cd $img_dest && tar jxf "$img_dest_name")
+        check_ret
+    fi
+
+    img_get_timestamp $target $img_type
+    img_save_timestamp $target $img_type $IMG_TIMESTAMP
 }
 
 # Create snapshot from image
 function create_snapshot {
-    IMG_SRC=$1
-    IMG_DEST=$2
+    local img_src=$1
+    local img_dest=$2
 
     message $COLOR_INFO "Create snapshot from rootfs ..."
-    qemu-img create -f qcow2 -b $IMG_SRC $IMG_DEST
+    qemu-img create -f qcow2 -b $img_src $img_dest
     check_ret
 }
 
-verlte() {
+# Version compare: less than or equal
+function verlte {
     [  "$1" = "$(echo -e "$1\n$2" | sort -V | head -n1)" ]
 }
 
-verlt() {
+# Version compare: less than
+function verlt {
     [ "$1" = "$2" ] && return 1 || verlte $1 $2
 }
 
 function get_qemu_version {
-    qemu_bin_path=$1
+    local qemu_bin_path=$1
 
-    qemu_version=$($qemu_bin_path --version |sed 's/.*version \([\.0-9]*\).*/\1/g')
+    qemu_version=$($qemu_bin_path --version | sed 's/.*version \([\.0-9]*\).*/\1/g;t;d')
 
     message $COLOR_INFO "Testing QEmu candidate '$qemu_bin_path': version $qemu_version"
 }
 
 # Find qemu
 function find_qemu_bin {
-    QEMU_BIN=qemu-system-$QEMU_ARCH
-    message $COLOR_MSG "Looking for $QEMU_BIN ..."
+    local qemu_bin_name=qemu-system-$QEMU_ARCH
+    message $COLOR_MSG "Looking for $qemu_bin_name ..."
 
     unset best_bin
     best_version="0"
 
     # In path
-    if which $QEMU_BIN > /dev/null; then
-        qemu_bin=$(which $QEMU_BIN)
+    if which $qemu_bin_name > /dev/null; then
+        qemu_bin=$(which $qemu_bin_name)
         get_qemu_version $qemu_bin
         best_version=$qemu_version
         best_bin=$qemu_bin
@@ -246,7 +314,7 @@ function find_qemu_bin {
 
     # In toolchains dir
     for toolchain_dir in $(env |grep '_TOOLCHAIN_DIR' | sed 's/[A-Z0-9]*_TOOLCHAIN_DIR=//g'); do
-        qemu_bin="$toolchain_dir/../$QEMU_BIN"
+        qemu_bin="$toolchain_dir/../$qemu_bin_name"
         if [ -e "$qemu_bin" ]; then
             get_qemu_version $qemu_bin
             verlt $best_version $qemu_version
@@ -258,8 +326,10 @@ function find_qemu_bin {
     done
 
     if [ -z "$best_bin" ]; then
-        message $COLOR_ERROR "Unable to find qemu candidate for $QEMU_BIN, please install qemu"
-        exit 1
+        message $COLOR_ERROR "Unable to find qemu candidate for '$qemu_bin_name', please install qemu"
+        if [[ "$ONLY_PREPARE" != 1 ]]; then
+            exit 1
+        fi
     fi
 
     QEMU_BIN=$best_bin
@@ -274,7 +344,7 @@ SCRIPT_DIR=$( cd `dirname "$0"` && pwd )
 
 # By default, store images & configuration in script directory
 if [ -z "$USER_DIR" ]; then
-    USER_DIR=$SCRIPT_DIR
+    USER_DIR="$HOME/.legato/virt"
 fi
 
 ARG_COMMON=""
@@ -298,39 +368,79 @@ if [[ "$OPT_TARGET" == "virt" ]]; then
     OPT_TARGET="virt-$VIRT_TARGET_ARCH"
 fi
 
+# Configure
 function configure_virt_common {
     message $COLOR_TITLE "Virtual target ($VIRT_TARGET_ARCH)"
 
-    fetch_image $OPT_TARGET
+    # Linux
+    if [ -z "$KERNEL_IMG" ] && [ -z "$ROOTFS_IMG" ]; then
+        fetch_image $OPT_TARGET 'yocto'
 
-    # Let the image define it's own default arguments for QEmu
-    # it is still possible to override them after that
-    if [ -e $USER_DIR/img-$OPT_TARGET/qemu-config ]; then
-        source $USER_DIR/img-$OPT_TARGET/qemu-config
+        KERNEL_IMG="$USER_DIR/img-$OPT_TARGET/kernel"
+        ROOTFS_IMG="$USER_DIR/img-$OPT_TARGET/rootfs.qcow2"
     fi
 
-    KERNEL_IMG=$USER_DIR/img-$OPT_TARGET/kernel
-    ROOTFS_IMG=$USER_DIR/img-$OPT_TARGET/rootfs.qcow2
+    # Legato image
+    if [ -z "$LEGATO_IMG" ]; then
+        LEGATO_IMG="$USER_DIR/img-$OPT_TARGET/legato.squashfs"
+
+        if [ -e "$LEGATO_ROOT/build/virt/legato.squashfs" ]; then
+            # Use the local image if available
+            ln -sf $LEGATO_ROOT/build/virt/legato.squashfs $LEGATO_IMG
+        else
+            fetch_image $OPT_TARGET 'legato'
+        fi
+    fi
+
+    # User FS image
+    if [ -z "$USERFS_IMG" ] && [ "$OPT_PERSIST" -eq 1 ]; then
+        USERFS_IMG="$USER_DIR/img-$OPT_TARGET/userfs.qcow2"
+
+        if [ ! -e "$USERFS_IMG" ]; then
+            USERFS_IMG_ext4="$USER_DIR/img-$OPT_TARGET/userfs.ext4"
+
+            # Generate an empty ext4 partition that will be used as /mnt/flash
+            qemu-img create -f raw "$USERFS_IMG_ext4" $USERFS_SIZE
+
+            mkfs -t ext4 "$USERFS_IMG_ext4"
+
+            # Convert to qcow2 (mostly to save space)
+            qemu-img convert -f raw -O qcow2 "$USERFS_IMG_ext4" "$USERFS_IMG"
+            USERFS_IMG="$USERFS_IMG"
+        fi
+    fi
+
+    # Config
+    if [ -z "$QEMU_CONFIG" ]; then
+        QEMU_CONFIG="$USER_DIR/img-$OPT_TARGET/qemu-config"
+    fi
+
+    # Let the image define it's own default arguments for QEmu.
+    # It is still possible to override them after that.
+    if [ -e "$QEMU_CONFIG" ]; then
+        source "$QEMU_CONFIG"
+    fi
 }
 
+ARG_TARGET=''
+CONSOLE_TTY='ttyS0'
+ROOTFS_METHOD=-hda
 if [[ "$OPT_TARGET" == "virt-x86" ]]; then
 
-    CMDLINE="root=/dev/hda1 console=ttyS0 rw mem=128M"
-    ARG_TARGET=''
-    ROOTFS_METHOD=-hda
+    CMDLINE="root=/dev/hda1 rw"
 
     configure_virt_common
 
 elif [[ "$OPT_TARGET" == "virt-arm" ]]; then
 
-    CMDLINE="root=/dev/sda1 console=ttyS0 rootwait mem=128M"
-    ARG_TARGET='-M versatilepb -m 128'
-    ROOTFS_METHOD=-hda
+    CMDLINE="root=/dev/sda1 rootwait"
+    ARG_TARGET='-machine versatilepb'
+    CONSOLE_TTY='ttyAMA0'
 
     configure_virt_common
 
 else
-    echo "This target is not supported"
+    message $COLOR_ERROR "This target is not supported"
     exit -1
 fi
 
@@ -340,8 +450,8 @@ else
     message $COLOR_MSG "Volatile mode (changes won't be committed to the rootfs)"
     ARG_PERSIST="-snapshot"
 
-    mkdir -p $USER_DIR/img-$TARGET
-    ROOTFS_IMG_VOLATILE=$USER_DIR/img-$TARGET/rootfs.snapshot
+    mkdir -p $USER_DIR/img-$OPT_TARGET
+    ROOTFS_IMG_VOLATILE=$USER_DIR/img-$OPT_TARGET/rootfs.snapshot
 
     # Create snapshot from real rootfs if it doesn't exist
     if ! [ -e "$ROOTFS_IMG_VOLATILE" ]; then
@@ -350,10 +460,30 @@ else
     fi
 fi
 
+# DTB
+if [ -e "$DTB_IMG" ]; then
+    ARG_DTB="-dtb ${DTB_IMG}"
+fi
+
+# Initrd image
+if [ -e "$INITRD_IMG" ]; then
+    ARG_INITRD="-initrd ${INITRD_IMG}"
+fi
+
+# Legato image
+if [ -e "$LEGATO_IMG" ]; then
+    ARG_LEGATO="-drive format=raw,index=1,file=${LEGATO_IMG}"
+fi
+
+# User FS image
+if [ -e "$USERFS_IMG" ]; then
+    ARG_USERFS="-drive format=qcow2,index=2,file=${USERFS_IMG}"
+fi
+
 # Kernel Messages
 if [ "$OPT_KMESG" -eq 1 ]; then
     message $COLOR_MSG "Kernel messages to console"
-    CMDLINE="$CMDLINE console=ttyAMA0,115200"
+    CMDLINE="$CMDLINE console=$CONSOLE_TTY"
 else
     message $COLOR_MSG "Kernel messages discarded"
 fi
@@ -362,6 +492,11 @@ fi
 if [ "$OPT_GDB" -eq 1 ]; then
     message $COLOR_MSG "GDB Server"
     ARG_GDB="-s"
+fi
+
+# KVM
+if [[ "$OPT_KVM" == "1" ]] && [[ "$OPT_TARGET" == "virt-x86"* ]]; then
+    ARG_KVM="--enable-kvm"
 fi
 
 # Serial
@@ -374,6 +509,16 @@ else
     ARG_SERIAL=
 fi
 
+# AT
+if [ -n "$OPT_ATCMD" ]; then
+    ARG_ATCMD="-chardev serial,id=atcmd,path=${OPT_ATCMD} -device isa-serial,chardev=atcmd"
+fi
+
+# PPP
+if [ -n "$OPT_PPPCMD" ]; then
+    ARG_PPPCMD="-chardev serial,id=pppcmd,path=${OPT_PPPCMD} -device isa-serial,chardev=pppcmd"
+fi
+
 # Net: vlan 0
 if [ "$OPT_NET" == "user" ]; then
     message $COLOR_MSG "Network in user mode"
@@ -381,7 +526,11 @@ if [ "$OPT_NET" == "user" ]; then
     NET_ADDR=",net=192.168.76.0/24"
 
     # Ports forwarded from guest to host
-    NET_HOSTFWD=",hostfwd=tcp::$SSH_PORT-:22,hostfwd=tcp::$SIMU_PORT-:5000"
+    NET_HOSTFWD=",hostfwd=tcp::$SSH_PORT-:22"
+    NET_HOSTFWD="${NET_HOSTFWD},hostfwd=tcp::$SIMU_PORT-:5000"
+    # Ports used by the sample app 'httpServer'
+    NET_HOSTFWD="${NET_HOSTFWD},hostfwd=tcp::$HTTP_PORT-:8080"
+    NET_HOSTFWD="${NET_HOSTFWD},hostfwd=tcp::$HTTPS_PORT-:8443"
 
     # Restrict = when yes, isolate guest from host network
     #NET_RESTRICT=",restrict=yes"
@@ -412,7 +561,7 @@ else
 fi
 
 # Sound
-if pulseaudio --check; then
+if which pulseaudio > /dev/null && pulseaudio --check; then
     message $COLOR_INFO " => Sound through PulseAudio"
     export QEMU_AUDIO_DRV=pa
 else
@@ -420,9 +569,29 @@ else
     export QEMU_AUDIO_DRV=none
 fi
 
+# IMA
+if [[ "$OPT_IMA" == "1" ]] || \
+   [[ "$OPT_IMA" == "fix" ]] || \
+   [[ "$OPT_IMA" == "log" ]]; then
+    if [[ "$OPT_IMA" == "fix" ]]; then
+        IMA_KERNEL_CMDLINE_OPTIONS="${IMA_KERNEL_CMDLINE_OPTIONS//enforce/fix}"
+    elif [[ "$OPT_IMA" == "log" ]]; then
+        IMA_KERNEL_CMDLINE_OPTIONS="${IMA_KERNEL_CMDLINE_OPTIONS//enforce/log}"
+    fi
+
+    message $COLOR_INFO " => With IMA ($IMA_KERNEL_CMDLINE_OPTIONS)"
+
+    if [[ "$IMA_BUILD" != "1" ]] || [ -z "$IMA_KERNEL_CMDLINE_OPTIONS" ]; then
+        message $COLOR_ERROR "Trying to enable IMA while Linux build is not IMA-enabled."
+        exit 1
+    fi
+
+    CMDLINE="$CMDLINE $IMA_KERNEL_CMDLINE_OPTIONS"
+fi
+
 # QEmu Pid file
 if true; then
-    PID_FILE=$USER_DIR/qemu.pid
+    PID_FILE=${PID_FILE:-$USER_DIR/qemu.pid}
 
     if [ -e "$PID_FILE" ]; then
         PID=$(cat $PID_FILE)
@@ -443,11 +612,9 @@ ROOTFS="$ROOTFS_METHOD $ROOTFS_IMG"
 if [ -z "$QEMU_BIN" ]; then
     if [ -z "$QEMU_ARCH" ]; then
         if [[ "$VIRT_TARGET_ARCH" == "x86" ]]; then
-            if [[ "$HOST_ARCH" != "x86_64" ]]; then
-                QEMU_ARCH=i386
-            else
-                QEMU_ARCH=x86_64
-            fi
+            QEMU_ARCH=i386
+        elif [[ "$VIRT_TARGET_ARCH" == "x86_64" ]]; then
+            QEMU_ARCH=x86_64
         else
             QEMU_ARCH=arm
         fi
@@ -470,9 +637,18 @@ message $COLOR_MSG " => $CMDLINE"
 message $COLOR_MSG "QEmu binary ($QEMU_ARCH):"
 message $COLOR_MSG " => $QEMU_BIN ($QEMU_VERSION)"
 
-ARGS="-kernel $KERNEL_IMG $ROOTFS $ARG_COMMON $ARG_TARGET $ARG_PERSIST $ARG_NET $ARG_NET2 $ARG_SERIAL $ARG_SOUND $ARG_PID $ARG_GDB"
+ARGS="-kernel $KERNEL_IMG $ROOTFS $ARG_DTB $ARG_INITRD $ARG_LEGATO $ARG_USERFS $ARG_COMMON $ARG_TARGET $ARG_PERSIST $ARG_NET $ARG_NET2 $ARG_SERIAL $ARG_SOUND $ARG_PID $ARG_GDB $ARG_KVM $ARG_ATCMD $ARG_PPPCMD"
 message $COLOR_MSG "QEmu arguments:"
-message $COLOR_MSG " => $ARGS"
+message $COLOR_MSG " => $(echo "$ARGS" | sed 's/ -/\\n     -/g')"
+
+if [ "$RESTART_ON_ERROR" -eq 1 ]; then
+    message $COLOR_MSG "Restarting on errors"
+fi
+
+if [ "$ONLY_PREPARE" -eq 1 ]; then
+    message $COLOR_MSG "Only preparing"
+    exit 0
+fi
 
 message $COLOR_OK "Starting ..."
 
@@ -480,13 +656,24 @@ if [ "$OPT_KMESG" -ne 1 ]; then
    message $COLOR_WARN " Kernel logs disabled, it should take few seconds to boot"
 fi
 
-echo "RUNNING:"
-echo $QEMU_BIN
-echo $ARGS
-echo $CMDLINE
+while true; do
+    QEMU_START=$(date +%s)
 
-$QEMU_BIN $ARGS -append "$CMDLINE"
-EXIT_CODE=$?
+    $QEMU_BIN $ARGS -append "$CMDLINE"
+    EXIT_CODE=$?
+
+    QEMU_END=$(date +%s)
+
+    # Restart on error, if enabled and if the process took more than 5 seconds to exit.
+    if [ $EXIT_CODE -ne 0 ] && \
+       [ $(( $QEMU_END - $QEMU_START)) -gt 5 ] && \
+       [ "$RESTART_ON_ERROR" -eq 1 ]; then
+        echo "QEmu Exit: $EXIT_CODE (restarting)"
+    else
+        echo "QEmu Exit: $EXIT_CODE"
+        break
+    fi
+done
 
 if [ -e "$PID_FILE" ]; then
     rm $PID_FILE

@@ -5,7 +5,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless, Inc. 2015. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless, Inc. 2015.
  */
 
 
@@ -13,7 +13,7 @@
  *
  * Legato @ref c_pa_ips include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_PA_IPS_INCLUDE_GUARD
@@ -119,6 +119,36 @@ LE_SHARED le_result_t pa_GetVoltageThresholds
     uint16_t* hiCriticalVoltPtr
         ///< [OUT]
         ///< [IN] The high critical input voltage threshold in [mV].
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Platform power source.
+ *
+ * @return
+ *      - LE_OK             The function succeeded.
+ *      - LE_BAD_PARAMETER  Null pointer provided as a parameter.
+ *      - LE_FAULT          The function failed to get the value.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ips_GetPowerSource
+(
+    le_ips_PowerSource_t* powerSourcePtr    ///< [OUT] The power source.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Platform battery level in percent.
+ *
+ * @return
+ *      - LE_OK             The function succeeded.
+ *      - LE_BAD_PARAMETER  Null pointer provided as a parameter.
+ *      - LE_FAULT          The function failed to get the value.
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_ips_GetBatteryLevel
+(
+    uint8_t* batteryLevelPtr    ///< [OUT] The battery level in percent.
 );
 
 //--------------------------------------------------------------------------------------------------

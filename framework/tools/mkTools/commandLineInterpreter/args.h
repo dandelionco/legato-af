@@ -37,7 +37,7 @@
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #ifndef LEGATO_MKTOOLS_CLI_ARGS_H_INCLUDE_GUARD
@@ -164,7 +164,7 @@ void AddOptionalString
 
 //--------------------------------------------------------------------------------------------------
 /**
- *  Add an optional string parameter.  However instead of only updating a single paramteter a value
+ *  Add an optional string parameter.  However instead of only updating a single parameter a value
  *  update callback is invoked instead.  This way the callee can update a list of values everytime
  *  the supplied callback is invoked.
  */
@@ -235,9 +235,7 @@ void AddMultipleString
 //--------------------------------------------------------------------------------------------------
 void Save
 (
-    const mk::BuildParams_t& buildParams,
-    int argc,
-    const char** argv
+    const mk::BuildParams_t& buildParams
 );
 
 
@@ -251,9 +249,7 @@ void Save
 //--------------------------------------------------------------------------------------------------
 bool MatchesSaved
 (
-    const mk::BuildParams_t& buildParams,
-    int argc,
-    const char** argv
+    const mk::BuildParams_t& buildParams
 );
 
 

@@ -2,7 +2,7 @@
 /**
  * @file app.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@
  * Represents a single application.
  */
 //--------------------------------------------------------------------------------------------------
-struct App_t
+struct App_t : public HasTargetInfo_t
 {
     App_t(parseTree::AdefFile_t* filePtr);
 
@@ -47,12 +47,14 @@ struct App_t
 
     std::map<std::string, Exe_t*> executables;  ///< Collection of executables defined in this app.
 
-    std::list<FileSystemObject_t*> bundledFiles; ///< List of files to be bundled in the app.
-    std::list<FileSystemObject_t*> bundledDirs;  ///< List of directories to be bundled in the app.
+    FileObjectPtrSet_t bundledFiles; ///< List of files to be bundled in the app.
+    FileObjectPtrSet_t bundledDirs;  ///< List of directories to be bundled in the app.
+    FileObjectPtrSet_t bundledBinaries; ///< List of binaries to be bundled in a pre-built app.
 
-    std::list<FileSystemObject_t*> requiredFiles; ///< List of files to be imported into the app.
-    std::list<FileSystemObject_t*> requiredDirs;  ///< List of dirs to be imported into the app.
-    std::list<FileSystemObject_t*> requiredDevices;///< List of devices to be imported into the app.
+    FileObjectPtrSet_t requiredFiles; ///< List of files to be imported into the app.
+    FileObjectPtrSet_t requiredDirs;  ///< List of dirs to be imported into the app.
+    FileObjectPtrSet_t requiredDevices;///< List of devices to be imported into the app.
+    std::set<std::string> requiredModules;  ///< Set of required modules in the app.
 
     std::list<ProcessEnv_t*> processEnvs;   ///< Process environments defined in the app.
 
@@ -71,6 +73,7 @@ struct App_t
     // Watchdog
     WatchdogAction_t  watchdogAction;
     WatchdogTimeout_t watchdogTimeout;
+    WatchdogTimeout_t maxWatchdogTimeout;
 
     /// Map of configuration tree names to access permissions (see permissions.h).
     std::map<std::string, Permissions_t> configTrees;

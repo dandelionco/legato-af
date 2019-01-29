@@ -2,7 +2,7 @@
 /**
  * Implementation of the "mk" tool, which implements all of "mkcomp", "mkexe", "mkapp", and "mksys".
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -44,13 +44,21 @@ int main(int argc, const char** argv)
         }
         else
         {
-            std::cerr << "*** ERROR: unknown command name '" << fileName << "'." << std::endl;
+            std::cerr << mk::format(LE_I18N("** ERROR: unknown command name '%s'."), fileName)
+                      << std::endl;
             return EXIT_FAILURE;
         }
     }
-    catch (std::runtime_error& e)
+    catch (mk::Exception_t &e)
     {
-        std::cerr << "** ERROR:" << std::endl << e.what() << std::endl;
+        std::cerr << LE_I18N("** ERROR:") << std::endl
+                  << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    catch (std::exception& e)
+    {
+        std::cerr << LE_I18N("** ERROR:") << std::endl
+                  << mk::format(LE_I18N("Internal error: %s"), e.what()) << std::endl;
         return EXIT_FAILURE;
     }
 

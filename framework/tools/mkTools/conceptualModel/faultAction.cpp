@@ -2,7 +2,7 @@
 /**
  *  Implementation of the FaultAction_t class.
  *
- *  Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -18,9 +18,11 @@ namespace model
  * Assignment operator.  Validates and stores the FaultAction_t value.
  *
  * @throws mk::Exception_t if input is not one of the valid action strings
+ *
+ * @return  Reference of this object.
  */
 //--------------------------------------------------------------------------------------------------
-void FaultAction_t::operator =
+FaultAction_t& FaultAction_t::operator =
 (
     const std::string& action
 )
@@ -41,8 +43,12 @@ void FaultAction_t::operator =
     }
     else
     {
-        throw mk::Exception_t("Unknown fault action '" + action + "'.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Unknown fault action '%s'."), action)
+        );
     }
+
+    return *this;
 }
 
 
@@ -64,7 +70,7 @@ const
 {
     if (!isSet)
     {
-        throw mk::Exception_t("Fetching fault action limit that has not been set.");
+        throw mk::Exception_t(LE_I18N("Fetching fault action limit that has not been set."));
     }
 
     return value;

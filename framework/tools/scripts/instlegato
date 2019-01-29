@@ -1,6 +1,6 @@
 #!/bin/bash
 copyright="
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 "
 
 if ! [ $LEGATO_ROOT ]; then echo "Run bin/legs first" >&2; exit 1; fi
@@ -59,7 +59,7 @@ fi
 # Otherwise, use $DEST_IP, if set. Otherwise report an error.
 SetTargetIP $2
 
-SYSTEM_FILE=`ls "$BUILD_DIR/"system.*.update`
+SYSTEM_FILE=`ls "$BUILD_DIR"/system.*.update | grep -v signed`
 
 if ! [ -f "$SYSTEM_FILE" ]
 then

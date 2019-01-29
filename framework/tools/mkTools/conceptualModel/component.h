@@ -2,20 +2,19 @@
 /**
  * @file component.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
 #ifndef LEGATO_MKTOOLS_MODEL_COMPONENT_H_INCLUDE_GUARD
 #define LEGATO_MKTOOLS_MODEL_COMPONENT_H_INCLUDE_GUARD
 
-
 //--------------------------------------------------------------------------------------------------
 /**
  * Represents a single component.
  */
 //--------------------------------------------------------------------------------------------------
-struct Component_t
+struct Component_t : public HasTargetInfo_t
 {
     const parseTree::CdefFile_t* defFilePtr;  ///< Pointer to root of parse tree for .cdef file.
 
@@ -25,15 +24,13 @@ struct Component_t
 
     std::string workingDir; ///< Working dir path for this component, relative to working dir root.
 
-    std::string lib;        ///< Absolute path to component library file ("" if no lib).
-
-    std::string initFuncName;   ///< Real name of the COMPONENT_INIT function ("" if no lib).
-
     std::list<ObjectFile_t*> cObjectFiles;  ///< List of .o files to build from C source files.
     std::list<ObjectFile_t*> cxxObjectFiles;///< List of .o files to build from C++ source files.
     std::list<JavaPackage_t*> javaPackages; ///< List of packages of Java code.
+    std::list<PythonPackage_t*> pythonPackages; ///< List of packages of Python code.
+    std::list<std::string> externalBuildCommands; ///< List of external build commands.
 
-    std::set<std::string> staticLibs;   ///< Static library files to be linked with the exe.
+    std::set<std::string> staticLibs;   ///< Static library files required by this component.
 
     std::list<std::string> ldFlags;     ///< List of linker options.
     std::list<std::string> cFlags;      ///< List of options to pass to the C compiler.
@@ -41,12 +38,13 @@ struct Component_t
 
     std::list<Component_t*> subComponents;  ///< List of components this component requires.
 
-    std::list<FileSystemObject_t*> bundledFiles; ///< List of files to be bundled in the app.
-    std::list<FileSystemObject_t*> bundledDirs;  ///< List of directories to be bundled in the app.
+    FileObjectPtrSet_t bundledFiles; ///< List of files to be bundled in the app.
+    FileObjectPtrSet_t bundledDirs;  ///< List of directories to be bundled in the app.
 
-    std::list<FileSystemObject_t*> requiredFiles; ///< List of files to be imported into the app.
-    std::list<FileSystemObject_t*> requiredDirs;  ///< List of dirs to be imported into the app.
-    std::list<FileSystemObject_t*> requiredDevices;///< List of devices to be imported into the app.
+    FileObjectPtrSet_t requiredFiles; ///< List of files to be imported into the app.
+    FileObjectPtrSet_t requiredDirs;  ///< List of dirs to be imported into the app.
+    FileObjectPtrSet_t requiredDevices;///< List of devices to be imported into the app.
+    std::set<std::string> requiredModules;  ///< Set of required modules in the component.
 
     std::list<ApiTypesOnlyInterface_t*> typesOnlyApis;///< List of API files to import types from.
     std::list<ApiServerInterface_t*> serverApis;  ///< List of server-side interfaces implemented.
@@ -57,8 +55,6 @@ struct Component_t
 
     std::set<std::string> implicitDependencies; ///< Changes to these files triggers a re-link.
 
-    std::list<Asset_t*> assets;  ///< Asset data that this component can sync with AirVantage.
-
     // Get a pre-existing Component object for the component found at a given directory path.
     // @return Pointer to the object or NULL if not found.
     static Component_t* GetComponent(const std::string& path);
@@ -67,6 +63,9 @@ struct Component_t
     // @return Pointer to the object.
     // @throw model::Exception_t if already exists.
     static Component_t* CreateComponent(const parseTree::CdefFile_t* filePtr);
+
+    void GetBundledFilesOfType(BundleAccess_t access, const std::string& fileType,
+                               std::list<std::string>& fileList);
 
     // Does the component have C code?
     bool HasCCode() const
@@ -92,11 +91,32 @@ struct Component_t
         return javaPackages.empty() != true;
     }
 
+    // Does the component have Python code?
+    bool HasPythonCode() const
+    {
+        return pythonPackages.empty() != true;
+    }
+
+    // Is the component built using an external build process
+    bool HasExternalBuild() const
+    {
+        return externalBuildCommands.empty() != true;
+    }
+
     // Does the component have code in multiple languages that are incompatible?
     bool HasIncompatibleLanguageCode() const
     {
-        return (HasJavaCode()) && (HasCOrCppCode());
+        int buildMethods = 0;
+        if (HasCOrCppCode())    { ++buildMethods; }
+        if (HasJavaCode())      { ++buildMethods; }
+        if (HasPythonCode())    { ++buildMethods; }
+        if (HasExternalBuild()) { ++buildMethods; }
+
+        return buildMethods > 1;
     }
+
+    void ThrowIncompatibleLanguageException(const parseTree::CompoundItem_t* conflictSectionPtr)
+        const __attribute__((noreturn));
 
 protected:
 

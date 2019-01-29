@@ -1,7 +1,10 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 mkapp( simToolkit.adef
        -i ${LEGATO_ROOT}/interfaces/modemServices
 )
+
+# This is a C test
+add_dependencies(tests_c simToolkit)

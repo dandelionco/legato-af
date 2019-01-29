@@ -14,11 +14,11 @@ executables:
     pmtool = (pmtool)
     gnss = (gnss)
     uartMode = (uartMode)
+    kmod = (moduleLoad)
 }
 
 bindings:
 {
-    cm.cm.le_data -> dataConnectionService.le_data
     cm.cm.le_mrc -> modemService.le_mrc
     cm.cm.le_mdc -> modemService.le_mdc
     cm.cm.le_sim -> modemService.le_sim
@@ -29,6 +29,7 @@ bindings:
     cm.cm.le_ips -> modemService.le_ips
     cm.cm.le_rtc -> modemService.le_rtc
     cm.cm.le_cellnet -> cellNetService.le_cellnet
+    cm.cm.le_ulpm -> powerMgr.le_ulpm
 
     gnss.gnss.le_gnss -> positioningService.le_gnss
     gnss.gnss.le_pos -> positioningService.le_pos
@@ -41,4 +42,14 @@ bindings:
     pmtool.pmtool.le_pm -> powerMgr.le_pm
     pmtool.pmtool.le_ulpm -> powerMgr.le_ulpm
     pmtool.pmtool.le_bootReason -> powerMgr.le_bootReason
+
+    kmod.moduleLoad.le_kernelModule -> <root>.le_kernelModule
+}
+
+bundles:
+{
+    file:
+    {
+        [rx] scripts/cm /scripts/
+    }
 }

@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_info.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -67,6 +67,25 @@ le_result_t pa_info_GetBootloaderVersion
 le_result_t pa_info_GetImei
 (
     pa_info_Imei_t imei   ///< [OUT] IMEI value
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function get the International Mobile Equipment Identity software version number (IMEISV).
+ *
+ * @return
+ * - LE_FAULT         The function failed to get the value.
+ * - LE_TIMEOUT       No response was received from the Modem.
+ * - LE_OK            The function succeeded.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_info_GetImeiSv
+(
+    pa_info_ImeiSv_t imeiSv   ///< [OUT] IMEISV value
 )
 {
     LE_ERROR("Unsupported function called");
@@ -285,6 +304,39 @@ le_result_t pa_info_GetPriId
     return LE_FAULT;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Carrier PRI Name and Revision Number strings in ASCII text.
+ *
+ * @return
+ *      - LE_OK            The function succeeded.
+ *      - LE_FAULT         The function failed to get the value.
+ *      - LE_OVERFLOW      The Name or the Revision Number strings length exceed the maximum length.
+ *      - LE_UNSUPPORTED   The function is not supported on the platform.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_info_GetCarrierPri
+(
+    char* capriNameStr,
+        ///< [OUT]
+        ///< The Carrier Product Requirement Information Name
+        ///< Carrier PRI Name string (null-terminated).
+
+    size_t capriNameStrNumElements,
+        ///< [IN]
+
+    char* capriIdRevStr,
+        ///< [OUT]
+        ///< The Carrier Product Requirement Information Identifier
+        ///< Carrier PRI Revision Number string (null-terminated).
+
+    size_t capriIdRevStrNumElements
+        ///< [IN]
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -346,6 +398,7 @@ le_result_t pa_info_GetPlatformSerialNumber
  *      - LE_FAULT function failed to get the RF devices working status
  *      - LE_OVERFLOW the number of statuses exceeds the maximum size
  *        (LE_INFO_RF_DEVICES_STATUS_MAX)
+ *      - LE_BAD_PARAMETER Null pointers provided
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_info_GetRfDeviceStatus
@@ -372,5 +425,27 @@ le_result_t pa_info_GetRfDeviceStatus
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the last reset information reason
+ *
+ * @return
+ *      - LE_OK          on success
+ *      - LE_UNSUPPORTED if it is not supported by the platform
+ *        LE_OVERFLOW    specific reset information length exceeds the maximum length.
+ *      - LE_FAULT       for any other errors
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_info_GetResetInformation
+(
+    le_info_Reset_t* resetPtr,              ///< [OUT] Reset information
+    char* resetSpecificInfoStr,             ///< [OUT] Reset specific information
+    size_t resetSpecificInfoNumElements     ///< [IN] The length of specific information string.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
 }

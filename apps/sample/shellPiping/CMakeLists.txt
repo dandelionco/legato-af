@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #
 # Contributors:
 #     Sierra Wireless - initial API and implementation
@@ -9,4 +9,4 @@
 mkapp(shellPipe.adef)
 
 # This is a sample application
-add_dependencies(samples shellPipe)
+add_dependencies(samples_c shellPipe)

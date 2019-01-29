@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_mrc.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -111,6 +111,73 @@ le_result_t pa_mrc_RemoveNetworkRegHandler
     LE_ERROR("Unsupported function called");
     return LE_FAULT;
 }
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler for Circuit Switched change handling.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_event_HandlerRef_t pa_mrc_SetCSChangeHandler
+(
+    pa_mrc_ServiceChangeHdlrFunc_t handlerFuncPtr ///< [IN] The handler function.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to unregister the handler for Circuit Switched change
+ * handling.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_mrc_RemoveCSChangeHandler
+(
+    le_event_HandlerRef_t handlerRef
+)
+{
+    LE_ERROR("Unsupported function called");
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler for Packet Switched change handling.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ * @note Doesn't return on failure, so there's no need to check the return value for errors.
+ */
+//--------------------------------------------------------------------------------------------------
+le_event_HandlerRef_t pa_mrc_SetPSChangeHandler
+(
+    pa_mrc_ServiceChangeHdlrFunc_t handlerFuncPtr ///< [IN] The handler function.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to unregister the handler for Packet Switched change
+ * handling.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_mrc_RemovePSChangeHandler
+(
+    le_event_HandlerRef_t handlerRef
+)
+{
+    LE_ERROR("Unsupported function called");
+}
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -242,6 +309,35 @@ void pa_mrc_DeleteScanInformation
 )
 {
     LE_ERROR("Unsupported function called");}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to delete the list of pci Scan Information
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_mrc_DeletePciScanInformation
+(
+    le_dls_List_t *scanInformationListPtr ///< [IN] list of pa_mrc_ScanInformation_t
+)
+{
+    LE_ERROR("Unsupported function called");}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to delete the list of Plmn Information
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_mrc_DeletePlmnScanInformation
+(
+    le_dls_List_t *scanInformationListPtr ///< [IN] list of pa_mrc_PlmnInformation_t
+)
+{
+    LE_ERROR("Unsupported function called");}
+
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -387,8 +483,9 @@ le_result_t pa_mrc_SetAutomaticNetworkRegistration
 /**
  * This function gets the Radio Access Technology currently in use.
  *
- * @return LE_FAULT The function failed to get the Radio Access Technology.
- * @return LE_OK    The function succeeded.
+ * @return
+ * - LE_OK              On success
+ * - LE_FAULT           On failure
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_GetRadioAccessTechInUse
@@ -405,8 +502,9 @@ le_result_t pa_mrc_GetRadioAccessTechInUse
  * Set the Radio Access Technology Preferences
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ * - LE_OK              On success.
+ * - LE_FAULT           On failure.
+ * - LE_UNSUPPORTED     Not supported by platform.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_SetRatPreferences
@@ -416,7 +514,7 @@ le_result_t pa_mrc_SetRatPreferences
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -499,6 +597,7 @@ le_result_t pa_mrc_GetBandPreferences
  * @return
  * - LE_OK              on success
  * - LE_FAULT           on failure
+ * - LE_UNSUPPORTED     the platform doesn't support setting LTE Band preferences.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_SetLteBandPreferences
@@ -507,7 +606,7 @@ le_result_t pa_mrc_SetLteBandPreferences
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -533,8 +632,9 @@ le_result_t pa_mrc_GetLteBandPreferences
  * Set the TD-SCDMA Band Preferences
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ * - LE_OK           On success
+ * - LE_FAULT        On failure
+ * - LE_UNSUPPORTED  The platform doesn't support setting TD-SCDMA Band preferences.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_SetTdScdmaBandPreferences
@@ -543,7 +643,7 @@ le_result_t pa_mrc_SetTdScdmaBandPreferences
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -551,18 +651,19 @@ le_result_t pa_mrc_SetTdScdmaBandPreferences
  * Get the TD-SCDMA Band Preferences
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ * - LE_OK           On success
+ * - LE_FAULT        On failure
+ * - LE_UNSUPPORTED  The platform doesn't support getting TD-SCDMA Band preferences.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_GetTdScdmaBandPreferences
 (
     le_mrc_TdScdmaBandBitMask_t* bandsPtr ///< [OUT] A bit mask to get the TD-SCDMA Band
-                                          ///<  preferences.
+                                          ///<       preferences.
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -683,7 +784,7 @@ void pa_mrc_RemoveSignalStrengthIndHandler
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_SetSignalStrengthIndThresholds
 (
-    le_mrc_Rat_t rat,                 ///< Radio Access Technology
+    le_mrc_Rat_t rat,                 ///< [IN] Radio Access Technology
     int32_t      lowerRangeThreshold, ///< [IN] lower-range threshold in dBm
     int32_t      upperRangeThreshold  ///< [IN] upper-range strength threshold in dBm
 )
@@ -692,6 +793,25 @@ le_result_t pa_mrc_SetSignalStrengthIndThresholds
     return LE_FAULT;
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to set and activate the delta for signal strength indications.
+ *
+ * @return
+ *  - LE_FAULT  Function failed.
+ *  - LE_OK     Function succeeded.
+ *  - LE_BAD_PARAMETER  Bad parameters.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mrc_SetSignalStrengthIndDelta
+(
+    le_mrc_Rat_t rat,    ///< [IN] Radio Access Technology
+    uint16_t     delta   ///< [IN] Signal delta in units of 0.1 dB
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -753,8 +873,9 @@ le_result_t pa_mrc_GetServingCellLocAreaCode
  * Get the Band capabilities
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_GetBandCapabilities
@@ -763,7 +884,7 @@ le_result_t pa_mrc_GetBandCapabilities
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -771,8 +892,9 @@ le_result_t pa_mrc_GetBandCapabilities
  * Get the LTE Band capabilities
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_GetLteBandCapabilities
@@ -781,7 +903,7 @@ le_result_t pa_mrc_GetLteBandCapabilities
 )
 {
     LE_ERROR("Unsupported function called");
-    return LE_FAULT;
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -789,8 +911,9 @@ le_result_t pa_mrc_GetLteBandCapabilities
  * Get the TD-SCDMA Band capabilities
  *
  * @return
- * - LE_OK              on success
- * - LE_FAULT           on failure
+ *  - LE_OK              on success
+ *  - LE_FAULT           on failure
+ *  - LE_UNSUPPORTED     The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_mrc_GetTdScdmaBandCapabilities
@@ -799,5 +922,161 @@ le_result_t pa_mrc_GetTdScdmaBandCapabilities
 )
 {
     LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the Packet Switched state.
+ *
+ * @return
+ *  - LE_FAULT  Function failed.
+ *  - LE_OK     Function succeeded.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mrc_GetPacketSwitchedState
+(
+    le_mrc_NetRegState_t* statePtr  ///< [OUT] The current Packet switched state.
+)
+{
+    LE_ERROR("Unsupported function called");
     return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler to report network reject code.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ * @note Doesn't return on failure, so there's no need to check the return value for errors.
+ */
+//--------------------------------------------------------------------------------------------------
+le_event_HandlerRef_t pa_mrc_AddNetworkRejectIndHandler
+(
+    pa_mrc_NetworkRejectIndHdlrFunc_t networkRejectIndHandler, ///< [IN] The handler function to
+                                                               ///< report network reject
+                                                               ///< indication.
+    void*                             contextPtr               ///< [IN] The context to be given to
+                                                               ///< the handler.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return NULL;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to unregister the handler for network reject indication handling.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_mrc_RemoveNetworkRejectIndHandler
+(
+    le_event_HandlerRef_t handlerRef
+)
+{
+    LE_ERROR("Unsupported function called");
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function activates or deactivates jamming detection notification.
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_FAULT on failure
+ *      - LE_DUPLICATE if jamming detection is already activated and an activation is requested
+ *      - LE_UNSUPPORTED if jamming detection is not supported
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mrc_SetJammingDetection
+(
+    bool activation     ///< [IN] Notification activation request
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function returns the jamming detection notification status.
+ *
+ * * @return
+ *      - LE_OK on success
+ *      - LE_BAD_PARAMETER if the parameter is invalid
+ *      - LE_FAULT on failure
+ *      - LE_UNSUPPORTED if jamming detection is not supported or if this request is not supported
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mrc_GetJammingDetection
+(
+    bool* activationPtr     ///< [IN] Notification activation request
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the SAR backoff state
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ *  - LE_OUT_OF_RANGE   The provided index is out of range.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mrc_SetSarBackoffState
+(
+    uint8_t state      ///< [IN] New state to enable.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the SAR backoff state
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The feature is not supported.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_mrc_GetSarBackoffState
+(
+    uint8_t* statePtr     ///< [OUT] Current state
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to register a handler to report jamming detection notification.
+ *
+ * @return A handler reference, which is only needed for later removal of the handler.
+ *
+ * @note Doesn't return on failure, so there's no need to check the return value for errors.
+ */
+//--------------------------------------------------------------------------------------------------
+le_event_HandlerRef_t pa_mrc_AddJammingDetectionIndHandler
+(
+    pa_mrc_JammingDetectionHandlerFunc_t jammingDetectionIndHandler, ///< [IN] The handler function
+                                                                     ///  to handle jamming
+                                                                     ///  detection indication.
+    void*                               contextPtr                   ///< [IN] The context to be
+                                                                     ///  given to the handler.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return NULL;
 }

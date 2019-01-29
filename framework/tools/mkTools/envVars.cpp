@@ -4,21 +4,26 @@
  *
  * Environment variable helper functions used by various modules.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
 #include "mkTools.h"
 #include <string.h>
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of the environment variable
+ */
+//--------------------------------------------------------------------------------------------------
+#define ENV_VAR_MAX_LEN     1024
+
 /// The standard C environment variable list.
 extern char**environ;
 
 
-
 namespace envVars
 {
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -33,14 +38,17 @@ std::string Get
 )
 //--------------------------------------------------------------------------------------------------
 {
+    char envVar[ENV_VAR_MAX_LEN] = {0};
     const char* value = getenv(name.c_str());
 
     if (value == nullptr)
     {
-        return "";
+        return std::string();
     }
+    // If variable is longer than MAX_LEN, it will be truncated
+    strncpy(envVar, value, sizeof(envVar) - 1);
 
-    return value;
+    return std::string(envVar);
 }
 
 
@@ -59,14 +67,19 @@ std::string GetRequired
 )
 //--------------------------------------------------------------------------------------------------
 {
+    char envVar[ENV_VAR_MAX_LEN] = {0};
     const char* value = getenv(name.c_str());
 
     if (value == nullptr)
     {
-        throw std::runtime_error("The required environment value, " + name + ", has not been set.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("The required environment variable %s has not been set."), name)
+        );
     }
+    // If variable is longer than MAX_LEN, it will be truncated
+    strncpy(envVar, value, sizeof(envVar) - 1);
 
-    return value;
+    return std::string(envVar);
 }
 
 
@@ -85,8 +98,101 @@ void Set
 {
     if (setenv(name.c_str(), value.c_str(), true /* overwrite existing */) != 0)
     {
-        throw mk::Exception_t("Failed to set environment variable '" + name + "' to '"
-                              + value + "'.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to set environment variable '%s' to '%s'."), name, value)
+        );
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set compiler, linker, etc. environment variables according to the target device type, if they're
+ * not already set.
+ */
+//--------------------------------------------------------------------------------------------------
+static void SetToolChainVars
+(
+    const mk::BuildParams_t& buildParams
+)
+//--------------------------------------------------------------------------------------------------
+{
+    if (!buildParams.cCompilerPath.empty())
+    {
+        auto cCompilerPath = buildParams.cCompilerPath;
+        if (!buildParams.compilerCachePath.empty())
+        {
+            cCompilerPath = buildParams.compilerCachePath + " " +
+                            buildParams.cCompilerPath;
+        }
+
+        Set("CC", cCompilerPath.c_str());
+    }
+
+    if (!buildParams.cxxCompilerPath.empty())
+    {
+        auto cxxCompilerPath = buildParams.cxxCompilerPath;
+        if (!buildParams.compilerCachePath.empty())
+        {
+            cxxCompilerPath = buildParams.compilerCachePath + " " +
+                              buildParams.cxxCompilerPath;
+        }
+
+        Set("CXX", cxxCompilerPath.c_str());
+    }
+
+    if (!buildParams.toolChainDir.empty())
+    {
+        Set("TOOLCHAIN_DIR", buildParams.toolChainDir.c_str());
+    }
+
+    if (!buildParams.toolChainPrefix.empty())
+    {
+        Set("TOOLCHAIN_PREFIX", buildParams.toolChainPrefix.c_str());
+    }
+
+    if (!buildParams.sysrootDir.empty())
+    {
+        Set("LEGATO_SYSROOT", buildParams.sysrootDir.c_str());
+    }
+
+    if (!buildParams.linkerPath.empty())
+    {
+        Set("LD", buildParams.linkerPath.c_str());
+    }
+
+    if (!buildParams.archiverPath.empty())
+    {
+        Set("AR", buildParams.archiverPath.c_str());
+    }
+
+    if (!buildParams.assemblerPath.empty())
+    {
+        Set("AS", buildParams.assemblerPath.c_str());
+    }
+
+    if (!buildParams.stripPath.empty())
+    {
+        Set("STRIP", buildParams.stripPath.c_str());
+    }
+
+    if (!buildParams.objcopyPath.empty())
+    {
+        Set("OBJCOPY", buildParams.objcopyPath.c_str());
+    }
+
+    if (!buildParams.readelfPath.empty())
+    {
+        Set("READELF", buildParams.readelfPath.c_str());
+    }
+    else
+    {
+        std::cout << "*************************** readelfPath is empty\n";
+    }
+
+    if (!buildParams.compilerCachePath.empty())
+    {
+        Set("CCACHE", buildParams.compilerCachePath.c_str());
     }
 }
 
@@ -102,34 +208,26 @@ void Set
 //----------------------------------------------------------------------------------------------
 void SetTargetSpecific
 (
-    const std::string& target  ///< Name of the target platform (e.g., "localhost" or "ar7").
+    const mk::BuildParams_t& buildParams
 )
 //--------------------------------------------------------------------------------------------------
 {
     // WARNING: If you add another target-specific variable, remember to update IsReserved().
 
+    // Set compiler, linker, etc variables specific to the target device type, if they're not set.
+    SetToolChainVars(buildParams);
+
     // Set LEGATO_TARGET.
-    Set("LEGATO_TARGET", target.c_str());
+    Set("LEGATO_TARGET", buildParams.target.c_str());
 
     // Set LEGATO_BUILD based on the contents of LEGATO_ROOT, which must be already defined.
     std::string path = GetRequired("LEGATO_ROOT");
     if (path.empty())
     {
-        throw mk::Exception_t("LEGATO_ROOT environment variable is empty.");
+        throw mk::Exception_t(LE_I18N("LEGATO_ROOT environment variable is empty."));
     }
-    path = path::Combine(path, "build/" + target);
+    path = path::Combine(path, "build/" + buildParams.target);
     Set("LEGATO_BUILD", path.c_str());
-
-    // Set LEGATO_SYSROOT.
-    auto sysRoot = ninja::GetSysRootPath(ninja::GetCCompilerPath(target));
-    if (!sysRoot.empty())
-    {
-        if (setenv("LEGATO_SYSROOT", sysRoot.c_str(), false /* not overwrite existing */) != 0)
-        {
-            throw mk::Exception_t("Failed to set LEGATO_SYSROOT environment variable to '"
-                                       + sysRoot + "'.");
-        }
-    }
 }
 
 
@@ -150,149 +248,8 @@ bool IsReserved
     return (   (name == "LEGATO_ROOT")
             || (name == "LEGATO_TARGET")
             || (name == "LEGATO_BUILD")
-            || (name == "LEGATO_SYSROOT") );
-}
-
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Look for environment variables (specified as "$VAR_NAME" or "${VAR_NAME}") in a given string
- * and replace with environment variable contents.
- *
- * @return The converted string.
- **/
-//--------------------------------------------------------------------------------------------------
-std::string DoSubstitution
-(
-    const std::string& path
-)
-//--------------------------------------------------------------------------------------------------
-{
-    std::string result;
-    std::string envVarName;
-
-    enum
-    {
-        NORMAL,
-        AFTER_DOLLAR,
-        UNBRACKETED_VAR_NAME,
-        BRACKETED_VAR_NAME,
-    }
-    state = NORMAL;
-
-    for (auto i = path.begin(); i != path.end() ; i++)
-    {
-        switch (state)
-        {
-            case NORMAL:
-
-                if (*i == '$')
-                {
-                    envVarName = "";
-                    state = AFTER_DOLLAR;
-                }
-                else
-                {
-                    result += *i;
-                }
-                break;
-
-            case AFTER_DOLLAR:
-
-                // Opening curly can be used to start a bracketed environment variable name,
-                // which must be terminated by a closing curly.
-                if (*i == '{')
-                {
-                    state = BRACKETED_VAR_NAME;
-                    break;
-                }
-                else
-                {
-                    state = UNBRACKETED_VAR_NAME;
-                }
-                // ** FALL THROUGH **
-
-            case UNBRACKETED_VAR_NAME:
-
-                // The first character in the env var name can be an alpha character or underscore.
-                // The remaining can be alphanumeric or underscore.
-                if (   (isalpha(*i))
-                    || (!envVarName.empty() && isdigit(*i))
-                    || (*i == '_') )
-                {
-                    envVarName += *i;
-                }
-                else
-                {
-                    // Look up the environment variable, and if found, add its value to the result.
-                    const char* envVarPtr = getenv(envVarName.c_str());
-                    if (envVarPtr != NULL)
-                    {
-                        result += envVarPtr;
-                    }
-
-                    // Copy into the result string the current character from the source string
-                    // (i.e., the one right after the environment variable).
-                    result += *i;
-
-                    state = NORMAL;
-                }
-                break;
-
-            case BRACKETED_VAR_NAME:
-
-                // The first character in the env var name can be an alpha character or underscore.
-                // The remaining can be alphanumeric or underscore.
-                if (   (isalpha(*i))
-                    || (!envVarName.empty() && isdigit(*i))
-                    || (*i == '_') )
-                {
-                    envVarName += *i;
-                }
-                else if (*i == '}') // Make sure properly terminated with closing curly.
-                {
-                    // Look up the environment variable, and if found, add its value to the result.
-                    const char* envVarPtr = getenv(envVarName.c_str());
-                    if (envVarPtr != NULL)
-                    {
-                        result += envVarPtr;
-                    }
-                    state = NORMAL;
-                }
-                else
-                {
-                    throw mk::Exception_t("Invalid character inside bracketed environment"
-                                               "variable name.");
-                }
-                break;
-        }
-    }
-
-    switch (state)
-    {
-        case NORMAL:
-            break;
-
-        case AFTER_DOLLAR:
-            throw mk::Exception_t("Environment variable name missing after '$'.");
-
-        case UNBRACKETED_VAR_NAME:
-            // The end of the string terminates the environment variable name.
-            // Look up the environment variable, and if found, add its value to the result.
-            {
-                const char* envVarPtr = getenv(envVarName.c_str());
-                if (envVarPtr != NULL)
-                {
-                    result += envVarPtr;
-                }
-            }
-            break;
-
-        case BRACKETED_VAR_NAME:
-            throw mk::Exception_t("Closing brace missing from environment variable.");
-    }
-
-    return result;
+            || (name == "LEGATO_SYSROOT")
+            || (name == "CURDIR"));
 }
 
 
@@ -332,7 +289,9 @@ void Save
     std::ofstream saveFile(filePath);
     if (!saveFile.is_open())
     {
-        throw mk::Exception_t("Failed to open file '" + filePath + "' for writing.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to open file '%s' for writing."), filePath)
+        );
     }
 
     // Write each environment variable as a line in the file.
@@ -342,7 +301,9 @@ void Save
 
         if (saveFile.fail())
         {
-            throw mk::Exception_t("Error writing to file '" + filePath + "'.");
+            throw mk::Exception_t(
+                mk::format(LE_I18N("Error writing to file '%s'."), filePath)
+            );
         }
     }
 
@@ -350,7 +311,9 @@ void Save
     saveFile.close();
     if (saveFile.fail())
     {
-        throw mk::Exception_t("Error closing file '" + filePath + "'.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Error closing file '%s'."), filePath)
+        );
     }
 }
 
@@ -375,7 +338,7 @@ bool MatchesSaved
     {
         if (buildParams.beVerbose)
         {
-            std::cout << "Environment variables from previous run not found." << std::endl;
+            std::cout << LE_I18N("Environment variables from previous run not found.") << std::endl;
         }
         return false;
     }
@@ -384,7 +347,9 @@ bool MatchesSaved
     std::ifstream saveFile(filePath);
     if (!saveFile.is_open())
     {
-        throw mk::Exception_t("Failed to open file '" + filePath + "' for reading.");
+        throw mk::Exception_t(
+            mk::format(LE_I18N("Failed to open file '%s' for reading."), filePath)
+        );
     }
 
     int i;
@@ -399,14 +364,17 @@ bool MatchesSaved
         {
             if (buildParams.beVerbose)
             {
-                std::cout << "Env var '" << environ[i] << "' was added." << std::endl;
+                std::cout << mk::format(LE_I18N("Env var '%s' was added."), environ[i])
+                          << std::endl;
             }
 
             goto different;
         }
         else if (!saveFile.good())
         {
-            throw mk::Exception_t("Error reading from file '" + filePath + "'.");
+            throw mk::Exception_t(
+                mk::format(LE_I18N("Error reading from file '%s'."), filePath)
+            );
         }
 
         // Compare the line from the file with the environment variable.
@@ -414,7 +382,8 @@ bool MatchesSaved
         {
             if (buildParams.beVerbose)
             {
-                std::cout << "Env var '" << lineBuff << "' became '" << environ[i] << "'." << std::endl;
+                std::cout << mk::format(LE_I18N("Env var '%s' became '%s'."), lineBuff, environ[i])
+                          << std::endl;
             }
 
             goto different;
@@ -431,14 +400,15 @@ bool MatchesSaved
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Env var '" << lineBuff << "' was removed." << std::endl;
+        std::cout << mk::format(LE_I18N("Env var '%s' was removed."), lineBuff)
+                  << std::endl;
     }
 
 different:
 
     if (buildParams.beVerbose)
     {
-        std::cout << "Environment variables are different this time." << std::endl;
+        std::cout << LE_I18N("Environment variables are different this time.") << std::endl;
     }
     return false;
 }

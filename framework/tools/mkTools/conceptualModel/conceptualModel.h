@@ -75,7 +75,7 @@ System --+--> Bindings --*--> Binding
 
 @endverbatim
  *
- *  Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -85,26 +85,25 @@ System --+--> Bindings --*--> Binding
 namespace model
 {
 
+#include "targetInfo.h"
 #include "programmingLanguage.h"
 #include "objectFile.h"
 #include "javaPackage.h"
+#include "pythonPackage.h"
 #include "appLimit.h"
 #include "api.h"
 #include "binding.h"
 #include "user.h"
 #include "permissions.h"
 #include "fileSystemObject.h"
-#include "assetField.h"
-#include "asset.h"
 #include "component.h"
 #include "exe.h"
 #include "process.h"
 #include "processEnvironment.h"
-#include "app.h"
 #include "module.h"
+#include "app.h"
 #include "command.h"
 #include "system.h"
-
 
 } // namespace model
 

@@ -60,9 +60,7 @@ static parseTree::Binding_t* ParseBinding
     bindingPtr->AddContent(lexer.Pull(parseTree::Token_t::NAME));
 
     // ->
-    SkipWhitespaceAndComments(lexer);
     (void)lexer.Pull(parseTree::Token_t::ARROW);
-    SkipWhitespaceAndComments(lexer);
 
     // Match the server side.  Can be
     //  "serverExe.serverComponent.serverInterface" (internal server)
@@ -145,11 +143,7 @@ static parseTree::RunProcess_t* ParseRunEntry
         entryPtr = new parseTree::RunProcess_t(procNamePtr);
         entryPtr->AddContent(procNamePtr);
 
-        SkipWhitespaceAndComments(lexer);
-
         (void)lexer.Pull(parseTree::Token_t::EQUALS);
-
-        SkipWhitespaceAndComments(lexer);
 
         (void)lexer.Pull(parseTree::Token_t::OPEN_PARENTHESIS);
     }
@@ -158,17 +152,11 @@ static parseTree::RunProcess_t* ParseRunEntry
         entryPtr = new parseTree::RunProcess_t(lexer.Pull(parseTree::Token_t::OPEN_PARENTHESIS));
     }
 
-    SkipWhitespaceAndComments(lexer);
-
     entryPtr->AddContent(lexer.Pull(parseTree::Token_t::FILE_PATH));
-
-    SkipWhitespaceAndComments(lexer);
 
     while (lexer.IsMatch(parseTree::Token_t::FILE_PATH))
     {
         entryPtr->AddContent(lexer.Pull(parseTree::Token_t::FILE_PATH));
-
-        SkipWhitespaceAndComments(lexer);
     }
 
     entryPtr->lastTokenPtr = lexer.Pull(parseTree::Token_t::CLOSE_PARENTHESIS);
@@ -255,10 +243,16 @@ static parseTree::CompoundItem_t* ParseProcessesSubsection
     {
         return ParseWatchdogTimeout(lexer, subsectionNameTokenPtr);
     }
+    else if (subsectionName == "maxWatchdogTimeout")
+    {
+        return ParseSimpleSection(lexer, subsectionNameTokenPtr, parseTree::Token_t::INTEGER);
+    }
     else
     {
-        lexer.ThrowException("Unexpected subsection name '" + subsectionName
-                             + "' in 'processes' section.");
+        lexer.ThrowException(
+            mk::format(LE_I18N("Unexpected subsection name '%s' in 'processes' section."),
+                       subsectionName)
+        );
         return NULL;
     }
 }
@@ -281,7 +275,6 @@ static parseTree::RequiredApi_t* ParseExternRequiredApi
 
     // Assume there's only a file path.
     parseTree::Token_t* apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-    SkipWhitespaceAndComments(lexer);
 
     // If there's an '=' following it, then attempt to convert it into an alias (NAME)
     // and pull out the '=' and the actual API file path.
@@ -294,17 +287,15 @@ static parseTree::RequiredApi_t* ParseExternRequiredApi
         if (   (dotCount != 0)
             && (dotCount != 2))
         {
-            lexer.ThrowException("Wrong number of parts in client-side interface name. Must"
-                                 " be either a single interface name or an executable name,"
-                                 " component name and interface name separated by dots"
-                                 " (e.g., \"exeName.componentName.ifName\"");
+            lexer.ThrowException(LE_I18N("Wrong number of parts in client-side interface name. Must"
+                                         " be either a single interface name or an executable name,"
+                                         " component name and interface name separated by dots"
+                                         " (e.g., \"exeName.componentName.ifName\""));
         }
 
         aliasPtr = apiFilePathPtr;
         (void)lexer.Pull(parseTree::Token_t::EQUALS);
-        SkipWhitespaceAndComments(lexer);
         apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-        SkipWhitespaceAndComments(lexer);
     }
 
     // Create parse tree node for this.
@@ -322,12 +313,11 @@ static parseTree::RequiredApi_t* ParseExternRequiredApi
     if (lexer.IsMatch(parseTree::Token_t::CLIENT_IPC_OPTION))
     {
         apiPtr->AddContent(lexer.Pull(parseTree::Token_t::CLIENT_IPC_OPTION));
-        SkipWhitespaceAndComments(lexer);
 
         if (lexer.IsMatch(parseTree::Token_t::CLIENT_IPC_OPTION))
         {
-            lexer.ThrowException("Only one option is allowed for client-side interfaces on"
-                                 " pre-built executables.");
+            lexer.ThrowException(LE_I18N("Only one option is allowed for client-side interfaces on"
+                                         " pre-built executables."));
         }
     }
 
@@ -351,9 +341,7 @@ static parseTree::ProvidedApi_t* ParseExternProvidedApi
     parseTree::Token_t* aliasPtr = NULL;
 
     // Assume there's only a file path.
-    SkipWhitespaceAndComments(lexer);
     parseTree::Token_t* apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-    SkipWhitespaceAndComments(lexer);
 
     // If there's an '=' following it, then attempt to convert it into an alias (NAME)
     // and pull out the '=' and the actual API file path.
@@ -366,17 +354,15 @@ static parseTree::ProvidedApi_t* ParseExternProvidedApi
         if (   (dotCount != 0)
             && (dotCount != 2))
         {
-            lexer.ThrowException("Wrong number of parts in server-side interface name. Must"
-                                 " be either a single interface name or an executable name,"
-                                 " component name and interface name separated by dots"
-                                 " (e.g., \"exeName.componentName.ifName\"");
+            lexer.ThrowException(LE_I18N("Wrong number of parts in server-side interface name. Must"
+                                         " be either a single interface name or an executable name,"
+                                         " component name and interface name separated by dots"
+                                         " (e.g., \"exeName.componentName.ifName\""));
         }
 
         aliasPtr = apiFilePathPtr;
         (void)lexer.Pull(parseTree::Token_t::EQUALS);
-        SkipWhitespaceAndComments(lexer);
         apiFilePathPtr = lexer.Pull(parseTree::Token_t::FILE_PATH);
-        SkipWhitespaceAndComments(lexer);
     }
 
     // Create a new Provided API item.
@@ -392,8 +378,8 @@ static parseTree::ProvidedApi_t* ParseExternProvidedApi
 
     if (lexer.IsMatch(parseTree::Token_t::SERVER_IPC_OPTION))
     {
-        lexer.ThrowException("No options are valid for server-side interfaces on"
-                             " pre-built executables.");
+        lexer.ThrowException(LE_I18N("No options are valid for server-side interfaces on"
+                                     " pre-built executables."));
     }
 
     return apiPtr;
@@ -424,9 +410,7 @@ static parseTree::TokenList_t* ParseExternApiInterface
     if (lexer.IsMatch(parseTree::Token_t::EQUALS) || lexer.IsMatch(parseTree::Token_t::WHITESPACE))
     {
         // The first token is an alias.  Pull out the '=' and any whitespace and get the exe name.
-        SkipWhitespaceAndComments(lexer);
         (void)lexer.Pull(parseTree::Token_t::EQUALS);
-        SkipWhitespaceAndComments(lexer);
         ifPtr->AddContent(lexer.Pull(parseTree::Token_t::NAME));
     }
 
@@ -472,8 +456,9 @@ static parseTree::CompoundItem_t* ParseExternItem
         }
         else
         {
-            lexer.ThrowException("Unexpected subsection name '" + nameTokenPtr->text
-                                 + "' in 'extern' section.");
+            lexer.ThrowException(
+                mk::format(LE_I18N("Unexpected subsection name '%s' in 'extern' section."),
+                           nameTokenPtr));
         }
     }
     // If a ':' is not next, then it must be an extern API interface.
@@ -510,13 +495,12 @@ static parseTree::RequiredConfigTree_t* ParseRequiredConfigTree
             && (permissionsPtr->text != "[rw]")
             && (permissionsPtr->text != "[wr]") )
         {
-            permissionsPtr->ThrowException("Invalid access permissions "
-                                           "for configuration tree.");
+            permissionsPtr->ThrowException(LE_I18N("Invalid access permissions "
+                                                   "for configuration tree."));
         }
 
         itemPtr = new parseTree::RequiredConfigTree_t(permissionsPtr);
         itemPtr->AddContent(permissionsPtr);
-        SkipWhitespaceAndComments(lexer);
     }
 
     // If just a "DOT" is found, provide read access
@@ -536,9 +520,9 @@ static parseTree::RequiredConfigTree_t* ParseRequiredConfigTree
     }
     else
     {
-        lexer.ThrowException("Unexpected token in configTree Subsection. "
-                             "File permissions (e.g., '[rw]') or "
-                             "config tree name or '.' expected.");
+        lexer.ThrowException(LE_I18N("Unexpected token in configTree Subsection. "
+                                     "File permissions (e.g., '[rw]') or "
+                                     "config tree name or '.' expected."));
     }
 
     if (itemPtr == NULL)
@@ -585,10 +569,15 @@ static parseTree::CompoundItem_t* ParseRequiresSubsection
     {
         return ParseComplexSection(lexer, subsectionNameTokenPtr, ParseRequiredDevice);
     }
+    else if (subsectionName == "kernelModules")
+    {
+        return ParseComplexSection(lexer, subsectionNameTokenPtr, ParseRequiredModule);
+    }
     else
     {
-        lexer.ThrowException("Unexpected subsection name '" + subsectionName
-                             + "' in 'requires' section.");
+        lexer.ThrowException(
+            mk::format(LE_I18N("Unexpected subsection name '%s' in 'requires' section."),
+                       subsectionName));
         return NULL;
     }
 }
@@ -675,9 +664,15 @@ static parseTree::CompoundItem_t* ParseSection
     {
         return ParseWatchdogTimeout(lexer, sectionNameTokenPtr);
     }
+    else if (sectionName == "maxWatchdogTimeout")
+    {
+        return ParseSimpleSection(lexer, sectionNameTokenPtr, parseTree::Token_t::INTEGER);
+    }
     else
     {
-        lexer.ThrowException("Unrecognized section name '" + sectionName + "'.");
+        lexer.ThrowException(
+            mk::format(LE_I18N("Unrecognized section name '%s'."), sectionName)
+        );
         return NULL;
     }
 

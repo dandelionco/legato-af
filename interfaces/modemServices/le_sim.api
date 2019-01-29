@@ -10,12 +10,10 @@
  * This file contains prototype definitions for SIM API.
  *
  * A subscriber identity module or subscriber identification module (SIM) is an integrated circuit
- * that securely stores the international mobile subscriber identity (IMSI) and related key used
- * to identify and authenticate subscribers on M2M devices.
+ * that securely stores the international mobile subscriber identity (IMSI) and related key used to
+ * identify and authenticate subscribers on M2M devices.
  *
  * Most SIM cards can store a number of SMS messages and phone book contacts.
- *
- * le_sim_GetSelectedCard() returns the selected SIM card number.
  *
  * @section le_sim_binding IPC interfaces binding
  *
@@ -31,11 +29,17 @@
  *
  *
  * @section le_sim_SelectCard Select a card to use
- * le_sim_SelectCard() function is used to select the SIM. By default, the SIM in slot 1 is used.
+ * le_sim_SelectCard() function is used to select the SIM identifier. By default, the SIM in slot 1
+ * is used.
+ * Additionally, any Legato SIM API with a SIM card identifier passed in parameter, selects that
+ * SIM identifier. le_sim_GetSelectedCard() returns the current selected card, not necessarily the
+ * one set previously by le_sim_SelectCard().
+ *
  * @note The SIM selection is not reset persistent; this function has to be called at each start-up.
  *
- * @note: It is recommended to wait for a SIM handler notification after a new SIM selection before
+ * @note It is recommended to wait for a SIM handler notification after a new SIM selection before
  * calling le_sim API functions.
+ *
  *
  * A sample code can be seen in the following page:
  * - @subpage c_simTestSelect
@@ -51,6 +55,13 @@
  * operator-specific structure.
  *
  * le_sim_GetICCID() API reads the identification number (ICCID).
+ * le_sim_AddIccidChangeHandler() function registers a handler to be notified when ICCID changes.
+ * le_sim_RemoveIccidChangeHandler() function unregisters the handler.
+ *
+ * @note During the initialization phase of the service, each new subscription to the ICCID change
+ * event is notified by the last change event. This behavior lasts only for 5 seconds and allows
+ * freshly registered clients to receive any ICCID changes that occured during the module start-up
+ * phase.
  *
  * Using this API selects the requested SIM.
  *
@@ -64,6 +75,17 @@
  * digits (European standard) or 3 digits (North American standard). The length of the MNC depends
  * on the value of the MCC. The remaining digits are the mobile subscription identification number
  * (MSIN) within the network's customer base.
+ *
+ * \b EID:
+ * The EID (also called eUICCID) is the unique identifier for the embedded Universal Integrated
+ * Circuit Card (eUICC).
+ * A eUICC is a SIM card with a remote provisioning function, and is designed to not be removed or
+ * changed. It is able to store multiple communication profiles but only one is enabled (recognized
+ * by the device and used for communication). With conventional SIM cards, the ICCID is used as the
+ * unique key to identify the SIM card, but with eUICC, the ICCID is the key used to identify a
+ * profile, and a new identifier is defined, called the eUICCID (EID), which is used as the unique
+ * key for the embedded SIM.
+ * le_sim_GetEID() API reads the EID.
  *
  * \b Home \b Network \b Name:
  * le_sim_GetHomeNetworkOperator() retrieves the Home Network Name.
@@ -93,6 +115,11 @@
  * Using this API selects the requested SIM.
  *
  * le_sim_GetRemainingPINTries() returns the number of remaining PIN entry attempts
+ * before the SIM will become blocked.
+ *
+ * Using this API selects the requested SIM.
+ *
+ * le_sim_GetRemainingPUKTries() returns the number of remaining PUK entry attempts
  * before the SIM will become blocked.
  *
  * Using this API selects the requested SIM.
@@ -132,6 +159,7 @@
  * - LE_SIM_READY         : SIM card is inserted and unlocked.
  * - LE_SIM_BLOCKED       : SIM card is blocked.
  * - LE_SIM_BUSY          : SIM card is busy.
+ * - LE_SIM_POWER_DOWN    : SIM card is powered down.
  * - LE_SIM_STATE_UNKNOWN : Unknown SIM state.
  *
  * Using this API selects the requested SIM.
@@ -158,7 +186,9 @@
  * A sample code can be seen in the following page:
  * - @subpage c_simTestStates
  *
- * @section le_sim_profile_switch Local SIM profile switch
+ * le_sim_SetPower() powers up or down the current SIM card.
+ *
+ * @section le_sim_profile_switch SIM profile switch
  *
  * As soon as there are several subscriptions/profiles in the eUICC (multi-profile), and one of
  * them is dedicated to emergency calls (ex: eCall, ERA-Glonass), local swap is needed to swap as
@@ -179,7 +209,22 @@
  * back to commercial subscription and to refresh. The User's application must wait for eUICC reboot
  * to be finished and network connection available.
  *
- * The User's application can install an handler with le_sim_AddNewStateHandler() to receive eUICC's
+ * eUICC allows support of multiple SIM profiles. These profiles can also be managed remotely from
+ * a Subscription Manager Server. Changing the SIM profile remotely may impact the customer
+ * application especially if there is an ongoing data transmission. To prevent any data loss,
+ * switching SIM profiles is subject to a user agreement. This way, the customer application will
+ * be able to properly finalize its current procedure (emergency call for instance) before accepting
+ * the SIM swap.
+ *
+ * The application can subscribe a handler using le_sim_AddProfileUpdateHandler() to monitor SIM
+ * profile change requests. Thus, the application can choose to accept or reject the SIM profile
+ * swap procedure using le_sim_AcceptSimToolkitCommand() or le_sim_RejectSimToolkitCommand().
+ *
+ * @warning
+ * If there is no subscribed handler, the SIM service automatically accepts any SIM profile swap
+ * request.
+ *
+ * The User's application can install a handler with le_sim_AddNewStateHandler() to receive eUICC's
  * state notifications.
  *
  * @warning
@@ -199,43 +244,77 @@
  * A sample code can be seen in the following page:
  * - @subpage c_simTestProfileSwitch
  *
+ * @section le_sim_Reset SIM Reset
+ *
+ * The le_sim_Reset() function resets the SIM card.
+ *
+ * @section le_sim_FPLMNList Read / Write FPLMN List from SIM
+ *
+ * The le_sim_CreateFPLMNList() function creates the empty FPLMN list.
+ *
+ * The le_sim_AddFPLMNOperator() function adds the FPLMN network into FPLMN list.
+ *
+ * The le_sim_WriteFPLMNList() function writes FPLMN list into the SIM.
+ *
+ * The le_sim_ReadFPLMNList() function reads the FPLMN list from the SIM card.
+ *
+ * The le_sim_GetFirstFPLMNOperator() function fetches the first FPLMN operator from FPLMN list.
+ *
+ * The le_sim_GetNextFPLMNOperator() function fetches the next FPLMN operator from FPLMN list.
+ *
+ * The le_sim_DeleteFPLMNList() function releases all allocated resources associated with the
+ * List object.
+ *
+ * @note Some platforms do not support FPLMN APIs. Please refer to the @ref platformConstraintsSim
+ * "SIM constraints" page or your platform documentation for further details.
+ *
  * @section le_sim_stk SIM Toolkit
  *
- * The SIM application Toolkit allows the SIM card to initiates commands or asking input from the
- * modem to accept/reject SIM operations.  See @ref platformConstraintsStk Constraints.
+ * The SIM application Toolkit allows the SIM card to initiate commands or asking input from the
+ * modem to accept/reject SIM operations.
  *
- * One of the use case is the remote provisioning of an embedded UICC (eUICC).
- *
- * The embedded UICC (eUICC) format supports multiple subscription profiles, which can be remotely
- * provisioned, updated or selected through SIM tool kit procedures (Bearer Independent Protocol
- * -BIP-, SIM refresh).
+ * One of the use case is the remote provisioning of an embedded UICC (eUICC): the eUICC format
+ * supports multiple subscription profiles, which can be remotely provisioned, updated or selected
+ * through SIM Toolkit procedures (Bearer Independent Protocol @em BIP, SIM refresh).
  *
  * It is mainly used for in-vehicle emergency call service (eCall).
  *
  * An eUICC can be remotely managed to change the Mobile Network Operator subscription.
  *
- * The le_sim_AddSimToolkitEventHandler() function registers a handler to be notified of SIM
- * Toolkit events.
+ * The le_sim_AddSimToolkitEventHandler() API registers a handler to be notified of SIM
+ * Toolkit events. The le_sim_RemoveSimToolkitEventHandler() API unregisters the handler.
  *
- * The le_sim_RemoveSimToolkitEventHandler() function unregisters the handler.
+ * The last received SIM Toolkit command can:
+ * - Either be accepted by the device with the le_sim_AcceptSimToolkitCommand() API
+ * - Or be rejected by the device with the le_sim_RejectSimToolkitCommand() API.
+ * Note that if no handler is registered, refresh requests are automatically accepted.
  *
- * The le_sim_AcceptSimToolkitCommand() allows the device to accept the last SIM Toolkit command.
+ * In case the last SIM Toolkit command is a Refresh command (@ref LE_SIM_REFRESH), additional
+ * information can be retrieved:
+ * - The le_sim_GetSimToolkitRefreshStage() API gets the stage of the Refresh command.
+ * - The le_sim_GetSimToolkitRefreshMode() API gets the mode of the Refresh command, as defined in
+ *   ETSI TS 102 223 sections 6.4.7 and 8.6.
  *
- * The le_sim_RejectSimToolkitCommand() forbids the device to accept the last SIM Toolkit command.
- *
- * A sample code can be seen in the following page:
+ * A sample code using the SIM Toolkit APIs can be seen in the following page:
  * - @subpage c_simTestSimToolkit
  *
- * Information related to SIM Toolkit platform constraints can be seen in the
- * @subpage platformConstraintsStk page.
+ * Information related to SIM Toolkit platform constraints can be found in the
+ * @ref platformConstraintsStk "SIM Toolkit platform constraints" page.
  *
  * @section le_sim_access SIM access
  *
+ * The SIM card content can be accessed and/or modified by several methods.
+ *
+ * @subsection le_sim_accessApdu APDU
+ *
  * The application can send an APDU (Application Protocol Data Unit) to the SIM using
- * le_sim_SendApdu() API. The user must encode the APDU as specified by in recommendation 3GPP 11.11,
- * 3GPP 51.011, 3GPP 31.102, 3GPP 31.103 or ETSI TS 102 221.
- * @note Between two successive call to le_sim_SendApdu() API, there is no locking
- * protection. In this situation, some command types and parameters can modify SIM files incorrectly.
+ * le_sim_SendApdu() API. The user must encode the APDU as specified by in recommendation 3GPP
+ * 11.11, 3GPP 51.011, 3GPP 31.102, 3GPP 31.103 or ETSI TS 102 221.
+ * @note Between two successive calls to le_sim_SendApdu() API, there is no locking
+ * protection. In this situation, some command types and parameters can modify SIM files
+ * incorrectly.
+ *
+ * @subsection le_sim_accessCommand Commands
  *
  * Using le_sim_SendCommand(), the application has easier but more limited access to the
  * SIM database. The command is transmitted to the SIM, which gives information through swi1 and
@@ -244,12 +323,27 @@
  * Some parameters are platform dependent, see @subpage platformConstraintsSim "SIM constraints" for
  * their coding.
  *
+ * @subsection le_sim_accessLogicalChannel Logical channels
+ *
+ * Logical channels are specified by the standard ETSI TS 102 221 in the section 8.7. If they are
+ * supported by the SIM card, logical channels allow to send independent APDUs on the different
+ * channels. In this case:
+ * - the basic channel 0 is always available and opened.
+ * - upon request, the card assigns a number to open a new channel. This channel remains open until
+ *   it is explicitly closed or the SIM card is deactivated.
+ *
+ * Use le_sim_OpenLogicalChannel() API to open a logical channel on the SIM card. APDUs can then
+ * be sent to the SIM card with le_sim_SendApduOnChannel(). When the logical channel is not
+ * needed anymore, it can be closed using le_sim_CloseLogicalChannel().
+ *
+ * @subsection le_sim_accessSampleCode Sample code
+ *
  * A sample code can be seen in the following page:
  * - @subpage c_simTestApdu
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -259,7 +353,7 @@
  *
  * Legato @ref c_sim include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -433,6 +527,29 @@ DEFINE  PATH_MAX_BYTES  = (PATH_MAX_LEN+1);
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * eUICC identifier (EID) length
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE  EID_LEN    = (32);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * eUICC identifier (EID) length
+ * One extra byte is added for the null character.
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE  EID_BYTES  = (EID_LEN+1);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reference type for FPLMN list.
+ */
+//--------------------------------------------------------------------------------------------------
+REFERENCE FPLMNList;
+
+
+//--------------------------------------------------------------------------------------------------
+/**
  * SIM states.
  *
  */
@@ -444,6 +561,7 @@ ENUM States
     READY,           ///< SIM card is inserted and unlocked.
     BLOCKED,         ///< SIM card is blocked.
     BUSY,            ///< SIM card is busy.
+    POWER_DOWN,      ///< SIM card is powered down.
     STATE_UNKNOWN    ///< Unknown SIM state.
 };
 
@@ -474,6 +592,7 @@ ENUM Manufacturer
     GEMALTO,            ///< Gemalto.
     G_AND_D,            ///< G&D.
     MORPHO,             ///< Morpho.
+    VALID,              ///< Valid.
     MANUFACTURER_MAX
 };
 
@@ -498,11 +617,44 @@ ENUM Command
 //--------------------------------------------------------------------------------------------------
 ENUM StkEvent
 {
-    OPEN_CHANNEL,    ///< SIM card ask to open a logical channel.
-    REFRESH,         ///< SIM card ask for a refresh.
+    OPEN_CHANNEL,    ///< SIM card asks to open a logical channel.
+    REFRESH,         ///< SIM card asks for a refresh.
     STK_EVENT_MAX    ///< Unknown SIM Toolkit event.
 };
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * SIM Toolkit Refresh modes, defined in ETSI TS 102 223 sections 6.4.7 and 8.6.
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM StkRefreshMode
+{
+    REFRESH_INIT_FULL_FCN,              ///< Initialization and Full File Change Notification.
+    REFRESH_FCN,                        ///< File Change Notification.
+    REFRESH_INIT_FCN,                   ///< Initialization and File Change Notification.
+    REFRESH_INIT,                       ///< Initialization.
+    REFRESH_RESET,                      ///< SIM reset.
+    REFRESH_APP_RESET,                  ///< Application reset.
+    REFRESH_SESSION_RESET,              ///< Session reset.
+    REFRESH_STEERING_OF_ROAMING,        ///< Steering of Roaming as defined in 3GPP TS 23.122.
+    REFRESH_STEERING_OF_ROAMING_IWLAN,  ///< Steering of Roaming for I-WLAN
+                                        ///< as defined in 3GPP TS 24.234.
+    REFRESH_EUICC_PROFILE_CHANGE,       ///< eUICC Profile State Change.
+    REFRESH_MODE_MAX                    ///< Invalid SIM Toolkit Refresh mode.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * SIM Toolkit Refresh stages.
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM StkRefreshStage
+{
+    STAGE_WAITING_FOR_OK,   ///< Waiting for OK to refresh.
+    STAGE_END_WITH_SUCCESS, ///< Refresh succeeded.
+    STAGE_END_WITH_FAILURE, ///< Refresh failed.
+    STAGE_MAX               ///< Invalid SIM Toolkit Refresh stage.
+};
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -529,6 +681,29 @@ EVENT NewState
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Handler for profile update events.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER ProfileUpdateHandler
+(
+    Id       simId IN,             ///< The SIM identifier.
+    StkEvent stkEvent IN           ///< The SIM state.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This event provides information on profile update
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+EVENT ProfileUpdate
+(
+    ProfileUpdateHandler handler
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Handler for Sim Toolkit Events.
  *
  */
@@ -550,6 +725,28 @@ EVENT SimToolkitEvent
     SimToolkitEventHandler handler
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handler for ICCID change events.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER IccidChangeHandler
+(
+    Id       simId IN,               ///< The SIM identifier.
+    string   iccid[ICCID_LEN] IN     ///< ICCID
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This event provides information on ICCID
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+EVENT IccidChange
+(
+    IccidChangeHandler handler
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -583,8 +780,8 @@ FUNCTION le_result_t SelectCard
  *
  * @return LE_OK             ICCID was successfully retrieved.
  * @return LE_OVERFLOW       iccidPtr buffer was too small for the ICCID.
- * @return LE_BAD_PARAMETER if a parameter is invalid
- * @return LE_FAULT         The ICCID could not be retrieved.
+ * @return LE_BAD_PARAMETER  Invalid parameters.
+ * @return LE_FAULT          The ICCID could not be retrieved.
  *
  * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
  *       function will not return.
@@ -594,6 +791,29 @@ FUNCTION le_result_t GetICCID
 (
     Id      simId IN,               ///< The SIM identifier.
     string  iccid[ICCID_LEN] OUT    ///< ICCID
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieves the identifier for the embedded Universal Integrated Circuit Card identifier (EID)
+ * (32 digits)
+ *
+ * @return LE_OK             EID was successfully retrieved.
+ * @return LE_OVERFLOW       eidPtr buffer was too small for the EID.
+ * @return LE_BAD_PARAMETER  Invalid parameters.
+ * @return LE_FAULT          The EID could not be retrieved.
+ *
+ * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
+ *       function will not return.
+ *
+ * @warning le_sim_GetEID() function is platform dependent. Please refer to the
+ *          @ref platformConstraintsSim_EID section for full details.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetEID
+(
+    Id      simId IN,               ///< The SIM identifier.
+    string  eid[EID_LEN] OUT        ///< EID
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -700,16 +920,35 @@ FUNCTION le_result_t ChangePIN
  * Get the number of remaining PIN insertion tries.
  *
  * @return LE_NOT_FOUND     The function failed to select the SIM card for this operation.
+ * @return LE_BAD_PARAMETER Invalid SIM identifier.
  * @return LE_FAULT         The function failed to get the number of remaining PIN insertion tries.
  * @return A positive value The function succeeded. The number of remaining PIN insertion tries.
  *
- * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
- *       function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION int32 GetRemainingPINTries
 (
     Id      simId IN           ///< The SIM identifier.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the number of remaining PUK insertion tries.
+ *
+ * @return LE_OK            On success.
+ * @return LE_NOT_FOUND     The function failed to select the SIM card for this operation.
+ * @return LE_BAD_PARAMETER Invalid SIM identifier.
+ * @return LE_FAULT         The function failed to get the number of remaining PUK insertion tries.
+ *
+ * @note If the caller is passing an null pointer to this function, it is a fatal error
+ *       and the function will not return.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetRemainingPUKTries
+(
+    Id      simId                 IN,     ///< The SIM identifier.
+    uint32  remainingPukTriesPtr  OUT     ///< The number of remaining PUK insertion tries.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -762,6 +1001,7 @@ FUNCTION le_result_t Lock
  *
  * @return LE_NOT_FOUND     Function failed to select the SIM card for this operation.
  * @return LE_UNDERFLOW     PIN code is not long enough (min 4 digits).
+ * @return LE_BAD_PARAMETER Invalid SIM identifier.
  * @return LE_OUT_OF_RANGE  PUK code length is not correct (8 digits).
  * @return LE_FAULT         The function failed to unlock the SIM card.
  * @return LE_OK            Function succeeded.
@@ -822,12 +1062,13 @@ FUNCTION le_result_t GetSubscriberPhoneNumber
  * @return
  *      - LE_OK on success
  *      - LE_OVERFLOW if the Home Network Name can't fit in nameStr
- *      - LE_NOT_FOUND if the network is not found
  *      - LE_BAD_PARAMETER if a parameter is invalid
  *      - LE_FAULT on any other failure
  *
  * @note If the caller is passing a bad pointer into this function, it is a fatal error, the
  *       function will not return.
+ *
+ * @note The home network name can be given even if the device is not registered on the network.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetHomeNetworkOperator
@@ -867,6 +1108,10 @@ FUNCTION le_result_t GetHomeNetworkMccMnc
  *      - LE_BAD_PARAMETER invalid SIM identifier
  *      - LE_BUSY when a profile swap is already in progress
  *      - LE_FAULT for unexpected error
+ *      - LE_DUPLICATE for duplicate operation
+ *
+ * @note Please ensure that the eUICC is selected using le_sim_SelectCard() and in a ready state
+ *       before attempting a profile swap.
  *
  * @warning If you use a Morpho or Oberthur card, the SIM_REFRESH PRO-ACTIVE command must be
  *          accepted with le_sim_AcceptSimToolkitCommand() in order to complete the profile swap
@@ -891,6 +1136,10 @@ FUNCTION le_result_t LocalSwapToEmergencyCallSubscription
  *      - LE_BAD_PARAMETER invalid SIM identifier
  *      - LE_BUSY when a profile swap is already in progress
  *      - LE_FAULT for unexpected error
+ *      - LE_DUPLICATE for duplicate operation
+ *
+ * @note Please ensure that the eUICC is selected using le_sim_SelectCard() and in a ready state
+ *       before attempting a profile swap.
  *
  * @warning If you use a Morpho or Oberthur card, the SIM_REFRESH PRO-ACTIVE command must be
  *          accepted with le_sim_AcceptSimToolkitCommand() in order to complete the profile swap
@@ -909,7 +1158,7 @@ FUNCTION le_result_t LocalSwapToCommercialSubscription
  *
  * @return
  *      - LE_OK on success
- *      - LE_BAD_PARAMETER invalid SIM identifier
+ *      - LE_BAD_PARAMETER invalid SIM identifier or null ECS pointer is passed
  *      - LE_NOT_FOUND cannot determine the current selected subscription
  *      - LE_FAULT for unexpected errors
  *
@@ -929,26 +1178,64 @@ FUNCTION le_result_t IsEmergencyCallSubscriptionSelected
 /**
  * Accept the last SIM Toolkit command.
  *
- * @return LE_FAULT    Function failed.
- * @return LE_OK       Function succeeded.
+ * @return
+ *  - LE_OK       The function succeeded.
+ *  - LE_FAULT    The function failed.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t AcceptSimToolkitCommand
 (
-    Id           simId IN                ///< The SIM identifier.
+    Id  simId IN    ///< The SIM identifier.
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
  * Reject the last SIM Toolkit command.
  *
- * @return LE_FAULT     Function failed.
- * @return LE_OK        Function succeeded.
+ * @return
+ *  - LE_OK       The function succeeded.
+ *  - LE_FAULT    The function failed.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t RejectSimToolkitCommand
 (
-    Id           simId IN                ///< The SIM identifier.
+    Id  simId IN    ///< The SIM identifier.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieve the mode of the last SIM Toolkit Refresh command.
+ * The modes are defined in ETSI TS 102 223 sections 6.4.7 and 8.6.
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_BAD_PARAMETER  A parameter is invalid.
+ *  - LE_UNAVAILABLE    The last SIM Toolkit command is not a Refresh command.
+ *  - LE_FAULT          The function failed.
+ *  - LE_UNSUPPORTED    The platform does not support this operation.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetSimToolkitRefreshMode
+(
+    Id              simId       IN,     ///< The SIM identifier.
+    StkRefreshMode  refreshMode OUT     ///< The Refresh mode.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieve the stage of the last SIM Toolkit Refresh command.
+ *
+ * @return
+ *  - LE_OK             The function succeeded.
+ *  - LE_BAD_PARAMETER  A parameter is invalid.
+ *  - LE_UNAVAILABLE    The last SIM Toolkit command is not a Refresh command.
+ *  - LE_FAULT          The function failed.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetSimToolkitRefreshStage
+(
+    Id              simId           IN,     ///< The SIM identifier.
+    StkRefreshStage refreshStage    OUT     ///< The Refresh stage.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -964,7 +1251,7 @@ FUNCTION le_result_t RejectSimToolkitCommand
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SendApdu
 (
-    Id           simId IN,                          ///< The SIM identifier.
+    Id           simId IN,                            ///< The SIM identifier.
     uint8        commandApdu[APDU_MAX_BYTES] IN,      ///< APDU command.
     uint8        responseApdu[RESPONSE_MAX_BYTES] OUT ///< SIM response.
 );
@@ -980,6 +1267,7 @@ FUNCTION le_result_t SendApdu
  *      - LE_NOT_FOUND      - The function failed to select the SIM card for this operation
  *                          - The requested SIM file is not found
  *      - LE_OVERFLOW       Response buffer is too small to copy the SIM answer.
+ *      - LE_UNSUPPORTED    The platform does not support this operation.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SendCommand
@@ -995,4 +1283,202 @@ FUNCTION le_result_t SendCommand
     uint8          sw1 OUT,                                 ///< Status Word 1 received from the SIM
     uint8          sw2 OUT,                                 ///< Status Word 2 received from the SIM
     uint8          response[RESPONSE_MAX_BYTES] OUT           ///< SIM response.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Reset the SIM.
+ *
+ * @return
+ *      - LE_FAULT         Function failed.
+ *      - LE_OK            Function succeeded.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t Reset
+(
+    Id simId IN                          ///< The SIM identifier.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Create empty FPLMN list to insert FPLMN operators.
+ *
+ * @return
+ *      - Reference to the List object.
+ *      - Null pointer if not able to create list reference.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION FPLMNList CreateFPLMNList
+(
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Add FPLMN network into the newly created FPLMN list.
+ * If the FPLMNListRef, mcc or mnc is not valid then this function will kill the calling client.
+ *
+ * @return
+ *      - LE_FAULT         Function failed.
+ *      - LE_OK            Function succeeded.
+ *      - LE_OVERFLOW      If FPLMN operator can not be inserted into FPLMN list.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t AddFPLMNOperator
+(
+    FPLMNList FPLMNListRef IN,              ///< FPLMN list reference.
+    string    mcc[3] IN,                    ///< Mobile Country Code.
+    string    mnc[3] IN                     ///< Mobile Network Code.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Write FPLMN list into the SIM.
+ * If the FPLMNListRef is not valid then this function will kill the calling client.
+ *
+ * @return
+ *      - LE_FAULT         Function failed.
+ *      - LE_OK            Function succeeded.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t WriteFPLMNList
+(
+    Id        simId IN,                     ///< The SIM identifier.
+    FPLMNList FPLMNListRef IN               ///< FPLMN list reference.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Read FPLMN list from the SIM.
+ *
+ * @return
+ *      - Reference to the List object.
+ *      - Null pointer if FPLMN list is not able to read from the SIM.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION FPLMNList ReadFPLMNList
+(
+    Id       simId IN                       ///< The SIM identifier.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Read the first FPLMN network from the list of FPLMN objects retrieved with
+ * le_sim_ReadFPLMNList().
+ * If the FPLMNListRef, mccPtr or mncPtr is not valid then this function will kill the calling
+ * client.
+ *
+ * @return
+ *      - LE_FAULT         Function failed.
+ *      - LE_OK            Function succeeded.
+ *      - LE_OVERFLOW      MCC/MNC string size is greater than string length parameter which has
+ *                         been given into this function.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetFirstFPLMNOperator
+(
+    FPLMNList FPLMNListRef IN,               ///< FPLMN list reference.
+    string mccPtr[3] OUT,                    ///< Mobile Country Code.
+    string mncPtr[3] OUT                     ///< Mobile Network Code.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Read the next FPLMN network from the list of FPLMN objects retrieved with le_sim_ReadFPLMNList().
+ * If the FPLMNListRef, mccPtr or mncPtr is not valid then this function will kill the calling
+ * client.
+ *
+ * @return
+ *      - LE_FAULT         Function failed.
+ *      - LE_OK            Function succeeded.
+ *      - LE_OVERFLOW      MCC/MNC string size is greater than string length parameter which has
+ *                         been given into this function.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetNextFPLMNOperator
+(
+    FPLMNList FPLMNListRef IN,               ///< FPLMN list reference.
+    string mccPtr[3] OUT,                    ///< Mobile Country Code.
+    string mncPtr[3] OUT                     ///< Mobile Network Code.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Delete the FPLMN list created by le_sim_ReadFPLMNList() or le_sim_CreateFPLMNList().
+ * If the FPLMNListRef is not valid then this function will kill the calling client.
+ *
+ * @note
+ *      On failure, the process exits, so you don't have to worry about checking the returned
+ *      reference for validity.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION DeleteFPLMNList
+(
+    FPLMNList FPLMNListRef IN               ///< FPLMN list reference.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Open a logical channel on the SIM card.
+ *
+ * @return
+ *      - LE_OK            Function succeeded.
+ *      - LE_BAD_PARAMETER Invalid parameter.
+ *      - LE_FAULT         Function failed.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t OpenLogicalChannel
+(
+     uint8 channelPtr OUT ///< The number of the opened logical channel.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Close a logical channel on the SIM card.
+ *
+ * @return
+ *      - LE_OK            Function succeeded.
+ *      - LE_FAULT         Function failed.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t CloseLogicalChannel
+(
+    uint8 channel IN ///< The number of the logical channel to close.
+);
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Send APDU command on a dedicated logical channel.
+ *
+ * @return
+ *      - LE_OK             Function succeeded.
+ *      - LE_BAD_PARAMETER  A parameter is invalid.
+ *      - LE_NOT_FOUND      The function failed to select the SIM card for this operation.
+ *      - LE_FAULT          The function failed.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SendApduOnChannel
+(
+    Id           simId IN,                            ///< The SIM identifier.
+    uint8        channel IN,                          ///< The logical channel number.
+    uint8        commandApdu[APDU_MAX_BYTES] IN,      ///< APDU command.
+    uint8        responseApdu[RESPONSE_MAX_BYTES] OUT ///< SIM response.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Power up or down the current SIM.
+ *
+ * @return LE_OK        Function succeeded.
+ * @return LE_FAULT     Function failed.
+ *
+ * @note For SIM power cycle operation, it must wait until SIM state is LE_SIM_POWER_DOWN
+ *       before powering on the SIM, otherwise power up SIM will fail.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetPower
+(
+    Id           simId IN,                  ///< The SIM identifier.
+    le_onoff_t   power IN                   ///< The power state.
 );

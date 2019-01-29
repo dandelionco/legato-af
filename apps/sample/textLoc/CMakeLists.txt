@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 # Creates application from textLoc.adef
@@ -10,4 +10,4 @@ mkapp(textLoc.adef
 )
 
 # This is a sample application
-add_dependencies(samples textLoc)
+add_dependencies(samples_c textLoc)

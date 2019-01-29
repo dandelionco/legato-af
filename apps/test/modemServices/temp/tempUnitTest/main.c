@@ -1,7 +1,7 @@
 /**
  * This module implements the unit tests for temperature API.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -29,6 +29,63 @@ static le_sem_Ref_t    ThreadSemaphore;
 static AppContext_t AppCtx[NB_CLIENT];
 static le_clk_Time_t TimeToWait ={ 0, 1000000 };
 static char ExpectedThreshold[LE_TEMP_THRESHOLD_NAME_MAX_BYTES];
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Server Service Reference
+ */
+//--------------------------------------------------------------------------------------------------
+static le_msg_ServiceRef_t _ServerServiceRef = NULL;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Client Session Reference for the current message received from a client
+ */
+//--------------------------------------------------------------------------------------------------
+static le_msg_SessionRef_t _ClientSessionRef = NULL;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the server service reference (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_ServiceRef_t le_temp_GetServiceRef
+(
+    void
+)
+{
+    return _ServerServiceRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the client session reference for the current message (STUBBED FUNCTION)
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_SessionRef_t le_temp_GetClientSessionRef
+(
+    void
+)
+{
+    return _ClientSessionRef;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Registers a function to be called whenever one of this service's sessions is closed by
+ * the client.  (STUBBED FUNCTION)
+
+ */
+//--------------------------------------------------------------------------------------------------
+le_msg_SessionEventHandlerRef_t le_msg_AddServiceCloseHandler
+(
+    le_msg_ServiceRef_t             serviceRef, ///< [in] Reference to the service.
+    le_msg_SessionEventHandler_t    handlerFunc,///< [in] Handler function.
+    void*                           contextPtr  ///< [in] Opaque pointer value to pass to handler.
+)
+{
+    return NULL;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -195,9 +252,7 @@ void Testle_Temp_TestBadParameters
     simuSensorRef = le_temp_Request(PA_SIMU_TEMP_SENSOR);
     LE_ASSERT(le_temp_GetSensorName(simuSensorRef, NULL, sizeof(sensorName)) == LE_FAULT);
     LE_ASSERT(le_temp_GetTemperature(simuSensorRef, NULL) == LE_FAULT);
-    LE_ASSERT(le_temp_SetThreshold(simuSensorRef, NULL, temp) == LE_FAULT);
     LE_ASSERT(le_temp_GetThreshold(simuSensorRef, SIMU_THRESHOLD_CRITICAL, NULL) == LE_FAULT);
-    LE_ASSERT(le_temp_GetThreshold(simuSensorRef, NULL, &temp) == LE_FAULT);
 }
 
 //--------------------------------------------------------------------------------------------------

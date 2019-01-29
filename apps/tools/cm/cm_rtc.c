@@ -4,7 +4,7 @@
  *
  * Handle RTC related functionality.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -13,6 +13,13 @@
 #include "cm_rtc.h"
 #include "cm_common.h"
 #include <time.h>
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * Print the IPS help text to stdout.
+ */
+//-------------------------------------------------------------------------------------------------
+#define READ_BUFFER_BYTES  255
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -30,6 +37,13 @@ void cm_rtc_PrintRtcHelp
            "\tcm rtc read\n\n"
            "To set the RTC time:\n"
            "\tcm rtc set \"25 Dec 2015 12:30:45\"\n"
+           "time format:\n"
+           "- day of the month (leading zeros are permitted)\"\n"
+           "- month (either the abbreviated or the full name)\"\n"
+           "- year with century\"\n"
+           "- hour (leading zeros are permitted)\"\n"
+           "- minute (leading zeros are permitted)\"\n"
+           "- seconds (leading zeros are permitted)\"\n"
            );
 }
 
@@ -49,17 +63,16 @@ static le_result_t ReadAndPrintRtc
     result = le_rtc_GetUserTime(&epochTime);
     if (result == LE_OK)
     {
-        char buff[255];
-        memset(buff,0,255);
+        char buff[READ_BUFFER_BYTES] = {0};
         struct tm tm;
 
-        time_t time = epochTime/1000;
+        time_t time = (epochTime/1000) + CM_DELTA_POSIX_TIME_EPOCH_GPS_TIME_EPOCH_IN_SEC;
+        LE_DEBUG(" read posixEpochtime %ld seconds\n", (time_t) time);
 
         snprintf(buff, sizeof(buff), "%ld", (long) time);
         strptime(buff, "%s", &tm);
-        memset(buff,0,255);
+        memset(buff, 0, sizeof(buff));
         strftime(buff, sizeof(buff), "%d %b %Y %H:%M:%S", &tm);
-
 
         printf("%s\n", buff);
     }
@@ -74,17 +87,24 @@ static le_result_t ReadAndPrintRtc
 //-------------------------------------------------------------------------------------------------
 static le_result_t SetRtc
 (
-    void
+    const char* datePtr     ///< Date the RTC should be set to.
 )
 {
     struct tm tm;
     time_t t;
-    const char* datePtr = le_arg_GetArg(2);
+    char* lastCarPtr;
 
-
-    if (strptime(datePtr, "%d %b %Y %H:%M:%S", &tm) == NULL)
+    if (NULL == datePtr)
     {
-        printf("Failed to get the time.\n");
+        fprintf(stderr, "Date not provided.\n");
+        return LE_BAD_PARAMETER;
+    }
+
+    lastCarPtr = strptime(datePtr, "%d %b %Y %H:%M:%S", &tm);
+
+    if ((NULL == lastCarPtr) || (*lastCarPtr != '\0'))
+    {
+        fprintf(stderr, "Unable to parse provided date.\n");
         return LE_FAULT;
     }
 
@@ -96,13 +116,18 @@ static le_result_t SetRtc
 
     if (t == -1)
     {
-        printf("mktime error\n");
+        fprintf(stderr, "mktime error\n");
         return LE_FAULT;
     }
 
-    uint64_t timeMs = (uint64_t) t * 1000;
+    uint64_t gpsEpochTimeMs =
+       ((uint64_t) t - CM_DELTA_POSIX_TIME_EPOCH_GPS_TIME_EPOCH_IN_SEC) * 1000;
 
-    return le_rtc_SetUserTime(timeMs);
+    LE_DEBUG(" posixEpochtime: %ld seconds, gpsEpochTime: %llu seconds",
+                                          (time_t) t,
+                                          (unsigned long long int)(gpsEpochTimeMs/1000));
+
+    return le_rtc_SetUserTime(gpsEpochTimeMs);
 }
 
 
@@ -117,21 +142,38 @@ void cm_rtc_ProcessRtcCommand
     size_t numArgs          ///< [IN] Number of arguments
 )
 {
-    if (strcmp(command, "help") == 0)
+    if (0 == strcmp(command, "help"))
     {
+        cm_cmn_CheckNumberParams(CM_NUM_PARAMETERS_FOR_RTC_HELP,
+                                 CM_NUM_PARAMETERS_FOR_RTC_HELP,
+                                 numArgs,
+                                 NULL);
+
         cm_rtc_PrintRtcHelp();
     }
-    else if (strcmp(command, "read") == 0)
+    else if (0 == strcmp(command, "read"))
     {
+        cm_cmn_CheckNumberParams(CM_NUM_PARAMETERS_FOR_RTC_READ,
+                                 CM_NUM_PARAMETERS_FOR_RTC_READ,
+                                 numArgs,
+                                 NULL);
+
         if (LE_OK != ReadAndPrintRtc())
         {
             printf("Read failed.\n");
             exit(EXIT_FAILURE);
         }
     }
-    else if (strcmp(command, "set") == 0)
+    else if (0 == strcmp(command, "set"))
     {
-        if (LE_OK != SetRtc())
+        cm_cmn_CheckNumberParams(CM_NUM_PARAMETERS_FOR_RTC_SET,
+                                 CM_NUM_PARAMETERS_FOR_RTC_SET,
+                                 numArgs,
+                                 "Date is missing. e.g. cm rtc set <date>");
+
+        const char* datePtr = le_arg_GetArg(2);
+
+        if (LE_OK != SetRtc(datePtr))
         {
             printf("Set RTC failure.\n");
             exit(EXIT_FAILURE);
@@ -139,9 +181,10 @@ void cm_rtc_ProcessRtcCommand
     }
     else
     {
-        printf("Invalid command for RTC service.\n");
+        printf("Invalid command '%s' for RTC service.\n", command);
         exit(EXIT_FAILURE);
     }
 
     exit(EXIT_SUCCESS);
 }
+

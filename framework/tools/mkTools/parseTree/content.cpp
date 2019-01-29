@@ -2,7 +2,7 @@
 /**
  * @file content.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -91,18 +91,6 @@ std::string Content_t::TypeName
 
         case APP:
             return "app";
-
-        case ASSET:
-            return "asset";
-
-        case ASSET_SETTING:
-            return "asset setting";
-
-        case ASSET_VARIABLE:
-            return "asset variable";
-
-        case ASSET_COMMAND:
-            return "asset command";
 
         default:
         {

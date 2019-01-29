@@ -3,7 +3,7 @@
  *
  * This module implements an eCallDemo application
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -26,7 +26,7 @@
 #define CFG_NODE_PSAP               "psap"
 #define CFG_NODE_H_MIN_ACCURACY     "hMinAccuracy"
 #define CFG_NODE_DIR_MIN_ACCURACY   "dirMinAccuracy"
-#define CFG_ECALL_APP_PATH          "/settings"
+#define CFG_ECALL_APP_PATH          "eCallDemo:/settings"
 
 
 //--------------------------------------------------------------------------------------------------
@@ -449,7 +449,7 @@ COMPONENT_INIT
     LE_ERROR_IF((LE_OK != le_ecall_SetVehicleType(LE_ECALL_MSD_VEHICLE_BUS_M2)),
                 " Unable to set Vehicle Type!");
 
-    LE_ERROR_IF((LE_OK != le_ecall_SetVIN("12345678901234567")),
+    LE_ERROR_IF((LE_OK != le_ecall_SetVIN("WP0ZZZ99ZTS392124")),
                 " Unable to set VIN!");
 
     LE_ERROR_IF((LE_OK != le_ecall_SetPropulsionType(LE_ECALL_PROPULSION_TYPE_ELECTRIC)),

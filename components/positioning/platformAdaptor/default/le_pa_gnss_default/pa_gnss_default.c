@@ -3,7 +3,7 @@
  *
  * Default implementation of @ref c_pa_gnss.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 
 #include "legato.h"
@@ -302,6 +302,27 @@ le_result_t pa_gnss_DisableExtendedEphemerisFile
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * This function must be called to inject UTC time into the GNSS device.
+ *
+ * @return
+ *  - LE_OK            The function succeeded.
+ *  - LE_FAULT         The function failed to inject the UTC time.
+ *  - LE_TIMEOUT       A time-out occurred.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_gnss_InjectUtcTime
+(
+    uint64_t timeUtc,      ///< [IN] UTC time since Jan. 1, 1970 in milliseconds
+    uint32_t timeUnc       ///< [IN] Time uncertainty in milliseconds
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function must be called to restart the GNSS device.
  *
  * @return LE_FAULT         The function failed.
@@ -498,11 +519,11 @@ le_result_t pa_gnss_SetNmeaSentences
 /**
  * Get the enabled NMEA sentences bit mask
  *
-* @return
-*  - LE_OK on success
-*  - LE_FAULT on failure
-*  - LE_BUSY service is busy
-*  - LE_TIMEOUT a time-out occurred
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_BUSY service is busy
+ *  - LE_TIMEOUT a time-out occurred
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_gnss_GetNmeaSentences
@@ -512,4 +533,108 @@ le_result_t pa_gnss_GetNmeaSentences
 {
     LE_ERROR("Unsupported function called");
     return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function sets the GNSS minimum elevation.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_gnss_SetMinElevation
+(
+    uint8_t  minElevation      ///< [IN] Minimum elevation in degrees [range 0..90].
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function gets the GNSS minimum elevation.
+ *
+ * @return
+*  - LE_OK on success
+*  - LE_BAD_PARAMETER if minElevationPtr is NULL
+*  - LE_FAULT on failure
+*  - LE_UNSUPPORTED request not supported
+*/
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_gnss_GetMinElevation
+(
+   uint8_t*  minElevationPtr     ///< [OUT] Minimum elevation in degrees [range 0..90].
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the area for the GNSS constellation
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ *  - LE_BAD_PARAMETER on invalid constellation area
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_gnss_SetConstellationArea
+(
+    le_gnss_Constellation_t satConstellation,        ///< [IN] GNSS constellation used in solution.
+    le_gnss_ConstellationArea_t constellationArea    ///< [IN] GNSS constellation area.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the area for the GNSS constellation
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_gnss_GetConstellationArea
+(
+    le_gnss_Constellation_t satConstellation,         ///< [IN] GNSS constellation used in solution.
+    le_gnss_ConstellationArea_t* constellationAreaPtr ///< [OUT] GNSS constellation area.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Convert a location data parameter from/to multi-coordinate system
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_BAD_PARAMETER if locationDataDstPtr is NULL
+ *  - LE_UNSUPPORTED request not supported
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_gnss_ConvertDataCoordinateSystem
+(
+    le_gnss_CoordinateSystem_t coordinateSrc,     ///< [IN] Coordinate system to convert from.
+    le_gnss_CoordinateSystem_t coordinateDst,     ///< [IN] Coordinate system to convert to.
+    le_gnss_LocationDataType_t locationDataType,  ///< [IN] Type of location data to convert.
+    int64_t locationDataSrc,                      ///< [IN] Data to convert.
+    int64_t* locationDataDstPtr                   ///< [OUT] Converted Data.
+)
+{
+    LE_ERROR("Unsupported function called");
+    return LE_UNSUPPORTED;
 }

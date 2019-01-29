@@ -4,7 +4,7 @@
  *
  * Handle SMS related functionality
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -157,6 +157,7 @@ static void PrintMessage
 {
     PrintMessageContext_t * msgContextPtr = (PrintMessageContext_t *)(contextPtr);
     le_result_t res;
+    le_sms_Type_t smsType;
     le_sms_Format_t format;
     size_t length, contentSz;
     SmsContent_t content;
@@ -172,6 +173,26 @@ static void PrintMessage
 
     printf("--[%2u]---------------------------------------------------------------\n", msgContextPtr->nbSms);
 
+    smsType = le_sms_GetType(msgRef);
+    switch (smsType)
+    {
+        case LE_SMS_TYPE_RX:
+            cm_cmn_FormatPrint(" Type", "LE_SMS_TYPE_RX");
+            break;
+
+        case LE_SMS_TYPE_BROADCAST_RX:
+            cm_cmn_FormatPrint(" Type", "LE_SMS_TYPE_BROADCAST_RX");
+            break;
+
+        case LE_SMS_TYPE_STATUS_REPORT:
+            cm_cmn_FormatPrint(" Type", "LE_SMS_TYPE_STATUS_REPORT");
+            break;
+
+        default:
+            cm_cmn_FormatPrint(" Type", "Unexpected");
+            break;
+    }
+
     res = le_sms_GetSenderTel(msgRef, content.text, sizeof(content.text));
     if (res == LE_OK)
     {
@@ -185,11 +206,11 @@ static void PrintMessage
     }
 
     format = le_sms_GetFormat(msgRef);
-
     switch (format)
     {
         case LE_SMS_FORMAT_TEXT:
         {
+            cm_cmn_FormatPrint(" Format", "LE_SMS_FORMAT_TEXT");
             res = le_sms_GetText(msgRef, content.text, sizeof(content.text));
             LE_ASSERT(res == LE_OK);
 
@@ -202,6 +223,7 @@ static void PrintMessage
 
         case LE_SMS_FORMAT_BINARY:
         {
+            cm_cmn_FormatPrint(" Format", "LE_SMS_FORMAT_BINARY");
             contentSz = sizeof(content.binary);
             res = le_sms_GetBinary(msgRef, content.binary, &contentSz);
             LE_ASSERT(res == LE_OK);
@@ -214,9 +236,19 @@ static void PrintMessage
             break;
         }
 
+        case LE_SMS_FORMAT_UNKNOWN:
         case LE_SMS_FORMAT_PDU:
         {
+            if (LE_SMS_FORMAT_PDU == format)
+            {
+                cm_cmn_FormatPrint(" Format", "LE_SMS_FORMAT_PDU");
+            }
+            else
+            {
+                cm_cmn_FormatPrint(" Format", "LE_SMS_FORMAT_UNKNOWN");
+            }
             contentSz = sizeof(content.pdu);
+
             res = le_sms_GetPDU(msgRef, content.pdu, &contentSz);
             LE_ASSERT(res == LE_OK);
 
@@ -230,6 +262,7 @@ static void PrintMessage
 
         case LE_SMS_FORMAT_UCS2:
         {
+            cm_cmn_FormatPrint(" Format", "LE_SMS_FORMAT_UCS2");
             contentSz = sizeof(content.ucs2) / 2;
 
             res = le_sms_GetUCS2(msgRef, content.ucs2, &contentSz);
@@ -253,7 +286,7 @@ static void PrintMessage
     if (msgContextPtr->shouldDeleteMessages)
     {
         res = le_sms_DeleteFromStorage(msgRef);
-        LE_ASSERT(res == LE_OK);
+        LE_ASSERT((LE_OK == res) || (LE_NO_MEMORY == res));
 
         le_sms_Delete(msgRef);
     }
@@ -550,11 +583,28 @@ static void HandleSendBin
     int maxCountSms = CMODEM_SMS_DEFAULT_MAX_BIN_SMS;
 
     const char* number = le_arg_GetArg(2);
+    if (NULL == number)
+    {
+        LE_ERROR("number is NULL");
+        exit(EXIT_FAILURE);
+    }
+
     const char* filePath = le_arg_GetArg(3);
+    if (NULL == filePath)
+    {
+        LE_ERROR("filePath is NULL");
+        exit(EXIT_FAILURE);
+    }
 
     if (numArgs > 4)
     {
         const char* arg = le_arg_GetArg(4);
+        if (NULL == arg)
+        {
+            LE_ERROR("arg is NULL");
+            exit(EXIT_FAILURE);
+        }
+
         maxCountSms = atoi(arg);
 
         if (maxCountSms <= 0)
@@ -566,7 +616,7 @@ static void HandleSendBin
         printf("Limiting to %d SMS\n", maxCountSms);
     }
 
-    if (strcmp(filePath, "-") == 0)
+    if (0 == strcmp(filePath, "-"))
     {
         printf("From stdin ...\n");
         filePtr = stdin;
@@ -585,12 +635,13 @@ static void HandleSendBin
     do {
         contentLen = fread(content, sizeof(uint8_t), sizeof(content), filePtr);
 
-        if (contentLen == -1)
+        if ((-1 == contentLen) || (0 == contentLen))
         {
             fprintf(stderr, "Error reading input: %s\n", strerror(errno));
+            fclose(filePtr);
             exit(EXIT_FAILURE);
         }
-        else if ( (contentLen < sizeof(content)) && (content[contentLen-1] == 0x0A) )
+        else if ((contentLen < sizeof(content)) && (0x0A == content[contentLen-1]))
         {
             contentLen--;
         }
@@ -598,6 +649,7 @@ static void HandleSendBin
         if (contentLen <= 0)
         {
             fprintf(stderr, "Nothing to send\n");
+            fclose(filePtr);
             exit(EXIT_SUCCESS);
         }
 
@@ -609,17 +661,19 @@ static void HandleSendBin
         if (contentLen < sizeof(content))
         {
             printf("Done\n");
+            fclose(filePtr);
             exit(EXIT_FAILURE);
         }
 
         index++;
     }
-    while ( (contentLen > 0) && (index < maxCountSms) );
+    while ((contentLen > 0) && (index < maxCountSms));
 
-    if (strcmp(filePath, "-") != 0)
+    if (0 != strcmp(filePath, "-"))
     {
         fclose(filePtr);
     }
+
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -648,7 +702,17 @@ void cm_sms_ProcessSmsCommand
         cm_cmn_CheckEnoughParams(2, numArgs, "Destination or content missing. e.g. cm sms send <number> <content>");
 
         const char* number = le_arg_GetArg(2);
+        if (NULL == number)
+        {
+            LE_ERROR("number is NULL");
+            exit(EXIT_FAILURE);
+        }
         const char* content = le_arg_GetArg(3);
+        if (NULL == content)
+        {
+            LE_ERROR("content is NULL");
+            exit(EXIT_FAILURE);
+        }
 
         cm_sms_SendText(number, content);
 
@@ -671,6 +735,11 @@ void cm_sms_ProcessSmsCommand
         cm_cmn_CheckEnoughParams(1, numArgs, "Index of message missing. e.g. cm sms get <idx>");
 
         const char* indexStr = le_arg_GetArg(2);
+        if (NULL == indexStr)
+        {
+            LE_ERROR("indexStr is NULL");
+            exit(EXIT_FAILURE);
+        }
         int index = atoi(indexStr);
 
         cm_sms_GetMessage(index);

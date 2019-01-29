@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 find_package(CUnit REQUIRED)
@@ -12,4 +12,8 @@ mkexe(  ${APP_TARGET}
             ${CUNIT_LIBRARIES}
         )
 
+add_dependencies(${APP_TARGET} cunit)
 add_test(${APP_TARGET} ${EXECUTABLE_OUTPUT_PATH}/${APP_TARGET})
+
+# This is a C test
+add_dependencies(tests_c ${APP_TARGET})

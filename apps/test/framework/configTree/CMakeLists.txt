@@ -1,5 +1,5 @@
 #--------------------------------------------------------------------------------------------------
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #--------------------------------------------------------------------------------------------------
 
 # Build host unit tests.
@@ -33,6 +33,11 @@ mkexe(configTestExe
 mkexe(configDelete
       configDelete)
 
+# This is a C test
+add_dependencies(tests_c configDropReadExe
+                         configDropWriteExe
+                         configTestExe
+                         configDelete)
 
 add_test(configTest ${EXECUTABLE_OUTPUT_PATH}/configTest.sh)
 
@@ -43,3 +48,6 @@ mkapp(cfgSelfRead.adef)
 mkapp(cfgSelfWrite.adef)
 mkapp(cfgSystemRead.adef)
 mkapp(cfgSystemWrite.adef)
+
+# This is a C test
+add_dependencies(tests_c cfgSelfRead cfgSelfWrite cfgSystemRead cfgSystemWrite)

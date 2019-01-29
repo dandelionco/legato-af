@@ -2,13 +2,14 @@
 /**
  *  Cellular Network Services Server
  *
- *  Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless Inc.
  */
 // -------------------------------------------------------------------------------------------------
 
 #include "legato.h"
 #include "interfaces.h"
 #include "le_print.h"
+#include "watchdogChain.h"
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -33,6 +34,13 @@
 //--------------------------------------------------------------------------------------------------
 #define REQUEST_COMMAND 1
 #define RELEASE_COMMAND 2
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * The timer interval to kick the watchdog chain.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MS_WDOG_INTERVAL 8
 
 static le_event_Id_t CommandEvent;
 
@@ -172,6 +180,9 @@ static void LoadSimFromSecStore
                 LE_WARN("Sim-%d is absent",simId);
                 attemptCounter = 1;
                 break;
+            case LE_SIM_POWER_DOWN:
+                LE_WARN("Sim-%d is powered down",simId);
+                break;
             case LE_SIM_STATE_UNKNOWN:
                 break;
         }
@@ -251,11 +262,11 @@ static void ReportCellNetStateEvent
 {
     LE_DEBUG("Report cellular network state %d (%s)", state, cellNetStateStr[state]);
 
-    // Send the event to interested applications
-    le_event_Report(CellNetStateEvent, &state, sizeof(state));
-
     // Update current network cell state
     CurrentState = state;
+
+    // Send the event to interested applications
+    le_event_Report(CellNetStateEvent, &state, sizeof(state));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -513,9 +524,10 @@ static void SimStateHandler
         LoadSimFromSecStore(simId);
         GetAndSendCellNetStateEvent();
     }
-    else if (LE_SIM_ABSENT == simState)
+
+    if ((LE_SIM_ABSENT == simState) || (LE_SIM_POWER_DOWN == simState))
     {
-        // SIM card removed: notify the applications
+        // SIM card removed or powered down: notify the applications
         GetAndSendCellNetStateEvent();
     }
 }
@@ -759,6 +771,7 @@ le_result_t le_cellnet_SetSimPinCode
  *  - LE_OVERFLOW        PIN code exceeds the maximum length of 8 digits.
  *  - LE_UNDERFLOW       The PIN code is not long enough (min 4 digits).
  *  - LE_OK              The function succeeded.
+ *  - LE_FAULT           If there are some other errors.
  */
 //--------------------------------------------------------------------------------------------------
 le_result_t le_cellnet_GetSimPinCode
@@ -776,6 +789,12 @@ le_result_t le_cellnet_GetSimPinCode
 
 )
 {
+    if (pinCodePtr == NULL)
+    {
+        LE_KILL_CLIENT("pinCodePtr is NULL.");
+        return LE_FAULT;
+    }
+
     le_result_t result=LE_OK;
 
     LE_DEBUG("simId= %d",simId);
@@ -859,7 +878,6 @@ le_result_t le_cellnet_GetNetworkState
     return LE_OK;
 }
 
-
 //--------------------------------------------------------------------------------------------------
 /**
  *  Server Initialization
@@ -880,12 +898,16 @@ COMPONENT_INIT
                         CommandEvent,
                         ProcessCommand);
 
-
     // Register for SIM state changes
     le_sim_AddNewStateHandler(SimStateHandler, NULL);
 
     // Register for MRC Network Registration state changes
     le_mrc_AddNetRegStateEventHandler(MrcNetRegHandler, NULL);
+
+    // Try to kick a couple of times before each timeout.
+    le_clk_Time_t watchdogInterval = { .sec = MS_WDOG_INTERVAL };
+    le_wdogChain_Init(1);
+    le_wdogChain_MonitorEventLoop(0, watchdogInterval);
 
     LE_INFO("Cellular Network Server is ready");
 }

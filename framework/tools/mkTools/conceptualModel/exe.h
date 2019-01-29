@@ -2,7 +2,7 @@
 /**
  * @file exe.h
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ struct App_t;
  * Represents a single executable.
  */
 //--------------------------------------------------------------------------------------------------
-struct Exe_t
+struct Exe_t : public HasTargetInfo_t
 {
     Exe_t(const std::string& exePath, App_t* appPtr, const std::string& workingDir);
 
@@ -42,6 +42,7 @@ struct Exe_t
     bool hasCppCode;
     bool hasCOrCppCode;
     bool hasJavaCode;
+    bool hasPythonCode;
     bool hasIncompatibleLanguageCode;
 
     void AddComponentInstance(ComponentInstance_t* componentInstancePtr);

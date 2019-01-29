@@ -1,4 +1,6 @@
-/** @page basicTarget Configure SWI WP Series Target
+/** @page basicTarget Configure SWI Target
+
+The following contains different methods on setting up and configuring a Sierra Wireless Module.
 
 To connect to your device you must use either a USB or Serial cable and connect the device directly
 to your Dev Machine.  All other interfaces are turned off by default for security reasons.
@@ -11,7 +13,7 @@ Install a ssh client on your dev machine:
 $ sudo apt-get install openssh-client
 @endverbatim
 
-The default IP for WP series devices over USB is 192.168.2.2.
+The default IP for Sierra Wireless devices over USB is 192.168.2.2.
 
 @verbatim
 $ ssh root@192.168.2.2
@@ -141,7 +143,7 @@ like to go through this menu the next time you connect to the target.
 
 To recover a Sierra Wireless Target Device (e.g., mangOH or WP8545) you must use the proprietary
 Sierra Wireless flash tool.  Instructions and the tool can be found on
-[the Source.](http://source.sierrawireless.com/resources/airprime/software/swiflash/)
+[the Source.](https://source.sierrawireless.com/resources/airprime/software/swiflash/)
 
 @section targetOptionalConfig Optional Configuration
 

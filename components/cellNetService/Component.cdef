@@ -12,17 +12,21 @@ requires:
     {
         le_sim.api
         le_mrc.api
-        le_cfg.api
         le_secStore.api
     }
+
+    component:
+    {
+        $LEGATO_ROOT/components/watchdogChain
+    }
+}
+
+cflags:
+{
+    -I${LEGATO_ROOT}/components/watchdogChain
 }
 
 sources:
 {
     cellNetServiceServer.c
-}
-
-cflags:
-{
-    -I${LEGATO_ROOT}/components/cfgEntries
 }

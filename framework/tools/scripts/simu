@@ -1,6 +1,6 @@
 #!/bin/bash
 copyright="
-Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+Copyright (C) Sierra Wireless Inc.
 "
 
 . "$(dirname "${BASH_SOURCE[0]}")/shlib"
@@ -15,6 +15,7 @@ help_usage=(
 "pull [LOCAL] [REMOTE]"
 "instlegato"
 "instapp [APP_PATH]"
+"update [UPDATE_PATH]"
 )
 
 help_long_description=(
@@ -39,6 +40,9 @@ help_long_description=(
 "$commandName instapp [APP_PATH]"
 "  - Install application from APP_PATH on the virtual target."
 ""
+"$commandName update [UPDATE_PATH]"
+"  - Update virtual target using package provided at UPDATE_PATH."
+""
 )
 
 function show_help {
@@ -51,6 +55,8 @@ function show_help {
     echo " - push <local> <remote>: Copy a file/directory to target"
     echo " - pull <local> <remote>: Copy a file/directory from target"
     echo " - instlegato"
+    echo " - instapp <path>"
+    echo " - update <path>"
     echo " - setup ssh"
     echo
 
@@ -86,7 +92,11 @@ function check_ret {
 }
 
 function do_ssh {
-    ssh -p $SIMU_PORT root@$SIMU_IP $@
+    ssh -p $SIMU_PORT -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null root@$SIMU_IP $@
+}
+
+function do_scp {
+    scp -P $SIMU_PORT -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -r $@
 }
 
 function do_start {
@@ -108,7 +118,7 @@ function do_start {
 }
 
 function do_stop {
-    QEMU_PID_FILE="$SCRIPT_DIR/qemu.pid"
+    QEMU_PID_FILE="$USER_DIR/qemu.pid"
 
     if [ -e "$QEMU_PID_FILE" ]; then
         QEMU_PID=$(cat $QEMU_PID_FILE)
@@ -138,6 +148,15 @@ function CheckLegatoRoot {
 
 CheckForHelp $@
 
+# By default, store images & configuration in script directory
+if [ -z "$USER_DIR" ]; then
+    USER_DIR="$HOME/.legato/virt"
+fi
+
+export SSH_PORT=$SIMU_PORT
+export SSH_EXTRA_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+export DEST_IP=$SIMU_IP
+
 if [[ "$COMMAND" == "start" ]]; then
     do_start
 elif [[ "$COMMAND" == "stop" ]]; then
@@ -145,17 +164,18 @@ elif [[ "$COMMAND" == "stop" ]]; then
 elif [[ "$COMMAND" == "shell" ]] || [[ "$COMMAND" == "ssh" ]] || [[ "$COMMAND" == "sh" ]]; then
     do_ssh ${*:2}
 elif [[ "$COMMAND" == "push" ]]; then
-    scp -P $SIMU_PORT -r $2 root@$SIMU_IP:$3
+    do_scp $2 root@$SIMU_IP:$3
 elif [[ "$COMMAND" == "pull" ]]; then
-    scp -P $SIMU_PORT -r root@$SIMU_IP:$2 $3
+    do_scp root@$SIMU_IP:$2 $3
 elif [[ "$COMMAND" == "instlegato" ]]; then
     CheckLegatoRoot
-    export SSH_PORT=$SIMU_PORT
     $LEGATO_ROOT/bin/instlegato $LEGATO_ROOT/build/virt $SIMU_IP
 elif [[ "$COMMAND" == "instapp" ]]; then
     CheckLegatoRoot
-    export SSH_PORT=$SIMU_PORT
     $LEGATO_ROOT/bin/app install $2 $SIMU_IP
+elif [[ "$COMMAND" == "update" ]]; then
+    CheckLegatoRoot
+    $LEGATO_ROOT/bin/update $2 $SIMU_IP
 else
     message $COLOR_ERROR "Unknown command '$COMMAND'"
 fi

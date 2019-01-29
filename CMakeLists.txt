@@ -1,5 +1,9 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
+#*******************************************************************************
+
+#*******************************************************************************
+# /!\ Only used to build tests and samples apps
 #*******************************************************************************
 
 cmake_minimum_required(VERSION 2.8)
@@ -35,19 +39,21 @@ set(LEGATO_AUDIO_PA_AMR $ENV{LEGATO_AUDIO_PA_AMR})
 set(LEGATO_UTIL_PA $ENV{LEGATO_UTIL_PA})
 set(LEGATO_MODEM_PA $ENV{LEGATO_MODEM_PA})
 set(LEGATO_MODEM_PA_ECALL $ENV{LEGATO_MODEM_PA_ECALL})
+set(LEGATO_DCS_PA $ENV{LEGATO_DCS_PA})
 set(LEGATO_GNSS_PA $ENV{LEGATO_GNSS_PA})
 set(LEGATO_AVC_PA $ENV{LEGATO_AVC_PA})
 set(LEGATO_SECSTORE_PA $ENV{LEGATO_SECSTORE_PA})
 set(LEGATO_FWUPDATE_PA $ENV{LEGATO_FWUPDATE_PA})
 set(LEGATO_UARTMODE_PA $ENV{LEGATO_UARTMODE_PA})
+set(LEGATO_MODEM_PA_RSIM $ENV{LEGATO_MODEM_PA_RSIM})
 
 # Default Target configuration
-set(LEGATO_COMPONENTS_MODEM "AT" CACHE STRING "Legato Modem Platform-Adapter to build")
-set(LEGATO_COMPONENTS_GNSS "AT" CACHE STRING "Legato Gnss Platform-Adapter to build")
-set(LEGATO_COMPONENTS_AUDIO "STUB" CACHE STRING "Legato Audio Platform-Adapter to build")
-set(LEGATO_COMPONENTS_AVC "AT" CACHE STRING "Legato AirVantage Controller Platform-Adapter to build")
-set(LEGATO_COMPONENTS_SECSTORE "AT" CACHE STRING "Legato Secure Storage Controller Platform-Adapter to build")
-set(LEGATO_COMPONENTS_FWUPDATE "AT" CACHE STRING "Legato FwUpdate Platform-Adapter to build")
+set(LEGATO_COMPONENTS_MODEM "default" CACHE STRING "Legato Modem Platform-Adapter to build")
+set(LEGATO_COMPONENTS_GNSS "default" CACHE STRING "Legato Gnss Platform-Adapter to build")
+set(LEGATO_COMPONENTS_AUDIO "default" CACHE STRING "Legato Audio Platform-Adapter to build")
+set(LEGATO_COMPONENTS_AVC "default" CACHE STRING "Legato AirVantage Controller Platform-Adapter to build")
+set(LEGATO_COMPONENTS_SECSTORE "default" CACHE STRING "Legato Secure Storage Controller Platform-Adapter to build")
+set(LEGATO_COMPONENTS_FWUPDATE "default" CACHE STRING "Legato FwUpdate Platform-Adapter to build")
 
 if(INCLUDE_ECALL EQUAL 1)
     add_definitions(-DINCLUDE_ECALL)
@@ -64,8 +70,8 @@ if(LEGATO_TARGET MATCHES "ar759x")
     #set(LEGATO_COMPONENTS_GNSS "QMI")
     set(LEGATO_COMPONENTS_AUDIO "ar759x")
     #set(LEGATO_COMPONENTS_AVC "QMI")
-    #set(LEGATO_COMPONENTS_SECSTORE "QMI")
-    #set(LEGATO_COMPONENTS_FWUPDATE "QMI")
+    set(LEGATO_COMPONENTS_SECSTORE "QMI")
+    set(LEGATO_COMPONENTS_FWUPDATE "QMI")
 
 # Target: ar758x
 elseif(LEGATO_TARGET MATCHES "ar758x")
@@ -73,8 +79,8 @@ elseif(LEGATO_TARGET MATCHES "ar758x")
     set(LEGATO_COMPONENTS_GNSS "QMI")
     set(LEGATO_COMPONENTS_AUDIO "ar758x")
     #set(LEGATO_COMPONENTS_AVC "QMI")
-    #set(LEGATO_COMPONENTS_SECSTORE "QMI")
-    #set(LEGATO_COMPONENTS_FWUPDATE "QMI")
+    set(LEGATO_COMPONENTS_SECSTORE "QMI")
+    set(LEGATO_COMPONENTS_FWUPDATE "QMI")
 
 # Target: ar7
 elseif(LEGATO_TARGET MATCHES "ar7")
@@ -101,6 +107,7 @@ elseif(LEGATO_TARGET MATCHES "wp85")
     set(LEGATO_COMPONENTS_AVC "QMI")
     set(LEGATO_COMPONENTS_SECSTORE "QMI")
     set(LEGATO_COMPONENTS_FWUPDATE "QMI")
+    set(LEGATO_COMPONENTS_AUDIO "wp85")
 
 # Target: wp750x
 elseif(LEGATO_TARGET MATCHES "wp750x")
@@ -109,12 +116,22 @@ elseif(LEGATO_TARGET MATCHES "wp750x")
     set(LEGATO_COMPONENTS_AVC "QMI")
     set(LEGATO_COMPONENTS_SECSTORE "QMI")
     set(LEGATO_COMPONENTS_FWUPDATE "QMI")
+    set(LEGATO_COMPONENTS_AUDIO "wp750x")
 
 # Target: wp76xx
 elseif(LEGATO_TARGET MATCHES "wp76xx")
     set(LEGATO_COMPONENTS_MODEM "QMI")
     set(LEGATO_COMPONENTS_GNSS "QMI")
-    #set(LEGATO_COMPONENTS_AUDIO "wp76xx")
+    set(LEGATO_COMPONENTS_AUDIO "wp76xx")
+    #set(LEGATO_COMPONENTS_AVC "QMI")
+    #set(LEGATO_COMPONENTS_SECSTORE "QMI")
+    #set(LEGATO_COMPONENTS_FWUPDATE "QMI")
+
+# Target: wp77xx
+elseif(LEGATO_TARGET MATCHES "wp77xx")
+    set(LEGATO_COMPONENTS_MODEM "QMI")
+    set(LEGATO_COMPONENTS_GNSS "QMI")
+    set(LEGATO_COMPONENTS_AUDIO "wp77xx")
     #set(LEGATO_COMPONENTS_AVC "QMI")
     #set(LEGATO_COMPONENTS_SECSTORE "QMI")
     #set(LEGATO_COMPONENTS_FWUPDATE "QMI")
@@ -132,7 +149,6 @@ elseif(LEGATO_TARGET MATCHES "virt")
 elseif(LEGATO_TARGET MATCHES "raspi")
     set(LEGATO_COMPONENTS_MODEM "AT")
     set(LEGATO_COMPONENTS_GNSS "AT")
-    set(LEGATO_COMPONENTS_AUDIO "STUB")
     set(LEGATO_COMPONENTS_AVC "AT")
     set(LEGATO_COMPONENTS_SECSTORE "AT")
     set(LEGATO_COMPONENTS_FWUPDATE "AT")

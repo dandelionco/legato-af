@@ -55,6 +55,11 @@
  * @note For more information about start performances, please refer to your specific
  * platform documentation.
  *
+ * @subsubsection SettingConfiguration Setting configuration
+ *
+ * @warning The GNSS setting configuration depends on the platform. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
+ *
  * @subsubsection le_gnss_Data GNSS data
  * The following table describes the <b>minimum</b> required data for those starting modes:
  *
@@ -79,10 +84,26 @@
  * @subsubsection le_gnss_TTFF Time To First Fix (TTFF)
  * The le_gnss_GetTtff() function provides the TTFF (first between 2-Dimensional or 3-Dimensional
  * position fix) of the last position fix.
+ * The GNSS fix position is calculated by the GNSS engine. Its state can be retrieved by
+ * le_gnss_GetPositionState() function. The GNSS fix position states are given by le_gnss_FixState_t
+ * enum.
+ * @note The "estimated" fix is obtained when less than 3 Satellites Vehicle (SV) are used to
+ * establish the fix. It includes the case when no SVs are used.
+ *
  * Please refer to @ref le_gnss_APIcallsRequirements. Also see @ref howToGNSS.
  *
  * A sample code can be seen in the following page:
  * - @subpage c_gnssSampleCodeReStart
+ *
+ * @subsubsection le_gnss_InjectUtcTime Inject UTC time
+ * The le_gnss_InjectUtcTime() function injects the UTC time into the location engine. Providing an
+ * accurate UTC time reduces the time to find the first fix.
+ * @note It is mandatory to enable the 'Extended Ephemeris' file injection into the GNSS device with
+ * le_gnss_EnableExtendedEphemerisFile() before injecting time with le_gnss_InjectUtcTime API.
+ * @warning Your GNSS device may require a restart to take into account the enabling of the
+ * 'Extended Ephemeris' file injection.
+ * Please refer to your platform documentation @ref platformConstraintsGnss_SettingConfiguration for
+ * further details.
  *
  * @subsubsection le_gnss_ForceHotRestart Force HOT restart
  * The le_gnss_ForceHotRestart() function performs a "HOT" restart of the GNSS device. The current
@@ -93,6 +114,8 @@
  * The le_gnss_ForceWarmRestart() function performs a "WARM" restart of the GNSS device. The current
  * GNSS session is stopped, then started using the available @ref le_gnss_Data.
  * Please refer to @ref le_gnss_APIcallsRequirements. Also see @ref howToGNSS.
+ * @Note This API has a platform dependent feature. Please refer to
+ * @ref platformConstraintsGnss_WarmRestart for further details.
  *
  * @subsubsection le_gnss_ForceColdRestart Force COLD restart
  * The le_gnss_ForceColdRestart() function performs a "COLD" restart of the GNSS device. The current
@@ -105,8 +128,10 @@
  * Please refer to @ref le_gnss_APIcallsRequirements. Also see @ref howToGNSS.
  *
  * @subsection le_gnss_AcquisitionRate Acquisition rate
- * The GNSS position is computed and delivered each acquisition rate. Default value is 1 second.
- * The application can configure/retrieve the GNSS device acquisition rate with the
+ * The GNSS position is computed and delivered each acquisition rate. The acquisition rate defines
+ * the time interval that must elapse between two final GPS positions calculation and reports.
+ * Its default value is 1 second.
+ * The application can configure/retreive the GNSS device acquisition rate with the
  * le_gnss_SetAcquisitionRate() / le_gnss_GetAcquisitionRate() functions.
  *
  * Please refer to @ref le_gnss_APIcallsRequirements.
@@ -119,27 +144,50 @@
  * The le_gnss_SetConstellation() function selects the GNSS constellation(s) used in solution.
  * If all GNSS constellations are disabled, the GNSS engine is disabled.
  *
- * @warning Your platform may require a reboot to take into account this change.
- * Please refer to your platform documentation for further details.
+ * @warning Your GNSS device may require a restart to take into account this change.
+ * Please refer to your platform documentation @ref platformConstraintsGnss_SettingConfiguration for
+ * further details.
  *
- * The following configurations are currently supported:
- *   - GPS
- *   - GPS + GLONASS
+ * Combinations of constellation for GPS, GLONASS, BDS, GALILEO and QZSS satellites are currently
+ * supported. Constellation for SBAS satellites is not supported.
+ *
+ * @warning Some constellation types are unsupported depending on the plateform. Please refer to
+ * @ref platformConstraintsGnss_ConstellationType section for full details.
  *
  * All supported GNSS constellations are enabled by default.
  * The le_gnss_GetConstellation() function gets the GNSS constellation(s) enabled to be used
  * in solution.
  *
+ * le_gnss_SetConstellationArea sets the area for a GNSS constellation. le_gnss_GetConstellationArea
+ * gets the area for a GNSS constellation.
+ *
  * A sample code can be seen in the following page:
  * - @subpage c_gnssSampleCodeConstellation
+ *
+ * @subsection le_gnss_SetGetMinElevation GNSS minimum elevation selection
+ *
+ * The le_gnss_SetMinElevation() function sets the GNSS minimum elevation.
+ * Satellites with elevation lower than the minimum elevation will be ignored.
+ *
+ * The le_gnss_GetMinElevation() function gets the GNSS minimum elevation.
+ *
+ * A sample code can be seen in the following page:
+ * - @subpage c_gnssSampleCodeMinElevation
  *
  * @subsection le_gnss_NmeaSentences NMEA sentences selection
  *
  * The le_gnss_SetNmeaSentences() function selects the enabled NMEA sentences in the
  * @ref le_gnss_NMEA with a bit mask. The supported values are listed in @ref le_gnss_NmeaBitMask_t.
  *
+ * @note This function may be subject to limitations depending on the platform. Please refer to the
+ * @ref platformConstraintsGnss page.
+ *
  * @warning Your GNSS device may require a restart to take into account this change.
- * Please refer to your platform documentation for further details.
+ * Please refer to your platform documentation @ref platformConstraintsGnss_SettingConfiguration for
+ * further details.
+ *
+ * @warning Some NMEA sentences are unsupported depending on the plateform. Please refer to
+ * @ref platformConstraintsGnss_nmeaMask section for full details.
  *
  * @note All supported NMEA sentences are enabled by default.
  *
@@ -168,6 +216,8 @@
  *| le_gnss_Enable() | LE_NOT_PERMITTED | LE_DUPLICATE | LE_DUPLICATE | LE_OK or error code |
  *| le_gnss_SetConstellation() | LE_NOT_PERMITTED |  LE_OK or error code | LE_NOT_PERMITTED | LE_NOT_PERMITTED |
  *| le_gnss_GetConstellation() | LE_NOT_PERMITTED |  LE_OK or error code | LE_NOT_PERMITTED | LE_NOT_PERMITTED |
+ *| le_gnss_SetConstellationArea() | LE_NOT_PERMITTED |  LE_OK or error code | LE_NOT_PERMITTED | LE_NOT_PERMITTED |
+ *| le_gnss_GetConstellationArea() | LE_NOT_PERMITTED |  LE_OK or error code | LE_NOT_PERMITTED | LE_NOT_PERMITTED |
  *| le_gnss_GetTtff() | LE_NOT_PERMITTED |  LE_OK or error code | LE_OK or error code | LE_NOT_PERMITTED |
  *| le_gnss_SetAcquisitionRate() | LE_NOT_PERMITTED | LE_OK or error code | LE_NOT_PERMITTED | LE_NOT_PERMITTED |
  *| le_gnss_GetAcquisitionRate() | LE_NOT_PERMITTED | LE_OK or error code | LE_NOT_PERMITTED | LE_NOT_PERMITTED |
@@ -201,24 +251,73 @@
  * updated position each @ref le_gnss_AcquisitionRate, returning a position sample object.
  *
  * The GNSS information commonly used such as
- * position, time and date, satellites information and accuracy
+ * device state, position, time and date, satellites information and accuracy
  * can be queried using the following functions:
+ * - le_gnss_GetState()
  * - le_gnss_GetPositionState()
  * - le_gnss_GetLocation()
  * - le_gnss_GetAltitude()
  * - le_gnss_GetDate()
  * - le_gnss_GetTime()
  * - le_gnss_GetGpsTime()
+ * - le_gnss_GetGpsLeapSeconds()
+ * - le_gnss_GetEpochTime()
  * - le_gnss_GetTimeAccuracy()
  * - le_gnss_GetHorizontalSpeed()
  * - le_gnss_GetVerticalSpeed()
  * - le_gnss_GetDirection()
  * - le_gnss_GetSatellitesInfo()
+ * - le_gnss_GetSbasConstellationCategory()
  * - le_gnss_GetSatellitesStatus()
  * - le_gnss_GetDop()
+ * - le_gnss_GetDilutionOfPrecision()
  * - le_gnss_GetAltitudeOnWgs84()
  * - le_gnss_GetMagneticDeviation()
-
+ *
+ * le_gnss_SetDataResolution() function can be called to configure the resolution of position data
+ * type per client session. Currently, three data types are supported:
+ * - Vertical position accuracy provided by le_gnss_GetAltitude().
+ * - Vertical speed accuracy provided by le_gnss_GetVerticalSpeed().
+ * - Horizontal speed accuracy provided by le_gnss_GetHorizontalSpeed().
+ * Each data type can be set with a resolution from 0 to 3 decimal place.
+ *
+ * For example, to get the vertical position accuracy with a resolution of 2 decimal places,
+ * le_gnss_SetDataResolution() function is called with vertical position accuracy set as data type
+ * and 2 decimal place is set as resolution, then le_gnss_GetAltitude() function is called.
+ *
+ * @note If le_gnss_SetDataResolution() function is not called, the position data types are received
+ * in their default accuracies.
+ *
+ * le_gnss_ConvertDataCoordinateSystem() function can be called to convert a location data value
+ * from a coordinate system to another. Currently it is possible to convert the following data
+ * types:
+ * - Latitude
+ * - Longitude
+ * - Altitude
+ *
+ * System coordinates source and destination are currently:
+ * - Coordinate system WGS84
+ * - Coordinate system PZ90
+ *
+ * @note Only conversion from WGS84 coordinate system to PZ90 coordinate system is currently
+ * supported.
+ * @note The altitude in coordinate system WGS84 is obtained by le_gnss_GetAltitudeOnWgs84()
+ * function.
+ *
+ * A sample code using le_gnss_ConvertDataCoordinate() function can be seen in the following page:
+ * - @subpage c_gnssSampleCodePosition
+ *
+ * le_gnss_GetDilutionOfPrecision() gets the DOP parameters (Dilution Of Precision) with a
+ * resolution of 3 decimal places by default. This resolution can be modified by calling the
+ * @c le_gnss_SetDopResolution() function first.
+ *
+ * As @c le_gnss_SetDopResolution() sets the resolution per client session,
+ * @c le_gnss_SetDopResolution() and @c le_gnss_GetDilutionOfPrecision() functions should be called
+ * in the same thread or client session.
+ *
+ * A sample code can be seen in the following page:
+ * - @subpage c_gnssSampleCodePosition
+ *
  * The handler can be managed using le_gnss_AddPositionHandler()
  * and le_gnss_RemovePositionHandler().
  * When a position is computed, the handler is called.
@@ -285,11 +384,12 @@
  * The SUPL certificate to be used in A-GNSS sessions is injected through the
  * le_gnss_InjectSuplCertificate() function and deleted through the le_gnss_DeleteSuplCertificate()
  * function.
- *
+ * The SUPL certificate lenght given as parameter to le_gnss_InjectSuplCertificate() must be less
+ * than LE_GNSS_SUPL_CERTIFICATE_MAX_LEN.
  *
  * <HR>
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -331,6 +431,12 @@
  */
 
 /**
+ * @page c_gnssSampleCodeMinElevation Sample code for GNSS minimum elevation
+ *
+ * @snippet "apps/test/positioning/gnssTest/gnssTest/gnssTest.c" GnssControl
+ */
+
+/**
  * @page c_gnssSampleCodeNmeaSentences Sample code for GNSS NMEA sentences selection
  *
  * @snippet "apps/test/positioning/gnssTest/gnssTest/gnssTest.c" GnssControl
@@ -354,7 +460,7 @@
  *
  * Legato @ref c_gnss include file.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -409,7 +515,53 @@ DEFINE SV_INFO_MAX_LEN = 80;
  * @note This maximal value should be coherent with @ref le_gnss_NmeaBitMask_t
  */
 //--------------------------------------------------------------------------------------------------
-DEFINE NMEA_SENTENCES_MAX = 0x7FFF;
+DEFINE NMEA_SENTENCES_MAX = 0x003FFFFF;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * @deprecated LE_GNSS_NMEA_MASK_PQXFI is deprecated. LE_GNSS_NMEA_MASK_PTYPE is to be used instead.
+ * Setting LE_GNSS_NMEA_MASK_PTYPE will also set LE_GNSS_NMEA_MASK_PQXFI.
+ * LE_GNSS_NMEA_MASK_PTYPE supports all Proprietary type masks: PQXFI, PQGSA and PQGSV.
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE NMEA_MASK_PQXFI        = 0x4000;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Define the maximal degree for the minimal elevation
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE MIN_ELEVATION_MAX_DEGREE = 90;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Satellite Vehicle (SV) ID to PRN offset definitions
+ *
+ * @note SV ID is given both in le_gnss_GetSatellitesInfo() API and NMEA flow. Its corresponding
+ *       PRN code can be computed adding the following offset according to its constellation.
+ */
+//--------------------------------------------------------------------------------------------------
+DEFINE PRN_OFFSET_GPS         = 0;
+DEFINE PRN_OFFSET_SBAS        = 87;
+DEFINE PRN_OFFSET_GLONASS     = -64;
+DEFINE PRN_OFFSET_GALILEO     = -300;
+DEFINE PRN_OFFSET_BEIDOU      = -200;
+DEFINE PRN_OFFSET_QZSS        = 0;
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Enumeration for GNSS device state
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM State
+{
+    STATE_UNINITIALIZED,    ///< The GNSS device is not initialized
+    STATE_READY,            ///< The GNSS device is ready
+    STATE_ACTIVE,           ///< The GNSS device is active
+    STATE_DISABLED,         ///< The GNSS device is disabled
+    STATE_MAX               ///< Do not use
+};
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -422,6 +574,54 @@ ENUM FixState
     STATE_FIX_2D,              ///< 2-Dimensional position fix.
     STATE_FIX_3D,              ///< 3-Dimensional position fix.
     STATE_FIX_ESTIMATED        ///< Estimated (i.e. forward predicted) position fix.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ *  Resolutions values.
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM Resolution
+{
+    RES_ZERO_DECIMAL,          ///< Resolution of 0 decimal place.
+    RES_ONE_DECIMAL,           ///< Resolution of 1 decimal place.
+    RES_TWO_DECIMAL,           ///< Resolution of 2 decimal places.
+    RES_THREE_DECIMAL,         ///< Resolution of 3 decimal places.
+    RES_UNKNOWN                ///< Unknown resolution.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+*  Data types.
+*/
+//--------------------------------------------------------------------------------------------------
+ENUM DataType
+{
+   DATA_VACCURACY,         ///< Vertical accuracy data.
+   DATA_VSPEEDACCURACY,    ///< Vertical speed accuracy data.
+   DATA_HSPEEDACCURACY,    ///< Horizontal speed accuracy data.
+   DATA_UNKNOWN            ///< Unknown data type.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ *  SBAS constellation category
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM SbasConstellationCategory
+{
+    SBAS_EGNOS,         ///< Satellite Vehicle of Satellite-based augmentation system
+                        ///< (SBAS) EGNOS constellation.
+    SBAS_WAAS,          ///< Satellite Vehicle of Satellite-based augmentation system
+                        ///< (SBAS) WAAS constellation.
+    SBAS_GAGAN,         ///< Satellite Vehicle of Satellite-based augmentation system
+                        ///< (SBAS) GAGAN constellation.
+    SBAS_MSAS,          ///< Satellite Vehicle of Satellite-based augmentation system
+                        ///< (SBAS) MSAS constellation.
+    SBAS_SDCM,          ///< Satellite Vehicle of Satellite-based augmentation system
+                        ///< (SBAS) SDCM constellation.
+    SBAS_UNKNOWN        ///< Satellite Vehicle of Satellite-based augmentation system
+                        ///< (SBAS) unknown constellation.
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -442,6 +642,8 @@ ENUM Constellation
                                        ///< European Union satellite navigation system
     SV_CONSTELLATION_BEIDOU,           ///< Satellite Vehicle of Beidou constellation.
                                        ///< Chinese satellite navigation system
+    SV_CONSTELLATION_QZSS,             ///< Satellite Vehicle of QZSS constellation.
+                                       ///< Japanese satellite navigation system
     SV_CONSTELLATION_MAX               ///< Maximum value.
 };
 
@@ -452,9 +654,36 @@ ENUM Constellation
 //--------------------------------------------------------------------------------------------------
 ENUM AssistedMode
 {
-    STANDALONE_MODE,         ///< Standalone mode
+    STANDALONE_MODE,         ///< Standalone mode.
     MS_BASED_MODE,           ///< MS-Based mode.
     MS_ASSISTED_MODE         ///< MS-Assisted mode.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Dilution of precision type
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM DopType
+{
+    PDOP,    ///< Position dilution of precision.
+    HDOP,    ///< Horizontal dilution of precision.
+    VDOP,    ///< Vertical dilution of precision.
+    GDOP,    ///< Geometric dilution of precision.
+    TDOP,    ///< Time dilution of precision.
+    DOP_LAST
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * GNSS constellation area type
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM ConstellationArea
+{
+    UNSET_AREA,               ///< Unset area.
+    WORLDWIDE_AREA,           ///< Worldwide area.
+    OUTSIDE_US_AREA           ///< Outside US area.
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -472,8 +701,11 @@ BITMASK ConstellationBitMask
                                             ///< Russian satellite navigation system
     CONSTELLATION_BEIDOU,                   ///< BEIDOU constellation used in solution.
                                             ///< Chinese satellite navigation system
-    CONSTELLATION_GALILEO                   ///< GALILEO constellation used in solution.
+    CONSTELLATION_GALILEO,                  ///< GALILEO constellation used in solution.
                                             ///< European Union satellite navigation system
+    CONSTELLATION_SBAS,                     ///< SBAS constellation used in solution.
+    CONSTELLATION_QZSS                      ///< QZSS constellation used in solution.
+                                            ///< Japanese satellite navigation system
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -502,7 +734,39 @@ BITMASK NmeaBitMask
     NMEA_MASK_GARMC,    ///< GARMC type enabled: Galileo recommended minimum data.
     NMEA_MASK_GAVTG,    ///< GAVTG type enabled: Galileo vector track and speed over the ground.
     NMEA_MASK_PSTIS,    ///< PSTIS type enabled: GPS session start indication.
-    NMEA_MASK_PQXFI     ///< PQXFI type enabled: Proprietary Qualcomm eXtended Fix Information.
+    NMEA_MASK_REMOVED,  ///<
+    NMEA_MASK_PTYPE,    ///< PTYPE type enabled: Proprietary Type mask.
+    NMEA_MASK_GPGRS,    ///< GPGRS type enabled: GPS Range residuals.
+    NMEA_MASK_GPGLL,    ///< GPGLL type enabled: GPS Geographic position, latitude / longitude.
+    NMEA_MASK_DEBUG,    ///< DEBUG type enabled: Debug NMEA indication.
+    NMEA_MASK_GPDTM,    ///< GPDTM type enabled: Local geodetic datum and datum offset from a
+                        ///  reference.
+    NMEA_MASK_GAGNS     ///< GAGNS type enabled: Fix data for Galileo.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ *  Coordinate system
+ */
+//--------------------------------------------------------------------------------------------------
+ENUM CoordinateSystem
+{
+    COORDINATE_SYSTEM_WGS84,     ///< Coordinate system WGS84.
+    COORDINATE_SYSTEM_PZ90,      ///< Coordinate system PZ90.
+    COORDINATE_SYSTEM_MAX        ///< Maximum value.
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+*  Location data types
+*/
+//--------------------------------------------------------------------------------------------------
+ENUM LocationDataType
+{
+   POS_LATITUDE,     ///< Latitude data position.
+   POS_LONGITUDE,    ///< Longitude data position.
+   POS_ALTITUDE,     ///< Altitude data position.
+   POS_MAX           ///< Maximum value.
 };
 
 //--------------------------------------------------------------------------------------------------
@@ -514,6 +778,12 @@ BITMASK NmeaBitMask
  *  - LE_UNSUPPORTED   If the request is not supported.
  *  - LE_NOT_PERMITTED If the GNSS device is not initialized, disabled or active.
  *  - LE_OK            The function succeeded.
+ *
+ * @warning Some constellation types are unsupported depending on the plateform. Please refer to
+ *          @ref platformConstraintsGnss_ConstellationType section for full details.
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetConstellation
@@ -537,12 +807,52 @@ FUNCTION le_result_t GetConstellation
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Set the area for the GNSS constellation
+ *
+ * @return
+ *  - LE_OK            The function succeeded.
+ *  - LE_FAULT         The function failed.
+ *  - LE_UNSUPPORTED   If the request is not supported.
+ *  - LE_NOT_PERMITTED If the GNSS device is not initialized, disabled or active.
+ *  - LE_BAD_PARAMETER Invalid constellation area.
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetConstellationArea
+(
+    Constellation satConstellation        IN,  ///< GNSS constellation type.
+    ConstellationArea constellationArea   IN   ///< GNSS constellation area.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the area for the GNSS constellation
+ *
+ * @return
+ *  - LE_OK            On success
+ *  - LE_FAULT         On failure
+ *  - LE_UNSUPPORTED   Request not supported
+ *  - LE_NOT_PERMITTED If the GNSS device is not initialized, disabled or active.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetConstellationArea
+(
+    Constellation satConstellation        IN,   ///< GNSS constellation type.
+    ConstellationArea constellationArea   OUT   ///< GNSS constellation area.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * This function enables the use of the 'Extended Ephemeris' file into the GNSS device.
  *
  * @return
  *  - LE_FAULT         The function failed.
  *  - LE_OK            The function succeeded.
  *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t EnableExtendedEphemerisFile
@@ -557,6 +867,8 @@ FUNCTION le_result_t EnableExtendedEphemerisFile
  *  - LE_FAULT         The function failed.
  *  - LE_OK            The function succeeded.
  *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t DisableExtendedEphemerisFile
@@ -594,6 +906,25 @@ FUNCTION le_result_t GetExtendedEphemerisValidity
 (
     uint64 startTime OUT,     ///< Start time in seconds (since Jan. 1, 1970)
     uint64 stopTime OUT       ///< Stop time in seconds (since Jan. 1, 1970)
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function must be called to inject the UTC time into the GNSS device.
+ *
+ * @return
+ *  - LE_OK            The function succeeded.
+ *  - LE_FAULT         The function failed to inject the UTC time.
+ *  - LE_TIMEOUT       A time-out occurred.
+ *
+ * @note It is mandatory to enable the 'Extended Ephemeris' file injection into the GNSS device with
+ * le_gnss_EnableExtendedEphemerisFile() before injecting time with this API.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t InjectUtcTime
+(
+    uint64 timeUtc IN,   ///< [IN] UTC time since Jan. 1, 1970 in milliseconds
+    uint32 timeUnc IN    ///< [IN] Time uncertainty in milliseconds
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -652,6 +983,8 @@ FUNCTION le_result_t ForceHotRestart
  *  - LE_NOT_PERMITTED If the GNSS device is not enabled or not started.
  *  - LE_OK            The function succeeded.
  *
+ * @Note This API has a platform dependent feature. Please refer to
+ * @ref platformConstraintsGnss_WarmRestart for further details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t ForceWarmRestart
@@ -696,6 +1029,7 @@ FUNCTION le_result_t ForceFactoryRestart
  *  - LE_BUSY          The position is not fixed and TTFF can't be measured.
  *  - LE_NOT_PERMITTED If the GNSS device is not enabled or not started.
  *  - LE_OK            Function succeeded.
+ *  - LE_FAULT         If there are some other errors.
  *
  */
 //--------------------------------------------------------------------------------------------------
@@ -714,6 +1048,8 @@ FUNCTION le_result_t GetTtff
  *  - LE_NOT_PERMITTED If the GNSS device is not initialized.
  *  - LE_OK            The function succeeded.
  *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t Enable
@@ -730,6 +1066,8 @@ FUNCTION le_result_t Enable
  *  - LE_NOT_PERMITTED If the GNSS device is not initialized or started.
  *  - LE_OK            The function succeeded.
  *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t Disable
@@ -747,9 +1085,13 @@ FUNCTION le_result_t Disable
  *  - LE_UNSUPPORTED request not supported
  *  - LE_TIMEOUT a time-out occurred
  *  - LE_NOT_PERMITTED If the GNSS device is not in "ready" state.
+ *  - LE_OUT_OF_RANGE  if acquisition rate value is equal to zero
  *
  * @warning This function may be subject to limitations depending on the platform. Please refer to
  *          the @ref platformConstraintsGnss page.
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetAcquisitionRate
@@ -820,17 +1162,20 @@ FUNCTION le_result_t GetPositionState
  *
  * @return
  *  - LE_FAULT         Function failed to get the location's data
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to INT32_MAX).
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid (set to INT32_MAX).
  *  - LE_OK            Function succeeded.
  *
- * @note latitudePtr, longitudePtr, hAccuracyPtr, altitudePtr, vAccuracyPtr can be set to NULL
- *       if not needed.
+ * @note latitudePtr, longitudePtr and hAccuracyPtr can be set to NULL if not needed.
  *
- * @note: The latitude and longitude values are based on the WGS84 standard coordinate system.
+ * @note The latitude and longitude values are based on the WGS84 standard coordinate system.
  *
- * @note The latitude and longitude are given in degrees with 6 decimal places like:
- *    Latitude +48858300 = 48.858300 degrees North
- *    Longitude +2294400 = 2.294400 degrees East
+ * @note The latitude and longitude values are given in degrees with 6 decimal places like:
+ *       Latitude +48858300 = 48.858300 degrees North
+ *       Longitude +2294400 = 2.294400 degrees East
+ *       (The latitude and longitude values are given in degrees, minutes, seconds in NMEA frame)
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with INT32_MAX.
  *
  * @note If the caller is passing an invalid Position sample reference into this function,
  *       it is a fatal error, the function will not return.
@@ -849,13 +1194,21 @@ FUNCTION le_result_t GetLocation
  * Get the position sample's altitude.
  *
  * @return
- *  - LE_FAULT         Function failed to get the altitude.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to INT32_MAX).
+ *  - LE_FAULT         Function failed to get the altitude. Invalid Position reference provided.
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid (set to INT32_MAX).
  *  - LE_OK            Function succeeded.
  *
  * @note Altitude is in meters, above Mean Sea Level, with 3 decimal places (3047 = 3.047 meters).
  *
  * @note For a 2D position fix, the altitude will be indicated as invalid and set to INT32_MAX
+ *
+ * @note Vertical position accuracy is default set to meters with 1 decimal place (3047 = 3.0
+ *       meters). To change its accuracy, call the @c le_gnss_SetDataResolution() function. Vertical
+ *       position accuracy is set as data type and accuracy from 0 to 3 decimal place is set as
+ *       resolution.
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with INT32_MAX.
  *
  * @note If the caller is passing an invalid Position reference into this function,
  *       it is a fatal error, the function will not return.
@@ -867,7 +1220,7 @@ FUNCTION le_result_t GetAltitude
 (
     Sample positionSampleRef  IN,   ///< Position sample's reference.
     int32 altitude OUT,             ///< Altitude in meters, above Mean Sea Level [resolution 1e-3].
-    int32 vAccuracy OUT             ///< Vertical position's accuracy in meters [resolution 1e-1].
+    int32 vAccuracy OUT             ///< Vertical position's accuracy in meters.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -914,6 +1267,28 @@ FUNCTION le_result_t GetGpsTime
 
 //--------------------------------------------------------------------------------------------------
 /**
+ *  Get the position sample's epoch time.
+ *
+ * @return
+ *  - LE_FAULT         Function failed to acquire the epoch time.
+ *  - LE_OK            Function succeeded.
+ *  - LE_OUT_OF_RANGE  The retrieved time is invalid (all fields are set to 0).
+ *
+ * @note The epoch time is the number of seconds elapsed since January 1, 1970
+ *       (midnight UTC/GMT), not counting leaps seconds.
+ *
+ * @note If the caller is passing an invalid position sample reference into this function,
+ *       it is a fatal error, the function will not return.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetEpochTime
+(
+    Sample positionSampleRef  IN, ///< Position sample's reference.
+    uint64 milliseconds OUT       ///< Milliseconds since Jan. 1, 1970.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Get the position sample's time accurary.
  *
  * @return
@@ -928,7 +1303,32 @@ FUNCTION le_result_t GetGpsTime
 FUNCTION le_result_t GetTimeAccuracy
 (
     Sample positionSampleRef  IN,       ///< Position sample's reference.
-    uint32 timeAccuracy OUT             ///< Estimated time accuracy in milliseconds
+    uint32 timeAccuracy OUT             ///< Estimated time accuracy in nanoseconds
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the position sample's UTC leap seconds in advance
+ *
+ * @return
+ *  - LE_FAULT         Function failed to get the leap seconds.
+ *  - LE_OUT_OF_RANGE  The retrieved time accuracy is invalid (set to UINT8_MAX).
+ *  - LE_OK            Function succeeded.
+ *
+ * @note The leap seconds in advance is the accumulated time in seconds since the start of GPS Epoch
+ * time (Jan 6, 1980). This value has to be added to the UTC time (since Jan. 1, 1970)
+ *
+ * @note Insertion of each UTC leap second is usually decided about six months in advance by the
+ * International Earth Rotation and Reference Systems Service (IERS).
+ *
+ * @note If the caller is passing an invalid position sample reference or a null pointer into this
+ *       function, it is a fatal error, the function will not return.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t  GetGpsLeapSeconds
+(
+    Sample positionSampleRef  IN,       ///< Position sample's reference.
+    uint8  leapSeconds OUT              ///< UTC leap seconds in advance in seconds
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -957,21 +1357,33 @@ FUNCTION le_result_t GetDate
  * Get the position sample's horizontal speed.
  *
  *  - LE_FAULT         Function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to UINT32_MAX).
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid (set to UINT32_MAX).
  *  - LE_OK            Function succeeded.
  *
  * @note hSpeedPtr, hSpeedAccuracyPtr can be set to NULL if not needed.
  *
+ * @note Horizontal speed is in meters/second with 2 decimal places (3047 = 30.47 meters/second).
+ *
+ * @note Horizontal speed accuracy estimate is default set to meters/second with 1 decimal place
+ *       (304 = 30.4 meters/second). To change its accuracy, call the @c le_gnss_SetDataResolution()
+ *       function. Horizontal speed accuracy estimate is set as data type and accuracy from 0 to 3
+ *       decimal place is set as resolution.
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with UINT32_MAX.
+ *
  * @note If the caller is passing an invalid Position sample reference into this function,
  *       it is a fatal error, the function will not return.
+ *
+ * @warning The Horizontal speed accuracy is platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_speedAccuracies section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetHorizontalSpeed
 (
     Sample positionSampleRef IN,        ///< Position sample's reference.
     uint32 hspeed OUT,                  ///< Horizontal speed in meters/second [resolution 1e-2].
-    uint32 hspeedAccuracy OUT           ///< Horizontal speed's accuracy estimate
-                                        ///< in meters/second [resolution 1e-1].
+    uint32 hspeedAccuracy OUT           ///< Horizontal speed's accuracy estimate in meters/second.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -980,7 +1392,7 @@ FUNCTION le_result_t GetHorizontalSpeed
  *
  * @return
  *  - LE_FAULT         The function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is not valid (set to INT32_MAX).
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is not valid (set to INT32_MAX).
  *  - LE_OK            The function succeeded.
  *
  * @note vSpeedPtr, vSpeedAccuracyPtr can be set to NULL if not needed.
@@ -988,8 +1400,19 @@ FUNCTION le_result_t GetHorizontalSpeed
  * @note For a 2D position Fix, the vertical speed will be indicated as invalid
  * and set to INT32_MAX.
  *
+ * @note Vertical speed accuracy estimate is default set to meters/second with 1 decimal place
+ *       (304 = 30.4 meters/second). To change its accuracy, call the @c le_gnss_SetDataResolution()
+ *       function. Vertical speed accuracy estimate is set as data type and accuracy from 0 to 3
+ *       decimal place is set as resolution.
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with INT32_MAX.
+ *
  * @note If the caller is passing an invalid Position sample reference into this function,
  *       it is a fatal error, the function will not return.
+ *
+ * @warning The Vertical speed accuracy is platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_speedAccuracies section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetVerticalSpeed
@@ -997,8 +1420,7 @@ FUNCTION le_result_t GetVerticalSpeed
     Sample positionSampleRef IN,         ///< Position sample's reference.
     int32  vspeed OUT,                   ///< Vertical speed in meters/second [resolution 1e-2],
                                          ///< positive up.
-    int32  vspeedAccuracy OUT            ///< Vertical speed's accuracy estimate
-                                        ///< in meters/second [resolution 1e-1].
+    int32  vspeedAccuracy OUT            ///< Vertical speed's accuracy estimate in meters/second.
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -1008,11 +1430,15 @@ FUNCTION le_result_t GetVerticalSpeed
  *
  * @return
  *  - LE_FAULT         Function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to UINT32_MAX).
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid (set to UINT32_MAX).
  *  - LE_OK            Function succeeded.
  *
- * @note Direction is given in degrees with 1 decimal place: 1755 = 175,5 degrees.
+ * @note Direction and direction accuracy are given in degrees with 1 decimal place: 1755 = 175.5
+ *       degrees.
  *       Direction ranges from 0 to 359.9 degrees, where 0 is True North.
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with UINT32_MAX.
  *
  * @note directionPtr, directionAccuracyPtr can be set to NULL if not needed.
  *
@@ -1035,7 +1461,7 @@ FUNCTION le_result_t GetDirection
  *
  * @return
  *  - LE_FAULT         Function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid.
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid.
  *  - LE_OK            Function succeeded.
  *
  * @note satId[] can be set to 0 if that information list index is not configured, so
@@ -1044,6 +1470,9 @@ FUNCTION le_result_t GetDirection
  * @note For LE_OUT_OF_RANGE returned code, invalid value depends on field type:
  * UINT16_MAX for satId, LE_GNSS_SV_CONSTELLATION_UNDEFINED for satConst, false for satUsed,
  * UINT8_MAX for satSnr, UINT16_MAX for satAzim, UINT8_MAX for satElev.
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid.
  *
  * @note If the caller is passing an invalid Position sample reference into this function,
  *       it is a fatal error, the function will not return.
@@ -1071,12 +1500,26 @@ FUNCTION le_result_t GetSatellitesInfo
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Get the SBAS constellation category given the SBAS satellite number ID.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION SbasConstellationCategory GetSbasConstellationCategory
+(
+    uint16      satId IN         ///< SBAS satellite number ID, referring to NMEA standard.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Get the Satellites Vehicle status.
  *
  * @return
  *  - LE_FAULT         Function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid.
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid (set to UINT8_MAX).
  *  - LE_OK            Function succeeded.
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with UINT8_MAX.
  *
  * @note If the caller is passing an invalid Position sample reference into this function,
  *       it is a fatal error, the function will not return.
@@ -1092,14 +1535,20 @@ FUNCTION le_result_t GetSatellitesStatus
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Get the DOP parameters (Dilution Of Precision) for the fixed position.
+ * Get the DOP parameters (Dilution Of Precision) for the fixed position
  *
  * @return
  *  - LE_FAULT         Function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to INT16_MAX).
+ *  - LE_OUT_OF_RANGE  At least one of the retrieved parameters is invalid (set to UINT16_MAX).
  *  - LE_OK            Function succeeded.
  *
- * @note The DOP values are given with 3 decimal places like: DOP value 2200 = 2.20
+ * @deprecated This function is deprecated, le_gnss_GetDilutionOfPrecision() should be used for
+ *             new code.
+ *
+ * @note The DOP values are given with 3 decimal places like: DOP value 2200 = 2.200
+ *
+ * @note In case the function returns LE_OUT_OF_RANGE, some of the retrieved parameters may be
+ *       valid. Please compare them with UINT16_MAX.
  *
  * @note If the caller is passing an invalid Position sample reference into this function,
  *       it is a fatal error, the function will not return.
@@ -1113,6 +1562,31 @@ FUNCTION le_result_t GetDop
     uint16 pdop OUT                     ///< Position Dilution of Precision [resolution 1e-3].
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the DOP parameter (Dilution Of Precision) for the fixed position.
+ *
+ * @return
+ *  - LE_FAULT         Function failed to find the DOP value.
+ *  - LE_OUT_OF_RANGE  The retrieved parameter is invalid (set to UINT16_MAX).
+ *  - LE_OK            Function succeeded.
+ *
+ * @note This function replaces the deprecated function le_gnss_GetDop().
+ *
+ * @note The DOP value is given with 3 decimal places by default like: DOP value 2200 = 2.200
+ *       The resolution can be modified by calling the @c le_gnss_SetDopResolution() function.
+ *
+ * @note If the caller is passing an invalid Position sample reference into this function,
+ *       it is a fatal error, the function will not return.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetDilutionOfPrecision
+(
+    Sample positionSampleRef IN,           ///< Position sample's reference.
+    DopType dopType IN,                    ///< Dilution of Precision type.
+    uint16 dop OUT                         ///< Dilution of Precision corresponding to the dopType
+                                           /// in the specified resolution.
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1120,11 +1594,11 @@ FUNCTION le_result_t GetDop
  *
  * @return
  *  - LE_FAULT         Function failed to get the altitude.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to INT32_MAX).
+ *  - LE_OUT_OF_RANGE  The altitudeOnWgs84 is invalid (set to INT32_MAX).
  *  - LE_OK            Function succeeded.
  *
- * @note altitudeOnWgs84 is in meters, between WGS-84 earth ellipsoid and mean sea level
- *       with 3 decimal places (3047 = 3.047 meters).
+ * @note altitudeOnWgs84 is in meters, with respect to the WGS-84 ellipsoid with 3 decimal
+ *       places (3047 = 3.047 meters).
  *
  * @note For a 2D position fix, the altitude with respect to the WGS-84 ellipsoid will be indicated
  *       as invalid and set to INT32_MAX.
@@ -1149,7 +1623,7 @@ FUNCTION le_result_t GetAltitudeOnWgs84
  *
  * @return
  *  - LE_FAULT         Function failed to find the positionSample.
- *  - LE_OUT_OF_RANGE  One of the retrieved parameter is invalid (set to INT32_MAX).
+ *  - LE_OUT_OF_RANGE  The magneticDeviation is invalid (set to INT32_MAX).
  *  - LE_OK            Function succeeded.
  *
  * @note magneticDeviation is in degrees, with 1 decimal places (47 = 4.7 degree).
@@ -1163,8 +1637,6 @@ FUNCTION le_result_t GetMagneticDeviation
     Sample positionSampleRef IN,        ///< Position sample's reference.
     int32  magneticDeviation OUT        ///< MagneticDeviation in degrees [resolution 1e-1].
 );
-
-
 //--------------------------------------------------------------------------------------------------
 /**
  * This function gets the last updated position sample object reference.
@@ -1202,6 +1674,9 @@ FUNCTION ReleaseSampleRef
  *  - LE_FAULT on failure
  *  - LE_UNSUPPORTED request not supported
  *  - LE_TIMEOUT a time-out occurred
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetSuplAssistedMode
@@ -1234,6 +1709,12 @@ FUNCTION le_result_t GetSuplAssistedMode
  *  - LE_FAULT on failure
  *  - LE_BUSY service is busy
  *  - LE_TIMEOUT a time-out occurred
+ *
+ * @note If the SUPL server URL size is bigger than the maximum string length (including NULL
+ * terminator) size, it is a fatal error, the function will not return.
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetSuplServerUrl
@@ -1249,9 +1730,13 @@ FUNCTION le_result_t SetSuplServerUrl
  *
  * @return
  *  - LE_OK on success
+ *  - LE_BAD_PARAMETER on invalid parameter
  *  - LE_FAULT on failure
  *  - LE_BUSY service is busy
  *  - LE_TIMEOUT a time-out occurred
+ *
+ * @note If the SUPL certificate size is bigger than the Maximum SUPL certificate size,
+ * it is a fatal error, the function will not return.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t InjectSuplCertificate
@@ -1268,6 +1753,7 @@ FUNCTION le_result_t InjectSuplCertificate
  *
  * @return
  *  - LE_OK on success
+ *  - LE_BAD_PARAMETER on invalid parameter
  *  - LE_FAULT on failure
  *  - LE_BUSY service is busy
  *  - LE_TIMEOUT a time-out occurred
@@ -1293,6 +1779,16 @@ FUNCTION le_result_t DeleteSuplCertificate
  *
  * @warning This function may be subject to limitations depending on the platform. Please refer to
  *          the @ref platformConstraintsGnss page.
+ *
+ * @note Some NMEA sentences are unsupported depending on the plateform. Please refer to
+ *       @ref platformConstraintsGnss_nmeaMask section for full details. Setting an unsuported NMEA
+ *       sentence won't report an error.
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
+ *
+ * @deprecated LE_GNSS_NMEA_MASK_PQXFI is deprecated. LE_GNSS_NMEA_MASK_PTYPE should be used
+ *             instead. Setting LE_GNSS_NMEA_MASK_PTYPE will also set LE_GNSS_NMEA_MASK_PQXFI.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SetNmeaSentences
@@ -1313,9 +1809,120 @@ FUNCTION le_result_t SetNmeaSentences
  *
  * @note If the caller is passing an null pointer to this function, it is a fatal error
  *       and the function will not return.
+ *
+ * @note Some NMEA sentences are unsupported depending on the plateform. Please refer to
+ *       @ref platformConstraintsGnss_nmeaMask section for full details. The bit mask for an unset
+ *       or unsupported NMEA sentence is zero.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetNmeaSentences
 (
     NmeaBitMask nmeaMaskPtr     OUT  ///< Bit mask for enabled NMEA sentences.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function returns the status of the GNSS device.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION State GetState
+(
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function sets the GNSS minimum elevation.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_OUT_OF_RANGE if the minimum elevation is above range
+ *  - LE_UNSUPPORTED request not supported
+ *
+ * @warning The settings are platform dependent. Please refer to
+ *          @ref platformConstraintsGnss_SettingConfiguration section for full details.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetMinElevation
+(
+    uint8 minElevation        IN  ///< Minimum elevation in degrees [range 0..90].
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function gets the GNSS minimum elevation.
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_UNSUPPORTED request not supported
+ *
+ * @note If the caller is passing an null pointer to this function, it is a fatal error
+ *       and the function will not return.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetMinElevation
+(
+   uint8  minElevationPtr     OUT  ///< Minimum elevation in degrees [range 0..90].
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the resolution for the DOP parameters
+ *
+ * @return LE_OK               Function succeeded.
+ * @return LE_BAD_PARAMETER    Invalid parameter provided.
+ * @return LE_FAULT            Function failed.
+ *
+ * @note The function sets the same resolution to all DOP values returned by
+ *       le_gnss_GetDilutionOfPrecision() API. The resolution setting takes effect immediately.
+ *
+ * @note The resolution setting is done per client session.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetDopResolution
+(
+    Resolution resolution    IN    ///< Resolution.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the resolution for the specific type of data
+ *
+ * @return LE_OK               Function succeeded.
+ * @return LE_BAD_PARAMETER    Invalid parameter provided.
+ * @return LE_FAULT            Function failed.
+ *
+ * @note The resolution setting takes effect immediately and is not persistent to reset.
+ *
+ * @note The resolution setting is done per client session.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SetDataResolution
+(
+    DataType dataType     IN,   ///< Data type.
+    Resolution resolution IN    ///< Resolution.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function converts a location data parameter from/to multi-coordinate system
+ *
+ * @return
+ *  - LE_OK on success
+ *  - LE_FAULT on failure
+ *  - LE_BAD_PARAMETER Invalid parameter provided.
+ *  - LE_UNSUPPORTED request not supported
+ *
+ * @note The resolution of location data parameter remains unchanged after the conversion.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t ConvertDataCoordinateSystem
+(
+    CoordinateSystem coordinateSrc IN,      ///< Coordinate system to convert from.
+    CoordinateSystem coordinateDst IN,      ///< Coordinate system to convert to.
+    LocationDataType locationDataType IN,   ///< Type of location data to convert.
+    int64 locationDataSrc IN,               ///< Data to convert.
+    int64 locationDataDst OUT               ///< Converted Data.
 );

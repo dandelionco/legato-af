@@ -15,7 +15,7 @@
  * store the message identifier contained in the application mailbox. It is updated each time is new
  * SMS is received.
  *
- *  Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless Inc.
  */
 // -------------------------------------------------------------------------------------------------
 
@@ -39,7 +39,11 @@
  * SMSInbox directory path.
  */
 //--------------------------------------------------------------------------------------------------
+#ifdef LEGATO_EMBEDDED
 #define SMSINBOX_PATH "/data/smsInbox/"
+#else
+#define SMSINBOX_PATH "/tmp/smsInbox/"
+#endif
 #define MSG_PATH "msg/"
 #define CONF_PATH "cfg/"
 
@@ -80,6 +84,20 @@
  */
 //--------------------------------------------------------------------------------------------------
 #define DEFAULT_MBOX_SIZE 10
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum number of messages for message box.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MAX_MBOX_SIZE     100
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Maximum length of message box configuration path.
+ */
+//--------------------------------------------------------------------------------------------------
+#define MAX_MBOX_CONFIG_PATH_LEN 100
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -199,6 +217,21 @@ typedef struct
 RxMsgReport_t;
 
 //--------------------------------------------------------------------------------------------------
+/**
+ * smsInbox client request objet structure.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+typedef struct
+{
+    SmsInbox_SessionRef_t       smsInboxSessionRef;///< smsInbox sessionRef store for each client
+    MboxSession_t*              mboxSessionPtr;    ///< smsInbox messagebox session pointer
+    le_msg_SessionRef_t         sessionRef;        ///< Client session identifier
+    le_dls_Link_t               link;              ///< Object node link
+}
+ClientRequest_t;
+
+//--------------------------------------------------------------------------------------------------
 //                                       Extern declarations
 //--------------------------------------------------------------------------------------------------
 
@@ -237,14 +270,6 @@ static le_mem_PoolRef_t   MboxSessionPool;
  */
 //--------------------------------------------------------------------------------------------------
 static le_mem_PoolRef_t  RxMsgReportPool;
-
-//--------------------------------------------------------------------------------------------------
-/**
- * Safe Reference Map for message boxes objects.
- *
- */
-//--------------------------------------------------------------------------------------------------
-static le_ref_MapRef_t MboxRefMap;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -293,6 +318,21 @@ static char SimImsi[LE_SIM_IMSI_BYTES];
  */
 //--------------------------------------------------------------------------------------------------
 static MessageId_t NextMessageId = 1;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Memory Pool for SmsInbox Client Handler.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_mem_PoolRef_t SmsInboxHandlerPoolRef;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Safe Reference Map for service activation requests.
+ */
+//--------------------------------------------------------------------------------------------------
+static le_ref_MapRef_t ActivationRequestRefMap;
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -496,6 +536,7 @@ static le_result_t ModifyJsonObj
 
     if (jsonValPtr == NULL)
     {
+        LE_ERROR("NULL jsonValPtr");
         return LE_FAULT;
     }
 
@@ -553,6 +594,7 @@ static le_result_t ModifyJsonObj
     }
     else
     {
+        LE_DEBUG("ModifyJsonObj OK");
         return LE_OK;
     }
 
@@ -581,11 +623,13 @@ static le_result_t ModifyMsgEntry
 
     GetSMSInboxMessagePath(messageId, path, pathLen);
 
+    LE_DEBUG("ModifyMsgEntry: messageId %d, path %s",messageId, path);
+
     json_t* jsonRootPtr = json_load_file(path, 0, &error);
 
     if ( jsonRootPtr == NULL )
     {
-        LE_ERROR("json decoder error %s", error.text);
+        LE_ERROR("Json decoder error %s", error.text);
         return LE_FAULT;
     }
 
@@ -601,20 +645,35 @@ static le_result_t ModifyMsgEntry
 
     if ( !jsonValPtr )
     {
-        LE_ERROR("Unable to get the object %s", keyPtr[indexKey]);
+        if ((indexKey > -1) && (indexKey < nbKey))
+        {
+            LE_ERROR("Unable to get the object %s", keyPtr[indexKey]);
+        }
+        else
+        {
+            LE_ERROR("IndexKey: %d is out of range", indexKey);
+        }
+
         res = LE_FAULT;
     }
     else
     {
-        res = ModifyJsonObj(jsonSubObjPtr, jsonValPtr, keyPtr[indexKey], modifPtr);
+        if ((indexKey > -1) && (indexKey < nbKey))
+        {
+            res = ModifyJsonObj(jsonSubObjPtr, jsonValPtr, keyPtr[indexKey], modifPtr);
+        }
+        else
+        {
+            LE_ERROR("IndexKey: %d is out of range", indexKey);
+            res = LE_FAULT;
+        }
     }
-
 
     if ( res == LE_OK )
     {
-        if ( json_dump_file(jsonRootPtr, path, JSON_INDENT(1) | JSON_PRESERVE_ORDER) < 0 )
+        if (json_dump_file(jsonRootPtr, path, JSON_INDENT(1) | JSON_PRESERVE_ORDER) < 0)
         {
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             res = LE_FAULT;
         }
     }
@@ -656,8 +715,8 @@ static le_result_t ReadJsonObj
         {
             if ( decodePtr->type != DESC_STRING )
             {
+                LE_ERROR("Bad format %d", decodePtr->type);
                 res = LE_FAULT;
-                LE_ERROR("Bad format");
             }
 
             if (res == LE_OK)
@@ -671,7 +730,7 @@ static le_result_t ReadJsonObj
                 }
                 else
                 {
-                    strcpy(decodePtr->uVal.str.strPtr, strPtr);
+                    strncpy(decodePtr->uVal.str.strPtr, strPtr, decodePtr->uVal.str.lenStr);
                     decodePtr->uVal.str.lenStr = strlen(strPtr);
                 }
             }
@@ -681,7 +740,7 @@ static le_result_t ReadJsonObj
         {
             if ( decodePtr->type != DESC_INT )
             {
-                LE_ERROR("Bad format");
+                LE_ERROR("Bad format %d", decodePtr->type);
                 res = LE_FAULT;
             }
             else
@@ -695,7 +754,7 @@ static le_result_t ReadJsonObj
         {
             if ( decodePtr->type != DESC_BOOL )
             {
-                LE_ERROR("Bad format");
+                LE_ERROR("Bad format %d", decodePtr->type);
                 res = LE_FAULT;
             }
             else
@@ -717,11 +776,13 @@ static le_result_t ReadJsonObj
                 }
                 else
                 {
+                    LE_ERROR("Bad format");
                     res = LE_FAULT;
                 }
             }
             else
             {
+                LE_ERROR("Key error");
                 res = LE_FAULT;
             }
         }
@@ -730,6 +791,7 @@ static le_result_t ReadJsonObj
         case JSON_REAL:
         case JSON_NULL:
         default:
+            LE_ERROR("Bad json_typeof");
             res = LE_FAULT;
         break;
     }
@@ -760,7 +822,7 @@ static le_result_t GetMsgListFromMbox
 
         if ( !(*jsonRootObjPtr) )
         {
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             return LE_FAULT;
         }
     }
@@ -775,14 +837,14 @@ static le_result_t GetMsgListFromMbox
         if (!(*jsonArrayPtr))
         {
             json_decref(*jsonRootObjPtr);
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             return LE_FAULT;
         }
 
         if ( json_object_set(*jsonRootObjPtr, JSON_MSGINBOX, *jsonArrayPtr) < 0 )
         {
             json_decref(*jsonRootObjPtr);
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             return LE_FAULT;
         }
     }
@@ -804,14 +866,17 @@ static le_result_t DeleteMsgInAppCfg
 {
     uint32_t pathLen = GetSMSInboxConfigPathLen(appNamePtr);
     char path[pathLen];
-    memset(path,0,pathLen);
+    memset(path, 0, pathLen);
     GetSMSInboxConfigPath(appNamePtr, path, pathLen);
     json_t *jsonObjPtr;
     json_t *jsonArrayPtr;
 
+    LE_DEBUG("DeleteMessageId %d, path %s",deleteMessageId, path);
+
     if (GetMsgListFromMbox(path, &jsonObjPtr, &jsonArrayPtr) != LE_OK)
     {
-        return LE_FAULT;
+       LE_ERROR("No message");
+       return LE_FAULT;
     }
 
     int i;
@@ -841,6 +906,7 @@ static le_result_t DeleteMsgInAppCfg
     if ( json_dump_file(jsonObjPtr, path, JSON_INDENT(1) | JSON_PRESERVE_ORDER) < 0 )
     {
         res = LE_FAULT;
+        LE_ERROR("Json_dump_file error");
     }
 
     json_decref(jsonObjPtr);
@@ -855,7 +921,7 @@ static le_result_t DeleteMsgInAppCfg
  */
 //--------------------------------------------------------------------------------------------------
 
-le_result_t CheckMessageIdInMbox
+static le_result_t CheckMessageIdInMbox
 (
     char* mboxName,
     MessageId_t messageId
@@ -886,11 +952,12 @@ le_result_t CheckMessageIdInMbox
         }
         else
         {
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             json_decref(jsonRootObjPtr);
             return LE_FAULT;
         }
 
+        LE_DEBUG("MessageId %d, msgId %d, i %d", messageId, msgId, i);
         if (msgId == messageId)
         {
             json_decref(jsonRootObjPtr);
@@ -932,7 +999,7 @@ static le_result_t DecodeMsgEntry
 
     if ( jsonRootPtr == NULL )
     {
-        LE_ERROR("json decoder error %s", error.text);
+        LE_ERROR("Json decoder error %s mboxName %s", error.text, mboxName);
         DeleteMsgInAppCfg(mboxName, messageId);
         return LE_FAULT;
     }
@@ -963,6 +1030,7 @@ static bool IsDeleted
 
     if (DecodeMsgEntry(appNamePtr, messageId, key, 2, &decode) == LE_OK)
     {
+        LE_DEBUG("Decode.uVal.boolVal %d", decode.uVal.boolVal);
         return decode.uVal.boolVal;
     }
     else
@@ -999,10 +1067,11 @@ static void PerformDeletion
     {
         uint16_t pathLen = GetSMSInboxMessagePathLen();
         char path[pathLen];
-        memset(path,0,pathLen);
+        memset(path, 0, pathLen);
 
         GetSMSInboxMessagePath(messageId, path, pathLen);
 
+        LE_DEBUG("Delete messageId %d, path %s",messageId, path);
         unlink(path);
     }
 }
@@ -1028,8 +1097,12 @@ static le_result_t AddMsgInAppCfg
 
     if ( GetMsgListFromMbox (path, &jsonPtr, &jsonArrayPtr) != LE_OK )
     {
+        LE_ERROR("Message %s not found", path);
         return LE_FAULT;
     }
+    LE_DEBUG("Add messageId %d, path %s, array Size %zu", messageId,
+                                                          path,
+                                                          json_array_size(jsonArrayPtr) );
 
     if ( json_array_size(jsonArrayPtr) == appsPtr->inboxSize )
     {
@@ -1053,7 +1126,7 @@ static le_result_t AddMsgInAppCfg
 
             if (ModifyMsgEntry(messageId, key, 2, &modif) != LE_OK)
             {
-                LE_ERROR("Can't modify entry %08x", (int) messageId);
+                LE_ERROR("Can't modify entry %08x, path %s", (int) messageId, path);
             }
 
             PerformDeletion(messageId);
@@ -1061,7 +1134,7 @@ static le_result_t AddMsgInAppCfg
         else
         {
             json_decref(jsonPtr);
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             return LE_FAULT;
         }
     }
@@ -1069,14 +1142,14 @@ static le_result_t AddMsgInAppCfg
     if (AddIntegerKeyInJsonObject(jsonArrayPtr, NULL, messageId) != LE_OK)
     {
         json_decref(jsonPtr);
-        LE_ERROR("json error");
+        LE_ERROR("Json error");
         return LE_FAULT;
     }
 
     if ( json_dump_file(jsonPtr, path, JSON_INDENT(1) | JSON_PRESERVE_ORDER) < 0 )
     {
         json_decref(jsonPtr);
-        LE_ERROR("json error");
+        LE_ERROR("Json error");
         return LE_FAULT;
     }
 
@@ -1151,7 +1224,7 @@ static le_result_t EncodeMsgEntry
         case LE_SMS_FORMAT_BINARY:
         {
             char tel[LE_MDMDEFS_PHONE_NUM_MAX_BYTES];
-            memset(tel,0,LE_MDMDEFS_PHONE_NUM_MAX_BYTES);
+            memset(tel, 0, LE_MDMDEFS_PHONE_NUM_MAX_BYTES);
 
             // Add phone number
             le_result_t result = le_sms_GetSenderTel(msgRef, tel, LE_MDMDEFS_PHONE_NUM_MAX_BYTES);
@@ -1162,7 +1235,7 @@ static le_result_t EncodeMsgEntry
             }
             else
             {
-                LE_DEBUG("tel num: %s", tel);
+                LE_DEBUG("Tel num: %s", tel);
                 AddStringKeyInJsonObject(jsonRootPtr, JSON_SENDERTEL, tel);
             }
 
@@ -1176,7 +1249,7 @@ static le_result_t EncodeMsgEntry
             }
             else
             {
-                LE_DEBUG("timestamp: %s", timeStamp);
+                LE_DEBUG("Timestamp: %s", timeStamp);
                 AddStringKeyInJsonObject(jsonRootPtr, JSON_TIMESTAMP, timeStamp);
             }
 
@@ -1187,10 +1260,10 @@ static le_result_t EncodeMsgEntry
             len++;
 
             uint8_t bin[len];
-            memset(bin,0,len);
+            memset(bin, 0, len);
             int32_t strLen = 2*len + 1;
             char string[strLen];
-            memset(string,0,strLen);
+            memset(string, 0, strLen);
             const char* jsonKey;
 
             if (format == LE_SMS_FORMAT_TEXT)
@@ -1230,10 +1303,10 @@ static le_result_t EncodeMsgEntry
             // Add a character for last '\0'
             len++;
             uint8_t pdu[len];
-            memset(pdu,0,len);
+            memset(pdu, 0, len);
             int32_t strLen = 2*len + 1;
             char string[strLen];
-            memset(string,0,strLen);
+            memset(string, 0, strLen);
 
             // Add pdu
             le_result_t result = le_sms_GetPDU(msgRef, pdu, &len);
@@ -1248,6 +1321,7 @@ static le_result_t EncodeMsgEntry
                 // Convert pdu in string
                 strLen = le_hex_BinaryToString(pdu, len, string, strLen);
                 AddStringKeyInJsonObject(jsonRootPtr, JSON_PDU, string);
+                LE_DEBUG("PDU format OK");
             }
         }
         break;
@@ -1259,8 +1333,26 @@ static le_result_t EncodeMsgEntry
     // Write json file in the file system
     char* jsondumpStr = json_dumps( (const json_t *) jsonRootPtr,
                                     JSON_INDENT(1) | JSON_PRESERVE_ORDER);
+    if (!jsondumpStr)
+    {
+        LE_ERROR("JsondumpStr is NULL");
+        return LE_FAULT;
+    }
 
-    write( fd, jsondumpStr, strlen(jsondumpStr) );
+    char* restJsondumpStr = jsondumpStr;
+    ssize_t writeSize = strlen(jsondumpStr);
+    ssize_t writtenSize;
+
+    do
+    {
+        writtenSize = write( fd, restJsondumpStr, writeSize );
+        if (writtenSize > 0)
+        {
+            writeSize -= writtenSize;
+            restJsondumpStr += writtenSize;
+        }
+    }
+    while ((writeSize > 0) && ((writtenSize >= 0) || (EINTR == errno)));
 
     free(jsondumpStr);
     json_decref(jsonRootPtr);
@@ -1285,12 +1377,13 @@ static le_result_t CreateMsgEntry
     memset(path, 0, pathLen);
 
     GetSMSInboxMessagePath(NextMessageId, path, pathLen);
+    LE_DEBUG("Create entry: NextMessageId %d, path %s",NextMessageId, path);
 
     *fdPtr = open( path, O_CREAT | O_RDWR | O_SYNC, S_IRUSR | S_IWUSR );
 
     if (*fdPtr < 0)
     {
-        LE_ERROR("No such file: %s", path);
+        LE_ERROR("No such file: %s: %m", path);
         return LE_FAULT;
     }
 
@@ -1314,21 +1407,53 @@ static le_result_t CreateMsgEntry
     return LE_OK;
 }
 
-
 //--------------------------------------------------------------------------------------------------
 /**
  * Convert the file name string in hexa
  *
+ * @return
+ *      - Positive integer corresponding to the hexadecimal input string
+ *      - -1 in case of error
  */
 //--------------------------------------------------------------------------------------------------
 static MessageId_t GetMessageId
 (
-    char* fileName  ///<[IN] file name to be converted
+    char* fileNamePtr  ///<[IN] file name to be converted
 )
 {
-    char *savePtr;
-    char *str = strtok_r(fileName,".", &savePtr);
+    char *savePtr=NULL;
+    char *str = strtok_r(fileNamePtr,".", &savePtr);
+
+    if (NULL == str)
+    {
+        LE_ERROR("Null file name ");
+        return -1;
+    }
+
     return le_hex_HexaToInteger(str);
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Create a directory
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t MkdirCreate
+(
+    const char* path    ///<[IN] path for directory creation
+)
+{
+    int status = mkdir(path, S_IRWXU|S_IRWXG);
+    if (0 != status)
+    {
+        if (EEXIST != errno)
+        {
+            LE_ERROR("Unable to create directory %s: %m", path);
+            return LE_FAULT;
+        }
+    }
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1348,27 +1473,47 @@ static void InitSmsInBoxDirectory
     LE_DEBUG("InitSmsInBoxDirectory");
 
     // create directories
-    mkdir( SMSINBOX_PATH, S_IREAD|S_IWRITE );
+    if (LE_OK != MkdirCreate(SMSINBOX_PATH))
+    {
+        return;
+    }
+
     uint16_t pathLen = GetSMSInboxMessagePathLen();
     char path[pathLen];
-    memset(path,0,pathLen);
+    memset(path, 0, pathLen);
     snprintf(path, pathLen, "%s%s", SMSINBOX_PATH, CONF_PATH);
-    mkdir( path, S_IREAD|S_IWRITE );
-    memset(path,0,pathLen);
-    snprintf(path, pathLen, "%s%s", SMSINBOX_PATH, MSG_PATH);
-    mkdir( path, S_IREAD|S_IWRITE );
 
+    if (LE_OK != MkdirCreate(path))
+    {
+        return;
+    }
+
+    memset(path, 0, pathLen);
+    snprintf(path, pathLen, "%s%s", SMSINBOX_PATH, MSG_PATH);
+
+    if (LE_OK != MkdirCreate(path))
+    {
+        return;
+    }
 
     nbSmsEntries = scandir(path, &namelist, NULL, alphasort);
-
     if ( nbSmsEntries > 2 )
     {
         uint8_t len = strlen(namelist[nbSmsEntries-1]->d_name);
         char name[len+1];
+        MessageId_t id;
+
         memset(name, 0, len+1);
         strncpy(name, namelist[nbSmsEntries-1]->d_name, len);
-        NextMessageId = GetMessageId(name);
-        NextMessageId++;
+
+        id = GetMessageId(name);
+        if (-1 == id)
+        {
+            LE_ERROR("Unable to get the id of %s", name);
+            return;
+        }
+
+        NextMessageId = ++id;
 
         LE_DEBUG("NextMessageId %d", (int) NextMessageId);
     }
@@ -1428,7 +1573,8 @@ static void MoveSmsFromSimToFolder
         // Delete the SMS, whatever the result (if something is going wrong, delete it, otherwise
         // it will be copied in the folder at each startup of the SmsInbox service)
         // TODO: Check why the smsinbox is died after this call
-        le_sms_DeleteFromStorage(smsRef);
+        result = le_sms_DeleteFromStorage(smsRef);
+        LE_DEBUG("Delete from storage %d", result);
 
         smsRef = le_sms_GetNext(msgListRef);
     }
@@ -1452,20 +1598,31 @@ static void NewSmsMsgHandler
     le_result_t result;
     MessageId_t msgId;
 
+    LE_DEBUG("Receive new message");
+
     result = CreateMsgEntry(&msgId, &fd);
 
     if (result == LE_OK)
     {
         result = EncodeMsgEntry(fd, msgRef);
         close(fd);
-
+    }
+    else
+    {
+        LE_ERROR("CreateMsgEntry error");
     }
 
     if (result == LE_OK)
     {
-        le_sms_DeleteFromStorage(msgRef);
+        result = le_sms_DeleteFromStorage(msgRef);
+        LE_DEBUG("Delete from storage %d", result);
+
         le_sms_Delete(msgRef);
         le_event_Report(RxMsgEventId, &msgId, sizeof(MessageId_t));
+    }
+    else
+    {
+        LE_ERROR("EncodeMsgEntry error");
     }
 }
 
@@ -1482,7 +1639,7 @@ static void SimStateHandler
     void* contextPtr
 )
 {
-    LE_DEBUG("simId %d simState %d",simId, simState);
+    LE_DEBUG("SimId %d simState %d",simId, simState);
 
     switch (simState)
     {
@@ -1521,7 +1678,7 @@ static le_result_t LoadInboxSettings
 
     while (i < le_smsInbox_NbMbx)
     {
-        memset(mboxConfigPath,0,100);
+        memset(mboxConfigPath, 0, 100);
         snprintf(mboxConfigPath, sizeof(mboxConfigPath), "%s/%s/%s",
                                                          CFG_SMSINBOX_PATH,
                                                          CFG_NODE_APPS,
@@ -1581,6 +1738,49 @@ static void FirstLayerRxMsgHandler
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * handler function to release smsInbox service
+ */
+//--------------------------------------------------------------------------------------------------
+void SmsInbox_CloseSessionEventHandler
+(
+    le_msg_SessionRef_t sessionRef,
+    void* contextPtr
+)
+{
+    LE_DEBUG("SessionRef (%p) has been closed", sessionRef);
+
+    if (!sessionRef)
+    {
+        LE_ERROR("ERROR sessionRef is NULL");
+        return;
+    }
+
+    // Search for all smsInbox request references used by the current client session
+    // that has been closed.
+    le_ref_IterRef_t iterRef = le_ref_GetIterator(ActivationRequestRefMap);
+    le_result_t result = le_ref_NextNode(iterRef);
+    while (result == LE_OK)
+    {
+        ClientRequest_t * clientRequestPtr = (ClientRequest_t*) le_ref_GetValue(iterRef);
+
+        // Check if the session reference saved matchs with the current session reference.
+        if (clientRequestPtr->sessionRef == sessionRef)
+        {
+            SmsInbox_SessionRef_t safeRef =
+                            (SmsInbox_SessionRef_t) le_ref_GetSafeRef(iterRef);
+            LE_DEBUG("Call SmsInbox_Close 0x%p, Session 0x%p",safeRef,sessionRef);
+
+            // Close smsInbox for current client.
+            SmsInbox_Close(safeRef);
+        }
+
+        // Get the next value in the reference mpa
+        result = le_ref_NextNode(iterRef);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  *  Server Init
  */
 //--------------------------------------------------------------------------------------------------
@@ -1589,9 +1789,6 @@ COMPONENT_INIT
     LE_INFO("smsInbox Component Init started");
 
     memset(Apps, 0, sizeof(Apps) );
-
-    // Create the message box reference pool
-    MboxRefMap = le_ref_CreateMap("MboxRefMap", MAX_APPS);
 
     // Create the RX message report reference pool
     RxMsgReportMap = le_ref_CreateMap("rxMsgReportMap", MAX_APPS);
@@ -1603,6 +1800,14 @@ COMPONENT_INIT
     // Create a pool for the SMS RX handler
     RxMsgReportPool = le_mem_CreatePool("RxMsgReportPool", sizeof(RxMsgReport_t));
     le_mem_ExpandPool(RxMsgReportPool, MAX_APPS);
+
+    // Create safe reference map for request references. The size of the map should be based on
+    // the expected number of simultaneous data requests, so take a reasonable guess.
+    ActivationRequestRefMap = le_ref_CreateMap("SmsInbox_Client", MAX_APPS);
+
+    // Create a pool for smsInbox client objects.
+    SmsInboxHandlerPoolRef = le_mem_CreatePool("SmsInboxHandlerPoolRef", sizeof(ClientRequest_t));
+    le_mem_ExpandPool(SmsInboxHandlerPoolRef, MAX_APPS);
 
     // Retrieve the smsInbox settings from the configuration tree
     LoadInboxSettings();
@@ -1636,12 +1841,20 @@ COMPONENT_INIT
 //--------------------------------------------------------------------------------------------------
 SmsInbox_SessionRef_t SmsInbox_Open
 (
-    const char* mboxName
+    const char* mboxName,
         ///< [IN]
         ///< Message box name
+
+    le_msg_ServiceRef_t msgServiceRef,
+        ///< [IN]
+        ///< Message service reference
+
+    le_msg_SessionRef_t msgSession
+        ///< [IN]
+        ///< Client session reference
 )
 {
-    if ( mboxName == NULL )
+    if (mboxName == NULL)
     {
         LE_ERROR("No mbox name");
         return NULL;
@@ -1653,15 +1866,24 @@ SmsInbox_SessionRef_t SmsInbox_Open
     {
         if (Apps[i].namePtr && (strcmp(Apps[i].namePtr, mboxName) == 0))
         {
-            MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_mem_ForceAlloc(MboxSessionPool);
+            ClientRequest_t* clientRequestPtr = le_mem_ForceAlloc(SmsInboxHandlerPoolRef);
+            clientRequestPtr->mboxSessionPtr = (MboxSession_t*) le_mem_ForceAlloc(MboxSessionPool);
 
-            mboxSessionPtr->mboxCtxPtr = &Apps[i];
-            memset(&mboxSessionPtr->browseCtx, 0, sizeof(BrowseCtx_t));
+            clientRequestPtr->mboxSessionPtr->mboxCtxPtr = &Apps[i];
+            memset(&clientRequestPtr->mboxSessionPtr->browseCtx, 0, sizeof(BrowseCtx_t));
 
-            return le_ref_CreateRef(MboxRefMap, mboxSessionPtr);
+            SmsInbox_SessionRef_t reqRef = le_ref_CreateRef(ActivationRequestRefMap,
+                                                            clientRequestPtr);
+
+            // Save the client session "msgSession" associated with the request reference "reqRef"
+            clientRequestPtr->sessionRef = msgSession;
+            clientRequestPtr->smsInboxSessionRef = reqRef;
+
+            return reqRef;
         }
     }
 
+    LE_ERROR("SmsInbox_Open error");
     return NULL;
 }
 
@@ -1684,13 +1906,18 @@ void SmsInbox_Close
         return;
     }
 
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return;
+    }
 
-    le_mem_Release(mboxSessionPtr);
+    le_mem_Release(clientRequestPtr->mboxSessionPtr);
+    le_mem_Release(clientRequestPtr);
 
-    le_ref_DeleteRef(MboxRefMap, sessionRef);
+    le_ref_DeleteRef(ActivationRequestRefMap, sessionRef);
 }
-
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -1712,9 +1939,14 @@ SmsInbox_RxMessageHandlerRef_t SmsInbox_AddRxMessageHandler
         ///< [IN]
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return NULL;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return NULL;
@@ -1787,17 +2019,22 @@ void SmsInbox_DeleteMsg
         ///< Message identifier.
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return;
     }
 
@@ -1805,14 +2042,15 @@ void SmsInbox_DeleteMsg
     EntryDesc_t modif;
     modif.type = DESC_BOOL;
     modif.uVal.boolVal = true;
-    char* key[2]={JSON_ISDELETED, mboxSessionPtr->mboxCtxPtr->namePtr};
+    char* key[2]={JSON_ISDELETED, clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr};
 
     if (ModifyMsgEntry(messageId, key, 2, &modif) != LE_OK)
     {
         LE_ERROR("ModifyMsgEntry error");
     }
 
-    if (DeleteMsgInAppCfg(mboxSessionPtr->mboxCtxPtr->namePtr, messageId) != LE_OK)
+    if (DeleteMsgInAppCfg(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId)
+                          != LE_OK)
     {
         LE_ERROR("DeleteMsgInAppCfg error");
     }
@@ -1852,26 +2090,31 @@ le_result_t SmsInbox_GetImsi
         ///< [IN]
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
     MessageId_t messageId = (MessageId_t) msgId;
     le_result_t res;
 
-    memset(imsiPtr,0,imsiNumElements);
+    memset(imsiPtr, 0, imsiNumElements);
 
-    if ( imsiNumElements < LE_SIM_IMSI_BYTES )
+    if (imsiNumElements < LE_SIM_IMSI_BYTES)
     {
         return LE_OVERFLOW;
     }
@@ -1882,8 +2125,8 @@ le_result_t SmsInbox_GetImsi
     decode.uVal.str.lenStr = imsiNumElements;
     char* key[1] = {JSON_IMSI};
 
-    if ((res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode))
-                                                                                        == LE_OK)
+    if ((res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr,
+                              messageId, key, 1, &decode)) == LE_OK)
     {
         SmsInbox_MarkRead(sessionRef, msgId);
     }
@@ -1914,17 +2157,22 @@ le_sms_Format_t SmsInbox_GetFormat
 )
 {
     // Get the message box session context
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return 0;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad mbox reference");
         return 0;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return 0;
     }
 
@@ -1933,7 +2181,8 @@ le_sms_Format_t SmsInbox_GetFormat
     decode.type = DESC_INT;
     char* key[1] = {JSON_FORMAT};
 
-    if (DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode) == LE_OK)
+    if (DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1,
+                      &decode) == LE_OK)
     {
         SmsInbox_MarkRead(sessionRef, msgId);
         return decode.uVal.val;
@@ -1973,17 +2222,22 @@ le_result_t SmsInbox_GetSenderTel
         ///< [IN]
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
@@ -1993,11 +2247,11 @@ le_result_t SmsInbox_GetSenderTel
     decode.type = DESC_STRING;
     decode.uVal.str.strPtr = telPtr;
     decode.uVal.str.lenStr = telNumElements;
-    memset(telPtr,0,telNumElements);
+    memset(telPtr, 0, telNumElements);
     char* key[1] = {JSON_SENDERTEL};
 
-    if ((res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode))
-                                                                                           == LE_OK)
+    if ((res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key,
+                              1, &decode)) == LE_OK)
     {
         SmsInbox_MarkRead(sessionRef, msgId);
     }
@@ -2038,17 +2292,22 @@ le_result_t SmsInbox_GetTimeStamp
         ///< [IN]
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
@@ -2057,12 +2316,12 @@ le_result_t SmsInbox_GetTimeStamp
     decode.type = DESC_STRING;
     decode.uVal.str.strPtr = timestampPtr;
     decode.uVal.str.lenStr = timestampNumElements;
-    memset(timestampPtr,0,timestampNumElements);
+    memset(timestampPtr, 0, timestampNumElements);
     char* key[1] = {JSON_TIMESTAMP};
     le_result_t res;
 
-    if ( (res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode))
-                                                                                          == LE_OK )
+    if ( (res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId,
+                               key, 1, &decode)) == LE_OK )
     {
         SmsInbox_MarkRead(sessionRef, msgId);
     }
@@ -2076,6 +2335,7 @@ le_result_t SmsInbox_GetTimeStamp
  *
  * @return Number of characters for text messages, or the length of the data in bytes for raw
  *         binary and PDU messages.
+ *  - LE_BAD_PARAMETER The message reference is invalid.
  */
 //--------------------------------------------------------------------------------------------------
 size_t SmsInbox_GetMsgLen
@@ -2089,17 +2349,22 @@ size_t SmsInbox_GetMsgLen
         ///< Message identifier.
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
@@ -2110,7 +2375,7 @@ size_t SmsInbox_GetMsgLen
     char* key[1] = {JSON_MSGLEN};
     le_result_t res;
 
-    if ( (res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr,
+    if ( (res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr,
                                 messageId,
                                 key,
                                 1,
@@ -2156,18 +2421,22 @@ le_result_t SmsInbox_GetText
         ///< [IN]
 )
 {
-    MboxSession_t* mboxSessionPtr =
-                                    (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
@@ -2176,15 +2445,16 @@ le_result_t SmsInbox_GetText
     le_result_t res;
     size_t len = 2*textNumElements+1;
     char tmpTextPtr[len];
-    memset(tmpTextPtr,0,len);
-    memset(textPtr,0,textNumElements);
+    memset(tmpTextPtr, 0, len);
+    memset(textPtr, 0, textNumElements);
 
     decode.type = DESC_STRING;
     decode.uVal.str.strPtr = tmpTextPtr;
     decode.uVal.str.lenStr = len;
     char* key[1] = {JSON_TEXT};
 
-    res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode);
+    res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1,
+                         &decode);
 
     if ( res == LE_OK )
     {
@@ -2232,18 +2502,28 @@ le_result_t SmsInbox_GetBinary
         ///< [INOUT]
 )
 {
-    MboxSession_t* mboxSessionPtr =
-                                    (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    if (binPtr == NULL)
+    {
+        LE_KILL_CLIENT("binPtr is NULL.");
+        return LE_FAULT;
+    }
 
-    if (mboxSessionPtr == NULL)
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
+
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
@@ -2252,15 +2532,16 @@ le_result_t SmsInbox_GetBinary
     EntryDesc_t decode;
     size_t len = 2*(*binNumElementsPtr)+1;
     char tmpBinPtr[len];
-    memset(tmpBinPtr,0,len);
-    memset(binPtr,0,*binNumElementsPtr);
+    memset(tmpBinPtr, 0, len);
+    memset(binPtr, 0, *binNumElementsPtr);
 
     decode.type = DESC_STRING;
     decode.uVal.str.strPtr = tmpBinPtr;
     decode.uVal.str.lenStr = len;
     char* key[1] = {JSON_BIN};
 
-    res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode);
+    res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId,
+                         key, 1, &decode);
 
     if ( res == LE_OK )
     {
@@ -2315,18 +2596,29 @@ le_result_t SmsInbox_GetPdu
         ///< [INOUT]
 )
 {
-    // Get the mbox session context
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    if (pduPtr == NULL)
+    {
+        LE_KILL_CLIENT("pduPtr is NULL.");
+        return LE_FAULT;
+    }
 
-    if (mboxSessionPtr == NULL)
+    // Get the mbox session context
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
+
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad mbox reference");
         return 0;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return 0;
     }
 
@@ -2335,15 +2627,16 @@ le_result_t SmsInbox_GetPdu
     EntryDesc_t decode;
     size_t len = 2*(*pduNumElementsPtr)+1;
     char tmpPduPtr[len];
-    memset(tmpPduPtr,0,len);
-    memset(pduPtr,0,*pduNumElementsPtr);
+    memset(tmpPduPtr, 0, len);
+    memset(pduPtr, 0, *pduNumElementsPtr);
 
     decode.type = DESC_STRING;
     decode.uVal.str.strPtr = tmpPduPtr;
     decode.uVal.str.lenStr = len;
     char* key[1] = {JSON_PDU};
 
-    res = DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1, &decode);
+    res = DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 1,
+                         &decode);
 
     if ( res == LE_OK )
     {
@@ -2373,6 +2666,7 @@ le_result_t SmsInbox_GetPdu
  * @return
  *  - 0 No message found (message box parsing is over).
  *  - Message identifier.
+ *  - LE_BAD_PARAMETER The message reference is invalid.
  */
 //--------------------------------------------------------------------------------------------------
 uint32_t SmsInbox_GetFirst
@@ -2383,36 +2677,44 @@ uint32_t SmsInbox_GetFirst
 )
 {
     // Get the message box session context
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad mbox reference");
         return 0;
     }
 
-    uint32_t pathLen = GetSMSInboxConfigPathLen( mboxSessionPtr->mboxCtxPtr->namePtr );
+    uint32_t pathLen = GetSMSInboxConfigPathLen(clientRequestPtr->
+                                                mboxSessionPtr->mboxCtxPtr->namePtr);
     char path[pathLen];
-    memset(path,0,pathLen);
-    GetSMSInboxConfigPath(mboxSessionPtr->mboxCtxPtr->namePtr, path, pathLen);
+    memset(path, 0, pathLen);
+    GetSMSInboxConfigPath(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, path, pathLen);
     le_result_t res = LE_OK;
     MessageId_t messageId=0;
 
     if ( GetMsgListFromMbox(path,
-                        &mboxSessionPtr->browseCtx.jsonObjPtr,
-                        &mboxSessionPtr->browseCtx.jsonArrayPtr) != LE_OK )
+                        &clientRequestPtr->mboxSessionPtr->browseCtx.jsonObjPtr,
+                        &clientRequestPtr->mboxSessionPtr->browseCtx.jsonArrayPtr) != LE_OK )
     {
-        LE_ERROR("error in GetMsgListFromMbox");
+        LE_ERROR("Error in GetMsgListFromMbox");
         return 0;
     }
 
-    mboxSessionPtr->browseCtx.maxIndex = json_array_size(mboxSessionPtr->browseCtx.jsonArrayPtr);
+    clientRequestPtr->mboxSessionPtr->browseCtx.maxIndex =
+                      json_array_size(clientRequestPtr->mboxSessionPtr->browseCtx.jsonArrayPtr);
 
-    LE_DEBUG("maxIndex %d", mboxSessionPtr->browseCtx.maxIndex);
+    LE_DEBUG("MaxIndex %d", clientRequestPtr->mboxSessionPtr->browseCtx.maxIndex);
 
-    if ( mboxSessionPtr->browseCtx.maxIndex > 0 )
+    if ( clientRequestPtr->mboxSessionPtr->browseCtx.maxIndex > 0 )
     {
-        json_t * jsonIntegerPtr = json_array_get(mboxSessionPtr->browseCtx.jsonArrayPtr, 0);
+        json_t * jsonIntegerPtr =
+                 json_array_get(clientRequestPtr->mboxSessionPtr->browseCtx.jsonArrayPtr, 0);
 
         if (jsonIntegerPtr)
         {
@@ -2420,17 +2722,17 @@ uint32_t SmsInbox_GetFirst
         }
         else
         {
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             res = LE_FAULT;
         }
 
         if (messageId)
         {
-            mboxSessionPtr->browseCtx.currentMessageIndex = 1;
+            clientRequestPtr->mboxSessionPtr->browseCtx.currentMessageIndex = 1;
         }
         else
         {
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
             res = LE_FAULT;
         }
     }
@@ -2442,12 +2744,12 @@ uint32_t SmsInbox_GetFirst
 
     if (res == LE_FAULT)
     {
-        if (mboxSessionPtr->browseCtx.jsonObjPtr)
+        if (clientRequestPtr->mboxSessionPtr->browseCtx.jsonObjPtr)
         {
-            json_decref(mboxSessionPtr->browseCtx.jsonObjPtr);
+            json_decref(clientRequestPtr->mboxSessionPtr->browseCtx.jsonObjPtr);
         }
 
-        memset(&mboxSessionPtr->browseCtx, 0, sizeof(BrowseCtx_t));
+        memset(&clientRequestPtr->mboxSessionPtr->browseCtx, 0, sizeof(BrowseCtx_t));
 
         return 0;
     }
@@ -2466,6 +2768,7 @@ uint32_t SmsInbox_GetFirst
  * @return
  *  - 0 No message found (message box parsing is over).
  *  - Message identifier.
+ *  - LE_BAD_PARAMETER The message reference is invalid.
  */
 //--------------------------------------------------------------------------------------------------
 uint32_t SmsInbox_GetNext
@@ -2476,14 +2779,24 @@ uint32_t SmsInbox_GetNext
 )
 {
     // Get the message box session context
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
-
-    while(mboxSessionPtr->browseCtx.maxIndex != mboxSessionPtr->browseCtx.currentMessageIndex)
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
     {
-        LE_DEBUG("currentIndex %d, maxIndex %d", mboxSessionPtr->browseCtx.currentMessageIndex,
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
+
+    while(clientRequestPtr->mboxSessionPtr->browseCtx.maxIndex !=
+          clientRequestPtr->mboxSessionPtr->browseCtx.currentMessageIndex)
+    {
+        LE_DEBUG("CurrentIndex %d, maxIndex %d", clientRequestPtr->
+                                                 mboxSessionPtr->browseCtx.currentMessageIndex,
+                                                 clientRequestPtr->
                                                  mboxSessionPtr->browseCtx.maxIndex);
 
-        json_t * jsonIntegerPtr = json_array_get(mboxSessionPtr->browseCtx.jsonArrayPtr,
+        json_t * jsonIntegerPtr = json_array_get(clientRequestPtr->
+                                                 mboxSessionPtr->browseCtx.jsonArrayPtr,
+                                                 clientRequestPtr->
                                                  mboxSessionPtr->browseCtx.currentMessageIndex);
 
         if (jsonIntegerPtr)
@@ -2492,7 +2805,7 @@ uint32_t SmsInbox_GetNext
 
             if (messageId > 0)
             {
-                mboxSessionPtr->browseCtx.currentMessageIndex++;
+                clientRequestPtr->mboxSessionPtr->browseCtx.currentMessageIndex++;
 
                 // Check if the message exist (it may be deleted since the GetFirst call)
                 uint16_t pathLen = GetSMSInboxMessagePathLen();
@@ -2501,29 +2814,30 @@ uint32_t SmsInbox_GetNext
                 GetSMSInboxMessagePath(messageId, path, pathLen);
                 int32_t fd = open(path, O_RDWR);
 
-                if (fd > 0)
+                if (fd >= 0)
                 {
                     // message is still existing
                     close(fd);
                     return messageId;
                 }
+
                 // else continue the parsing
             }
             else
             {
-                LE_ERROR("json error");
+                LE_ERROR("Json error");
             }
         }
         else
         {
-            LE_ERROR("json error");
+            LE_ERROR("Json error");
         }
     }
 
     // Parsing end => free the memory
     LE_DEBUG("No more messages");
-    json_decref(mboxSessionPtr->browseCtx.jsonObjPtr);
-    memset(&mboxSessionPtr->browseCtx, 0, sizeof(BrowseCtx_t));
+    json_decref(clientRequestPtr->mboxSessionPtr->browseCtx.jsonObjPtr);
+    memset(&clientRequestPtr->mboxSessionPtr->browseCtx, 0, sizeof(BrowseCtx_t));
 
     return 0;
 }
@@ -2532,7 +2846,9 @@ uint32_t SmsInbox_GetNext
  * allow to know whether the message has been read or not. The message status is tied to the client
  * app.
  *
- * @return True if the message is unread, false otherwise.
+ * @return
+ *  - True if the message is unread, false otherwise.
+ *  - LE_BAD_PARAMETER Invalid reference provided.
  *
  * @note If the caller is passing a bad message reference into this function, it is a fatal error,
  *        the function will not return.
@@ -2549,26 +2865,32 @@ bool SmsInbox_IsUnread
         ///< Message identifier.
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return LE_BAD_PARAMETER;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return LE_BAD_PARAMETER;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return LE_BAD_PARAMETER;
     }
 
     MessageId_t messageId = (MessageId_t) msgId;
     EntryDesc_t decode;
     decode.type = DESC_BOOL;
-    char* key[] = {JSON_ISUNREAD, mboxSessionPtr->mboxCtxPtr->namePtr};
+    char* key[] = {JSON_ISUNREAD, clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr};
 
-    if (DecodeMsgEntry(mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 2, &decode) == LE_OK)
+    if (DecodeMsgEntry(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, messageId, key, 2,
+                       &decode) == LE_OK)
     {
         return decode.uVal.boolVal;
     }
@@ -2598,18 +2920,22 @@ void SmsInbox_MarkRead
         ///< Message identifier.
 )
 {
-    MboxSession_t* mboxSessionPtr =
-                                    (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return;
     }
 
@@ -2617,7 +2943,7 @@ void SmsInbox_MarkRead
     EntryDesc_t modif;
     modif.type = DESC_BOOL;
     modif.uVal.boolVal = false;
-    char* key[2]={JSON_ISUNREAD, mboxSessionPtr->mboxCtxPtr->namePtr};
+    char* key[2]={JSON_ISUNREAD, clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr};
 
     if (ModifyMsgEntry(messageId, key, 2, &modif) != LE_OK)
     {
@@ -2644,17 +2970,22 @@ void SmsInbox_MarkUnread
         ///< Message identifier.
 )
 {
-    MboxSession_t* mboxSessionPtr = (MboxSession_t*) le_ref_Lookup(MboxRefMap, sessionRef);
+    ClientRequest_t* clientRequestPtr = le_ref_Lookup(ActivationRequestRefMap, sessionRef);
+    if (NULL == clientRequestPtr)
+    {
+        LE_KILL_CLIENT("Invalid reference (%p) provided!", sessionRef);
+        return;
+    }
 
-    if (mboxSessionPtr == NULL)
+    if (clientRequestPtr->mboxSessionPtr == NULL)
     {
         LE_ERROR("Bad parameter");
         return;
     }
 
-    if (CheckMessageIdInMbox(mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
+    if (CheckMessageIdInMbox(clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr, msgId) != LE_OK)
     {
-        LE_ERROR("message not included into the mbox");
+        LE_ERROR("Message not included into the mbox");
         return;
     }
 
@@ -2662,10 +2993,129 @@ void SmsInbox_MarkUnread
     EntryDesc_t modif;
     modif.type = DESC_BOOL;
     modif.uVal.boolVal = true;
-    char* key[2]={JSON_ISUNREAD, mboxSessionPtr->mboxCtxPtr->namePtr};
+    char* key[2]={JSON_ISUNREAD, clientRequestPtr->mboxSessionPtr->mboxCtxPtr->namePtr};
 
     if (ModifyMsgEntry(messageId, key, 2, &modif) != LE_OK)
     {
         LE_ERROR("Error in ModifyMsgEntry");
     }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the maximum number of messages for message box.
+ *
+ * @return
+ *  - LE_BAD_PARAMETER The message box name is invalid.
+ *  - LE_OVERFLOW      Message count exceed the maximum limit.
+ *  - LE_OK            Function succeeded.
+ *  - LE_FAULT         Function failed.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t SmsInbox_SetMaxMessages
+(
+    const char* mboxNamePtr,
+        ///< [IN]
+        ///< Message box name
+
+    uint32_t maxMessageCount
+        ///< [IN]
+        ///< Maximum number of messages
+)
+{
+    if (NULL == mboxNamePtr)
+    {
+        LE_ERROR("No mbox name");
+        return LE_BAD_PARAMETER;
+    }
+
+    if (maxMessageCount > MAX_MBOX_SIZE)
+    {
+        LE_ERROR("Maximum number of messages is greater than max limit: %d", MAX_MBOX_SIZE);
+        return LE_OVERFLOW;
+    }
+
+    int i;
+
+    for (i = 0; i < MAX_APPS; i++)
+    {
+        if ((Apps[i].namePtr) && (0 == strcmp(Apps[i].namePtr, mboxNamePtr)))
+        {
+            char mboxConfigPath[MAX_MBOX_CONFIG_PATH_LEN];
+
+            memset(mboxConfigPath, 0, MAX_MBOX_CONFIG_PATH_LEN);
+            snprintf(mboxConfigPath, sizeof(mboxConfigPath), "%s/%s/%s",
+                                                             CFG_SMSINBOX_PATH,
+                                                             CFG_NODE_APPS,
+                                                             mboxNamePtr);
+
+            le_cfg_IteratorRef_t appIter = le_cfg_CreateWriteTxn(mboxConfigPath);
+            Apps[i].inboxSize = maxMessageCount;
+            le_cfg_SetInt(appIter, "", Apps[i].inboxSize);
+            le_cfg_CommitTxn(appIter);
+
+            return LE_OK;
+        }
+    }
+
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the maximum number of messages for message box.
+ *
+ * @return
+ *  - LE_BAD_PARAMETER Invalid parameters.
+ *  - LE_OK            Function succeeded.
+ *  - LE_FAULT         Function failed.
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t SmsInbox_GetMaxMessages
+(
+    const char* mboxNamePtr,
+        ///< [IN]
+        ///< Message box name
+
+    uint32_t* maxMessageCountPtr
+        ///< [OUT]
+        ///< Maximum number of messages
+)
+{
+    if (NULL == mboxNamePtr)
+    {
+        LE_ERROR("No mbox name");
+        return LE_BAD_PARAMETER;
+    }
+
+    if (NULL == maxMessageCountPtr)
+    {
+        LE_ERROR("maxMessageCountPtr is NULL");
+        return LE_BAD_PARAMETER;
+    }
+
+    int i;
+
+    for (i = 0; i < MAX_APPS; i++)
+    {
+        if ((Apps[i].namePtr) && (0 == strcmp(Apps[i].namePtr, mboxNamePtr)))
+        {
+            char mboxConfigPath[MAX_MBOX_CONFIG_PATH_LEN];
+
+            memset(mboxConfigPath, 0, MAX_MBOX_CONFIG_PATH_LEN);
+            snprintf(mboxConfigPath, sizeof(mboxConfigPath), "%s/%s/%s",
+                                                             CFG_SMSINBOX_PATH,
+                                                             CFG_NODE_APPS,
+                                                             mboxNamePtr);
+
+            le_cfg_IteratorRef_t appIter = le_cfg_CreateReadTxn(mboxConfigPath);
+            *maxMessageCountPtr = le_cfg_GetInt(appIter, "", 0);
+            le_cfg_CancelTxn(appIter);
+
+            return LE_OK;
+        }
+    }
+
+    return LE_FAULT;
+
 }

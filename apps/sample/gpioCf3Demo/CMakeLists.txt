@@ -1,5 +1,5 @@
 #*******************************************************************************
-# Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+# Copyright (C) Sierra Wireless Inc.
 #*******************************************************************************
 
 # Creates application using GPIO Cf3 gpioService from gpioCf3Demo.adef
@@ -8,4 +8,4 @@ mkapp(gpioCf3Demo.adef
 )
 
 # This is a sample application
-add_dependencies(samples gpioCf3Demo)
+add_dependencies(samples_c gpioCf3Demo)

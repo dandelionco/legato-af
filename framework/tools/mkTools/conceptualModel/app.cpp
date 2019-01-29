@@ -2,7 +2,7 @@
 /**
  * @file app.cpp
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  **/
 //--------------------------------------------------------------------------------------------------
 
@@ -30,6 +30,7 @@ App_t::App_t
     isSandboxed(true),
     startTrigger(AUTO),
     isPreloaded(false),
+    isPreBuilt(false),
     cpuShare(1024),
     maxFileSystemBytes(128 * 1024),   // 128 KB
     maxMemoryBytes(40000 * 1024), // 40 MB
@@ -78,13 +79,16 @@ ComponentInstance_t* App_t::FindComponentInstance
                 }
             }
 
-            componentTokenPtr->ThrowException("Component '" + componentName + "'"
-                                              " not found in executable "
-                                              "'" + exeName + "'.");
+            componentTokenPtr->ThrowException(
+                mk::format(LE_I18N("Component '%s' not found in executable '%s'."),
+                           componentName, exeName)
+            );
         }
     }
 
-    exeTokenPtr->ThrowException("Executable '" + exeName + "' not defined in application.");
+    exeTokenPtr->ThrowException(
+        mk::format(LE_I18N("Executable '%s' not defined in application."), exeName)
+    );
 
     return NULL;
 }
@@ -123,17 +127,29 @@ ApiServerInterfaceInstance_t* App_t::FindServerInterface
     }
     else
     {
-        // Find the component instance specified.
-        auto componentInstancePtr = FindComponentInstance(exeTokenPtr, componentTokenPtr);
+        iter = preBuiltServerInterfaces.find(interfaceName);
 
-        // Find the interface in the component instance's list of server interfaces,
-        ifInstancePtr = componentInstancePtr->FindServerInterface(interfaceName);
-
-        if (ifInstancePtr == NULL)
+        if (iter != preBuiltServerInterfaces.end())
         {
-            interfaceTokenPtr->ThrowException("Server interface '" + interfaceName + "'"
-                                              " not found in component '" + componentName + "'"
-                                              " in executable '" + exeName + "'.");
+            ifInstancePtr = iter->second;
+        }
+        else
+        {
+            // Find the component instance specified.
+            auto componentInstancePtr = FindComponentInstance(exeTokenPtr, componentTokenPtr);
+
+            // Find the interface in the component instance's list of server interfaces,
+            ifInstancePtr = componentInstancePtr->FindServerInterface(interfaceName);
+
+            if (ifInstancePtr == NULL)
+            {
+                interfaceTokenPtr->ThrowException(
+                                  mk::format(LE_I18N("Server interface '%s' not found in component "
+                                                     "'%s' in executable '%s'."),
+                                             interfaceName,
+                                             componentName,
+                                             exeName));
+            }
         }
     }
 
@@ -182,9 +198,12 @@ ApiClientInterfaceInstance_t* App_t::FindClientInterface
 
         if (ifInstancePtr == NULL)
         {
-            interfaceTokenPtr->ThrowException("Client interface '" + interfaceName + "'"
-                                              " not found in component '" + componentName + "'"
-                                              " in executable '" + exeName + "'.");
+            interfaceTokenPtr->ThrowException(
+                        mk::format(LE_I18N("Client interface '%s' not found in component '%s'"
+                                            " in executable '%s'."),
+                                    interfaceName,
+                                    componentName,
+                                    exeName));
         }
     }
 
@@ -217,9 +236,10 @@ ApiClientInterfaceInstance_t* App_t::FindClientInterface
 
         if (i == preBuiltClientInterfaces.end())
         {
-            interfaceTokenPtr->ThrowException("App '" + name
-                                              + "' has no external client-side interface"
-                                              " named '" + interfaceName + "'");
+            interfaceTokenPtr->ThrowException(
+                    mk::format(LE_I18N("App '%s' has no external client-side interface named '%s'"),
+                               name,
+                               interfaceName));
         }
     }
 
@@ -270,18 +290,24 @@ ApiInterfaceInstance_t* App_t::FindInterface
                         }
                     }
 
-                    interfaceTokenPtr->ThrowException("Interface '" + interfaceTokenPtr->text
-                                                      + "' not found in component '"
-                                                      + componentInstancePtr->componentPtr->name
-                                                      + "' in executable '" + exePtr->name + "'.");
+                    interfaceTokenPtr->ThrowException(
+                        mk::format(LE_I18N("Interface '%s' not found in component '%s'"
+                                           " in executable '%s'."),
+                                   interfaceTokenPtr->text,
+                                   componentInstancePtr->componentPtr->name,
+                                   exePtr->name)
+                    );
                 }
             }
-            componentTokenPtr->ThrowException("Component '" + componentTokenPtr->text + "'"
-                                              " not found in executable '" + exePtr->name + "'.");
+            componentTokenPtr->ThrowException(
+                mk::format(LE_I18N("Component '%s' not found in executable '%s'."),
+                           componentTokenPtr->text, exePtr->name)
+            );
         }
     }
-    exeTokenPtr->ThrowException("Executable '" + exeTokenPtr->text
-                                + "' not defined in application.");
+    exeTokenPtr->ThrowException(
+        mk::format(LE_I18N("Executable '%s' not defined in application."), exeTokenPtr->text)
+    );
     return NULL;
 }
 

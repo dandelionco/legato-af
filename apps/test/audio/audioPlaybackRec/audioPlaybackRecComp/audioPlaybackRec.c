@@ -3,13 +3,18 @@
  *
 * You must issue the following commands:
 * @verbatim
-  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest -- <test case> [main audio path] [file's name] [option]
+  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest --
+  $     <test case> [main audio path] [file's name] [option]
 
   Example:
-  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest -- REC I2S /record/remote.wav WAV STOP=10
-  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest -- PB MIC /usr/share/sounds/0-to-9.wav
+  $ wm8940_demo --i2s
+  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest --
+  $     REC I2S /record/remote.wav WAV STOP=10
+  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest -- PB I2S /usr/share/sounds/0-to-9.wav
+  $ app runProc audioPlaybackRec --exe=audioPlaybackRecTest -- PB I2S /usr/share/sounds/0-to-9.wav
+  $     PAUSE=2 RESUME=3
  @endverbatim
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -213,7 +218,9 @@ static void DestroyRecThread
     PbRecSamplesThreadCtx_t *threadCtxPtr = (PbRecSamplesThreadCtx_t*) contextPtr;
 
     LE_INFO("wroteLen %d", threadCtxPtr->wroteLen);
-    close(AudioFileFd);
+
+    // Closing AudioFileFd is unnecessary since the messaging infrastructure underneath
+    // le_audio_xxx APIs that use it would close it.
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -261,18 +268,25 @@ static void* RecSamplesThread
     LE_INFO("Start getting samples...");
 
     int32_t readLen;
+    int32_t writeLen;
 
     while ((readLen = read( pipefd[0], data, len )))
     {
-        int32_t len = write( AudioFileFd, data, readLen );
-
-        if (len < 0)
+        if (readLen < 0)
         {
-            LE_ERROR("write error %d %d", readLen, len);
+            LE_ERROR("read error %d %d", len, readLen);
             break;
         }
 
-        threadCtxPtr->wroteLen += len;
+        writeLen = write( AudioFileFd, data, readLen );
+
+        if (writeLen < 0)
+        {
+            LE_ERROR("write error %d %d", readLen, writeLen);
+            break;
+        }
+
+        threadCtxPtr->wroteLen += writeLen;
     }
 
     return NULL;
@@ -316,20 +330,20 @@ static void DestroyPlayThread
 
     LE_INFO("DestroyPlayThread playDone %d PlayInLoop %d", threadCtxPtr->playDone, PlayInLoop);
 
-    if( threadCtxPtr->playDone && PlayInLoop )
+    if (RecPbThreadRef != NULL)
     {
-        le_event_QueueFunctionToThread(threadCtxPtr->mainThreadRef,
-                                        PlaySamples,
-                                        contextPtr,
-                                        NULL);
-    }
-    else
-    {
-        LE_DEBUG("Close pipe Tx");
-        close(threadCtxPtr->pipefd[1]);
-    }
+        le_thread_Cancel(RecPbThreadRef);
+        RecPbThreadRef = NULL;
 
-    RecPbThreadRef = NULL;
+        // Restart in case of looping playback
+        if (threadCtxPtr->playDone && PlayInLoop)
+        {
+            le_event_QueueFunctionToThread(threadCtxPtr->mainThreadRef,
+                                           PlaySamples,
+                                           contextPtr,
+                                           NULL);
+        }
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -433,10 +447,16 @@ static void ExecuteNextOption
 
     if ( NextOptionArg < le_arg_NumArgs() )
     {
-        if ( strncmp(le_arg_GetArg(NextOptionArg), "STOP", 4) == 0 )
+        const char* nextOptionArgPtr = le_arg_GetArg(NextOptionArg);
+        if (NULL == nextOptionArgPtr)
+        {
+            LE_ERROR("nextOptionArgPtr is NULL");
+            exit(EXIT_FAILURE);
+        }
+        if ( strncmp(nextOptionArgPtr, "STOP", 4) == 0 )
         {
             le_clk_Time_t interval={0};
-            const char* stop = le_arg_GetArg(NextOptionArg);
+            const char* stop = nextOptionArgPtr;
 
             if (strlen(stop) > 5) // higher than "STOP="
             {
@@ -447,10 +467,10 @@ static void ExecuteNextOption
                 le_timer_Start(OptionTimerRef);
             }
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "PLAY", 4) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "PLAY", 4) == 0 )
         {
             le_clk_Time_t interval={0};
-            const char* play = le_arg_GetArg(NextOptionArg);
+            const char* play = nextOptionArgPtr;
             if (strlen(play) > 5) // higher than "PLAY="
             {
                 LE_INFO("PLAY will be done in %d seconds", atoi(play+5));
@@ -460,10 +480,10 @@ static void ExecuteNextOption
                 le_timer_Start(OptionTimerRef);
             }
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "RECORD", 6) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "RECORD", 6) == 0 )
         {
             le_clk_Time_t interval={0};
-            const char* play = le_arg_GetArg(NextOptionArg);
+            const char* play = nextOptionArgPtr;
             if (strlen(play) > 7) // higher than "RECORD="
             {
                 LE_INFO("RECORD will be done in %d seconds", atoi(play+7));
@@ -473,10 +493,10 @@ static void ExecuteNextOption
                 le_timer_Start(OptionTimerRef);
             }
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "PAUSE", 5) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "PAUSE", 5) == 0 )
         {
             le_clk_Time_t interval={0};
-            const char* pause = le_arg_GetArg(NextOptionArg);
+            const char* pause = nextOptionArgPtr;
 
             if (strlen(pause) > 6) // higher than "PAUSE="
             {
@@ -487,10 +507,10 @@ static void ExecuteNextOption
                 le_timer_Start(OptionTimerRef);
             }
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "RESUME", 6) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "RESUME", 6) == 0 )
         {
             le_clk_Time_t interval={0};
-            const char* resume = le_arg_GetArg(NextOptionArg);
+            const char* resume = nextOptionArgPtr;
 
             if (strlen(resume) > 7) // higher than "RESUME="
             {
@@ -501,10 +521,10 @@ static void ExecuteNextOption
                 le_timer_Start(OptionTimerRef);
             }
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "DISCONNECT", 10) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "DISCONNECT", 10) == 0 )
         {
             le_clk_Time_t interval={0};
-            const char* resume = le_arg_GetArg(NextOptionArg);
+            const char* resume = nextOptionArgPtr;
 
             if (strlen(resume) > 11) // higher than "DISCONNECT="
             {
@@ -515,12 +535,12 @@ static void ExecuteNextOption
                 le_timer_Start(OptionTimerRef);
             }
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "LOOP", 4) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "LOOP", 4) == 0 )
         {
             PlayInLoop = true;
             nextOption = true;
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg), "MUTE", 4) == 0 )
+        else if ( strncmp(nextOptionArgPtr, "MUTE", 4) == 0 )
         {
 
             le_clk_Time_t interval;
@@ -536,7 +556,7 @@ static void ExecuteNextOption
             le_timer_SetRepeat(MuteTimerRef,0);
             le_timer_Start(MuteTimerRef);
         }
-        else if ( strncmp(le_arg_GetArg(NextOptionArg),"GAIN",4) == 0 )
+        else if ( strncmp(nextOptionArgPtr,"GAIN",4) == 0 )
         {
             le_clk_Time_t interval;
             interval.sec = 0;
@@ -591,8 +611,9 @@ void OptionTimerHandler
 
             if ( strncmp(AudioTestCase,"PB_SAMPLES",10)==0 )
             {
-                close(PbRecSamplesThreadCtx.pipefd[0]);
-                close(PbRecSamplesThreadCtx.pipefd[1]);
+                // Closing PbRecSamplesThreadCtx.pipefd[] is unnecessary since the messaging
+                // infrastructure underneath le_audio_xxx APIs that use it would close it.
+
                 PbRecSamplesThreadCtx.pipefd[0] = -1;
                 PbRecSamplesThreadCtx.pipefd[1] = -1;
                 PbRecSamplesThreadCtx.playDone = 0;
@@ -723,9 +744,11 @@ static void ConnectAudioToUsb
     LE_ERROR_IF((AudioOutputConnectorRef==NULL), "AudioOutputConnectorRef is NULL!");
     {
         res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Rx on Input connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Rx on Input connector (%s)!",
+                    LE_RESULT_TXT(res));
         res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Tx on Output connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Tx on Output connector (%s)!",
+                    LE_RESULT_TXT(res));
     }
 }
 
@@ -768,7 +791,8 @@ static void ConnectAudioToFileLocalPlay
         res = le_audio_Connect(AudioOutputConnectorRef, FileAudioRef);
         if(res != LE_OK)
         {
-            LE_ERROR("Failed to connect FilePlayback on output connector!");
+            LE_ERROR("Failed to connect FilePlayback on output connector (%s)!",
+                     LE_RESULT_TXT(res));
             return;
         }
 
@@ -839,7 +863,8 @@ static void ConnectAudioToFileLocalRec
         res = le_audio_Connect(AudioInputConnectorRef, FileAudioRef);
         if(res!=LE_OK)
         {
-            LE_ERROR("Failed to connect FileRecording on input connector!");
+            LE_ERROR("Failed to connect FileRecording on input connector (%s)!",
+                     LE_RESULT_TXT(res));
             return;
         }
 
@@ -907,7 +932,6 @@ static void ConnectAudioToFileLocalRec
     }
 }
 
-#ifdef ENABLE_CODEC
 //--------------------------------------------------------------------------------------------------
 /**
  * Connect speaker and MIC to connectors
@@ -934,12 +958,13 @@ static void ConnectAudioToCodec
 
     {
         res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect Mic on Input connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect Mic on Input connector (%s)!",
+                    LE_RESULT_TXT(res));
         res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect Speaker on Output connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect Speaker on Output connector (res %s)!",
+                    LE_RESULT_TXT(res));
     }
 }
-#endif
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -967,9 +992,11 @@ static void ConnectAudioToPcm
     LE_ERROR_IF((AudioOutputConnectorRef==NULL), "AudioOutputConnectorRef is NULL!");
     {
         res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect PCM RX on Input connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect PCM RX on Input connector (%s)!",
+                    LE_RESULT_TXT(res));
         res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect PCM TX on Output connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect PCM TX on Output connector (%s)!",
+                    LE_RESULT_TXT(res));
     }
 }
 
@@ -1000,9 +1027,11 @@ static void ConnectAudioToI2s
     LE_ERROR_IF((AudioOutputConnectorRef==NULL), "AudioOutputConnectorRef is NULL!");
     {
         res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect I2S RX on Input connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect I2S RX on Input connector (%s)!",
+                    LE_RESULT_TXT(res));
         res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
-        LE_ERROR_IF((res!=LE_OK), "Failed to connect I2S TX on Output connector!");
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect I2S TX on Output connector (%s)!",
+                    LE_RESULT_TXT(res));
     }
     LE_INFO("Open I2s: FeInRef.%p FeOutRef.%p", FeInRef, FeOutRef);
 }
@@ -1020,14 +1049,12 @@ static void ConnectAudio
 {
     if ((strncmp(AudioTestCase,"PB",2)==0) || (strncmp(AudioTestCase,"REC",3)==0))
     {
-#ifdef ENABLE_CODEC
         if (strcmp(MainAudioSoundPath,"MIC")==0)
         {
             LE_INFO("Connect MIC and SPEAKER ");
             ConnectAudioToCodec();
         }
         else
-#endif
         if (strcmp(MainAudioSoundPath,"PCM")==0)
         {
             LE_INFO("Connect PCM ");
@@ -1155,7 +1182,8 @@ static void DisconnectAllAudio
         FeOutRef = NULL;
     }
 
-    close(AudioFileFd);
+    // Closing AudioFileFd is unnecessary since the messaging infrastructure underneath
+    // le_audio_xxx APIs that use it would close it.
 
     exit(0);
 }
@@ -1166,7 +1194,10 @@ static void DisconnectAllAudio
  *
  */
 //--------------------------------------------------------------------------------------------------
-static void PrintUsage()
+static void PrintUsage
+(
+    void
+)
 {
     int idx;
     bool sandboxed = (getuid() != 0);
@@ -1182,11 +1213,11 @@ static void PrintUsage()
             " - REC_SAMPLES (for Local samples recording) [option]",
             "",
             "Main audio paths are: (for file playback/recording only)",
-#if (ENABLE_CODEC == 1)
             " - MIC (for mic/speaker)",
-#endif
-            " - PCM (for devkit's codec use, execute 'wm8940_demo --pcm' command)",
-            " - I2S (for devkit's codec use, execute 'wm8940_demo --i2s' command)",
+            " - PCM (not supported on mangOH board - for AR755x, AR8652 devkit's codec use, "
+                "execute 'wm8940_demo --pcm' command)",
+            " - I2S (not supported on mangOH board - for AR755x, AR8652 devkit's codec use, "
+                "execute 'wm8940_demo --i2s' command)",
             " - USB (for USB)",
             "",
             "Options are:",
@@ -1260,6 +1291,11 @@ COMPONENT_INIT
         LE_INFO("======== Start Audio implementation Test (audioPlaybackRecTest) ========");
 
         AudioTestCase = le_arg_GetArg(0);
+        if (NULL == AudioTestCase)
+        {
+            LE_INFO("AudioTestCase is NULL");
+            exit(EXIT_FAILURE);
+        }
         LE_INFO("   Test case.%s", AudioTestCase);
 
         if(le_arg_NumArgs() >= 3)
@@ -1279,9 +1315,28 @@ COMPONENT_INIT
                 LE_INFO("EXIT audioPlaybackRec");
                 exit(EXIT_FAILURE);
             }
-            ChannelsCount = atoi(le_arg_GetArg(3));
-            SampleRate = atoi(le_arg_GetArg(4));
-            BitsPerSample = atoi(le_arg_GetArg(5));
+            const char* channelsCountPtr  = le_arg_GetArg(3);
+            const char* sampleRatePtr    = le_arg_GetArg(4);
+            const char* bitsPerSamplePtr = le_arg_GetArg(5);
+
+            if (NULL == channelsCountPtr)
+            {
+                LE_ERROR("channelsCountPtr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            if (NULL == sampleRatePtr)
+            {
+                LE_ERROR("sampleRatePtr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            if (NULL == bitsPerSamplePtr)
+            {
+                LE_ERROR("bitsPerSamplePtr is NULL");
+                exit(EXIT_FAILURE);
+            }
+            ChannelsCount = atoi(channelsCountPtr);
+            SampleRate = atoi(sampleRatePtr);
+            BitsPerSample = atoi(bitsPerSamplePtr);
             LE_INFO("   Get/Play PCM samples with ChannelsCount.%d SampleRate.%d BitsPerSample.%d",
                     ChannelsCount, SampleRate, BitsPerSample);
             NextOptionArg = 6;
@@ -1290,6 +1345,11 @@ COMPONENT_INIT
         {
             const char* recFormat = le_arg_GetArg(3);
 
+            if (NULL == recFormat)
+            {
+                LE_ERROR("recFormat is NULL");
+                exit(EXIT_FAILURE);
+            }
             if (strncmp(recFormat,"WAV", 3)==0)
             {
                 AudioFormat = LE_AUDIO_WAVE;
@@ -1311,8 +1371,21 @@ COMPONENT_INIT
             }
             else
             {
-                AmrMode = atoi(le_arg_GetArg(4));
-                DtxActivation = atoi(le_arg_GetArg(5));
+                const char* amrModePtr       = le_arg_GetArg(4);
+                const char* dtxActivationPtr = le_arg_GetArg(5);
+                if (NULL == amrModePtr)
+                {
+                    LE_ERROR("amrModePtr is NULL");
+                    exit(EXIT_FAILURE);
+                }
+                if (NULL == dtxActivationPtr)
+                {
+                    LE_ERROR("dtxActivationPtr is NULL");
+                    exit(EXIT_FAILURE);
+                }
+
+                AmrMode = atoi(amrModePtr);
+                DtxActivation = atoi(dtxActivationPtr);
                 NextOptionArg = 6;
             }
         }

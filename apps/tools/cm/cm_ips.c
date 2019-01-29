@@ -4,7 +4,7 @@
  *
  * Handle IPS (input power supply) related functionality.
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //-------------------------------------------------------------------------------------------------
 
@@ -12,6 +12,15 @@
 #include "interfaces.h"
 #include "cm_ips.h"
 #include "cm_common.h"
+
+//--------------------------------------------------------------------------------------------------
+/**
+ *  Maximum Number of arguments for the CM tool IPS usage.
+ */
+//--------------------------------------------------------------------------------------------------
+#define  CM_MAX_ARGUMENTS_FOR_IPS_HELP          2
+#define  CM_MAX_ARGUMENTS_FOR_IPS_READ          2
+#define  CM_MAX_ARGUMENTS_FOR_IPS_THRESHOLDS    2
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -25,7 +34,8 @@ void cm_ips_PrintIpsHelp
 {
     printf("IPS usage\n"
            "==========\n\n"
-           "To read and print the voltage from the input power supply:\n"
+           "To read and print information about the power supply "
+           "(voltage, power source, battery level):\n"
            "\tcm ips\n"
            "\tcm ips read\n\n"
            "To read and print the input voltage thresholds:\n"
@@ -49,7 +59,7 @@ static le_result_t cm_ips_ReadAndPrintVoltage
     result = le_ips_GetInputVoltage(&value);
     if (result == LE_OK)
     {
-        printf("%u\n", value);
+        printf("Voltage: %u mV\n", value);
     }
 
     return result;
@@ -57,10 +67,59 @@ static le_result_t cm_ips_ReadAndPrintVoltage
 
 //-------------------------------------------------------------------------------------------------
 /**
+ * Read the power source and the battery level.
+ */
+//-------------------------------------------------------------------------------------------------
+static le_result_t cm_ips_ReadAndPrintPowerSourceAndBatteryLevel
+(
+    void
+)
+{
+    le_result_t result = LE_FAULT;
+    le_ips_PowerSource_t powerSource;
+
+    result = le_ips_GetPowerSource(&powerSource);
+    if (LE_OK != result)
+    {
+        return result;
+    }
+
+    switch (powerSource)
+    {
+        case LE_IPS_POWER_SOURCE_EXTERNAL:
+            printf("Powered by an external source\n");
+            break;
+
+        case LE_IPS_POWER_SOURCE_BATTERY:
+        {
+            uint8_t batteryLevel;
+
+            printf("Powered by a battery\n");
+
+            result = le_ips_GetBatteryLevel(&batteryLevel);
+            if (LE_OK != result)
+            {
+                return result;
+            }
+
+            printf("\tBattery level: %d%%\n", batteryLevel);
+        }
+        break;
+
+        default:
+            printf("Unknown power source\n");
+            break;
+    }
+
+    return LE_OK;
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
  * Read the input voltage thresholds.
  */
 //-------------------------------------------------------------------------------------------------
-static le_result_t cm_ips_ReadAndPrintInpuVoltageThresholds
+static le_result_t cm_ips_ReadAndPrintInputVoltageThresholds
 (
     void
 )
@@ -94,24 +153,44 @@ void cm_ips_ProcessIpsCommand
     size_t numArgs          ///< [IN] Number of arguments
 )
 {
+    // True if the command contains extra arguments.
+    bool extraArguments = true;
+
     if (strcmp(command, "help") == 0)
     {
-        cm_ips_PrintIpsHelp();
+        if (numArgs <= CM_MAX_ARGUMENTS_FOR_IPS_HELP)
+        {
+            extraArguments = false;
+            cm_ips_PrintIpsHelp();
+        }
     }
     else if (strcmp(command, "read") == 0)
     {
-        if (LE_OK != cm_ips_ReadAndPrintVoltage())
+        if (numArgs <= CM_MAX_ARGUMENTS_FOR_IPS_READ)
         {
-            printf("Read failed.\n");
-            exit(EXIT_FAILURE);
+            extraArguments = false;
+            if (LE_OK != cm_ips_ReadAndPrintVoltage())
+            {
+                printf("Voltage read failed.\n");
+                exit(EXIT_FAILURE);
+            }
+            if (LE_OK != cm_ips_ReadAndPrintPowerSourceAndBatteryLevel())
+            {
+                printf("Power source and battery level read failed.\n");
+                exit(EXIT_FAILURE);
+            }
         }
     }
     else if (strcmp(command, "thresholds") == 0)
     {
-        if (LE_OK != cm_ips_ReadAndPrintInpuVoltageThresholds())
+        if (numArgs <= CM_MAX_ARGUMENTS_FOR_IPS_THRESHOLDS)
         {
-            printf("Read Input Voltage thresholds failed.\n");
-            exit(EXIT_FAILURE);
+            extraArguments = false;
+            if (LE_OK != cm_ips_ReadAndPrintInputVoltageThresholds())
+            {
+               printf("Read Input Voltage thresholds failed.\n");
+               exit(EXIT_FAILURE);
+            }
         }
     }
     else
@@ -120,5 +199,14 @@ void cm_ips_ProcessIpsCommand
         exit(EXIT_FAILURE);
     }
 
-    exit(EXIT_SUCCESS);
+    if (true == extraArguments)
+    {
+        printf("Invalid command for IPS service.\n");
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        exit(EXIT_SUCCESS);
+    }
+
 }

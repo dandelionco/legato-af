@@ -5,9 +5,16 @@ sources:
 
 cflags:
 {
+    #if ${SECSTOREADMIN} = ""
+        -DSECSTOREADMIN=0
+    #else
+        -DSECSTOREADMIN=${SECSTOREADMIN}
+    #endif
     -I$CURDIR/../platformAdaptor/inc
-    -I$LEGATO_ROOT/framework/c/src/appCfg
-    -I$LEGATO_ROOT/framework/c/src/
+    -I$LEGATO_ROOT/components/appCfg
+    -I$LEGATO_ROOT/framework/liblegato
+    -I$LEGATO_ROOT/framework/liblegato/linux
+    -I$LEGATO_ROOT/components/watchdogChain
 }
 
 requires:
@@ -16,7 +23,8 @@ requires:
     {
         $LEGATO_SECSTORE_PA_DEFAULT
         $LEGATO_SECSTORE_PA
-        $LEGATO_ROOT/framework/c/src/appCfg
+        $LEGATO_ROOT/components/appCfg
+        $LEGATO_ROOT/components/watchdogChain
     }
 
     api:
@@ -31,6 +39,7 @@ provides:
     api:
     {
         le_secStore.api
+        secStoreGlobal = le_secStore.api
         secureStorage/secStoreAdmin.api
     }
 }

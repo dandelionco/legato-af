@@ -9,17 +9,17 @@
  * By default, the profile used is LE_MDC_DEFAULT_PROFILE, and the APN is automatically set.
  * Some customize parameters can be set by creating a "/tmp/config.txt" file and fill a command
  * line with the syntax:
- * <profile number> <pdp_type> <apn> [<authentification_type> <username> <password>]
+ * <profile number> <pdp_type> <apn> [<authentication_type> <username> <password>]
  * Where:
  *  - <profile number> is the profile number to be used (or "default" to use the default profile)
  *  - <pdp_type> if the packet data protocol to be used: "ipv4", "ipv6", or "ipv4v6"
  *  - <apn> is the APN to be used
- *  - <authentification_type> (optional): authentification requested: "auth_none" (default), pap",
+ *  - <authentication_type> (optional): authentication requested: "auth_none" (default), pap",
  *  "chap", "pap-chap"
- *  - <username> (optional): username for authentification
- *  - <password> (optional): password for authentification
+ *  - <username> (optional): username for authentication
+ *  - <password> (optional): password for authentication
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -43,6 +43,9 @@ static const char PdpIpv4v6[] = "ipv4v6";
 static const char AuthPap[] = "pap";
 static const char AuthChap[] = "chap";
 static const char AuthPapChap[] = "pap-chap";
+static const char Map[] = "map";
+static const char Cid[] = "cid";
+static const char Rmnet[] = "rmnet";
 
 // Structure used to set the configuration
 typedef struct
@@ -50,9 +53,9 @@ typedef struct
     char   cid[10];                                 // profile identifier
     char   pdp[10];                                 // packet data protocol
     char   apn[LE_MDC_APN_NAME_MAX_LEN];            // access point network
-    char   auth[10];                                // authentification level
-    char   userName[LE_MDC_USER_NAME_MAX_LEN];      // username for authentification
-    char   password[LE_MDC_PASSWORD_NAME_MAX_LEN];  // password for authentification
+    char   auth[10];                                // authentication level
+    char   userName[LE_MDC_USER_NAME_MAX_LEN];      // username for authentication
+    char   password[LE_MDC_PASSWORD_NAME_MAX_LEN];  // password for authentication
 }
 Configuration_t;
 
@@ -76,6 +79,7 @@ struct
 };
 
 
+//! [Data_session]
 //--------------------------------------------------------------------------------------------------
 /**
  * Session handler response for connection and disconnection.
@@ -128,6 +132,7 @@ static void SessionStopAsync
     le_mdc_StopSessionAsync(profileRef, SessionHandlerFunc, param2Ptr);
 }
 
+//! [Data_session]
 //--------------------------------------------------------------------------------------------------
 /**
  * Set the configuration.
@@ -146,11 +151,11 @@ static void SetConfiguration
     memset(&configuration, 0, sizeof(Configuration_t));
 
     // if configuration file absent, use default settings
-    if (configFilePtr == NULL)
+    if (NULL == configFilePtr)
     {
-        strncpy(configuration.cid, DefaultCid, sizeof(DefaultCid));
-        strncpy(configuration.pdp, PdpIpv4, sizeof(PdpIpv4));
-        strncpy(configuration.apn, automaticApn, sizeof(automaticApn));
+        le_utf8_Copy(configuration.cid, DefaultCid, sizeof(configuration.cid), NULL);
+        le_utf8_Copy(configuration.pdp, PdpIpv4, sizeof(configuration.pdp), NULL);
+        le_utf8_Copy(configuration.apn, automaticApn, sizeof(configuration.apn), NULL);
     }
     else
     {
@@ -158,51 +163,104 @@ static void SetConfiguration
         fseek(configFilePtr, 0, SEEK_END);
         uint32_t len = ftell(configFilePtr);
         char cmdLine[ len + 1 ];
+        char* saveLinePtr;
+        char* saveParamPtr;
+        char* cmdLinePtr;
+
         memset(cmdLine,0,len+1);
         fseek(configFilePtr, 0, SEEK_SET);
         fread(cmdLine, 1, len, configFilePtr);
         fclose(configFilePtr);
 
-        // Replace last character
-        if (( cmdLine[len-1] == '\n' ) || ( cmdLine[len-1] == '\r' ))
-        {
-            cmdLine[len-1]=' ';
-        }
+        // Get first line
+        cmdLinePtr = strtok_r(cmdLine, "\r\n", &saveLinePtr);
 
         // Get profile number
-        char* cidPtr =  strtok(cmdLine, " ");
-        LE_ASSERT(cidPtr != NULL);
-        strncpy(configuration.cid, cidPtr, strlen(cidPtr));
+        char* cidPtr =  strtok_r(cmdLinePtr, " ", &saveParamPtr);
+        LE_ASSERT(NULL != cidPtr);
+        le_utf8_Copy(configuration.cid, cidPtr, sizeof(configuration.cid), NULL);
 
         // Get pdp type
-        char* pdpPtr = strtok(NULL, " ");
-        LE_ASSERT(pdpPtr != NULL);
-        strncpy(configuration.pdp, pdpPtr, strlen(pdpPtr));
+        char* pdpPtr = strtok_r(NULL, " ", &saveParamPtr);
+        LE_ASSERT(NULL != pdpPtr);
+        le_utf8_Copy(configuration.pdp, pdpPtr, sizeof(configuration.pdp), NULL);
 
         // Get apn
-        char* apnPtr = strtok(NULL, " ");
-        LE_ASSERT(apnPtr != NULL);
-        strncpy(configuration.apn, apnPtr, strlen(apnPtr));
+        char* apnPtr = strtok_r(NULL, " ", &saveParamPtr);
+        LE_ASSERT(NULL != apnPtr);
+        le_utf8_Copy(configuration.apn, apnPtr, sizeof(configuration.apn), NULL);
 
-        // Get authentification
-        char* authPtr = strtok(NULL, " ");
-        if (authPtr != NULL)
+        // Get authentication
+        char* authPtr = strtok_r(NULL, " ", &saveParamPtr);
+        if (NULL != authPtr)
         {
-            strncpy(configuration.auth, authPtr, strlen(authPtr));
+            le_utf8_Copy(configuration.auth, authPtr, sizeof(configuration.auth), NULL);
         }
 
         // Get username
-        char* userNamePtr = strtok(NULL, " ");
-        if (userNamePtr != NULL)
+        char* userNamePtr = strtok_r(NULL, " ", &saveParamPtr);
+        if (NULL != userNamePtr)
         {
-            strncpy(configuration.userName, userNamePtr, strlen(userNamePtr));
+            le_utf8_Copy(configuration.userName, userNamePtr, sizeof(configuration.userName), NULL);
         }
 
         // Get password
-        char* passwordPtr = strtok(NULL, " ");
-        if(passwordPtr != NULL)
+        char* passwordPtr = strtok_r(NULL, " ", &saveParamPtr);
+        if (NULL != passwordPtr)
         {
-            strncpy(configuration.password, passwordPtr, strlen(passwordPtr));
+            le_utf8_Copy(configuration.password, passwordPtr, sizeof(configuration.password), NULL);
+        }
+
+        // Get optional lines
+        cmdLinePtr = strtok_r(NULL, "\r\n", &saveLinePtr);
+
+        while (cmdLinePtr)
+        {
+            char* optionPtr = strtok_r(cmdLinePtr, " ", &saveParamPtr);
+
+            // Check mapping cid
+            if (strncmp(optionPtr, Map, strlen(Map)) == 0)
+            {
+                LE_INFO("mapping cid");
+                char* cidPtr = strtok_r(NULL, " ", &saveParamPtr);
+
+                if (strncmp(cidPtr, Cid, strlen(Cid)) == 0)
+                {
+                    int cid = strtol((const char*) cidPtr+strlen(Cid), NULL, 10);
+
+                    if (0 != errno)
+                    {
+                        LE_ERROR("Bad cid %d %m", errno);
+                        exit(EXIT_FAILURE);
+                    }
+
+                    LE_INFO("map cid %d", cid);
+
+                    char* rmnetPtr = strtok_r(NULL, " ", &saveParamPtr);
+
+                    if (0 == strncmp(rmnetPtr, Rmnet, strlen(Rmnet)))
+                    {
+                        int rmnet = strtol(rmnetPtr+strlen(Rmnet), NULL, 10);
+
+                        if (0 != errno)
+                        {
+                            LE_ERROR("Bad rmnet %d %m", errno);
+                            exit(EXIT_FAILURE);
+                        }
+
+                        le_mdc_ProfileRef_t profileRef = le_mdc_GetProfile(cid);
+
+                        char string[20];
+                        memset(string,0,sizeof(string));
+                        snprintf(string,sizeof(string),"rmnet_data%d", rmnet);
+                        LE_INFO("cid %d rmnet: %s", cid, string);
+
+                        LE_ASSERT(le_mdc_MapProfileOnNetworkInterface(profileRef, string) == LE_OK);
+                    }
+                }
+            }
+
+            cmdLinePtr = strtok_r(NULL, "\r\n", &saveLinePtr);
         }
     }
 
@@ -214,21 +272,29 @@ static void SetConfiguration
     }
     else
     {
-        profile = atoi(configuration.cid);
+        profile = strtol(configuration.cid, NULL, 10);
+
+        if (errno != 0)
+        {
+            LE_ERROR("Bad profile %d %m", errno);
+            exit(EXIT_FAILURE);
+        }
     }
+
+//! [Profile_parameters]
 
     // Get the profile reference
     *profileRefPtr = le_mdc_GetProfile(profile);
-    LE_ASSERT( *profileRefPtr != NULL );
+    LE_ASSERT(NULL != *profileRefPtr);
 
     // Check the current state of the cid
     le_mdc_ConState_t state = LE_MDC_DISCONNECTED;
 
     // Check the state
-    LE_ASSERT( le_mdc_GetSessionState(*profileRefPtr, &state) == LE_OK );
+    LE_ASSERT(LE_OK == le_mdc_GetSessionState(*profileRefPtr, &state));
 
     // If already connected, disconnect the session
-    if ( state == LE_MDC_CONNECTED )
+    if (LE_MDC_CONNECTED == state)
     {
         LE_ASSERT(le_mdc_StopSession(*profileRefPtr) == LE_OK);
     }
@@ -236,63 +302,65 @@ static void SetConfiguration
     // Set pdp type
     le_mdc_Pdp_t pdp = LE_MDC_PDP_UNKNOWN;
 
-    if ( strncmp(configuration.pdp, PdpIpv4, sizeof(PdpIpv4)) == 0 )
+    if (0 == strncmp(configuration.pdp, PdpIpv4, sizeof(PdpIpv4)))
     {
         pdp = LE_MDC_PDP_IPV4;
     }
-    else if ( strncmp(configuration.pdp, PdpIpv6, sizeof(PdpIpv6)) == 0 )
+    else if (0 == strncmp(configuration.pdp, PdpIpv6, sizeof(PdpIpv6)))
     {
         pdp = LE_MDC_PDP_IPV6;
     }
-    else if ( strncmp(configuration.pdp, PdpIpv4v6, sizeof(PdpIpv4v6)) == 0 )
+    else if (0 == strncmp(configuration.pdp, PdpIpv4v6, sizeof(PdpIpv4v6)))
     {
         pdp = LE_MDC_PDP_IPV4V6;
     }
 
-    LE_ASSERT( le_mdc_SetPDP(*profileRefPtr, pdp) == LE_OK );
+    LE_ASSERT(LE_OK == le_mdc_SetPDP(*profileRefPtr, pdp));
 
     // Set APN
-    if ( strncmp(configuration.apn, automaticApn, sizeof(automaticApn)) == 0 )
+    if (0 == strncmp(configuration.apn, automaticApn, sizeof(automaticApn)))
     {
         // Set default APN
-        LE_ASSERT( le_mdc_SetDefaultAPN(*profileRefPtr) == LE_OK );
+        LE_ASSERT(LE_OK == le_mdc_SetDefaultAPN(*profileRefPtr));
     }
     else
     {
-        LE_ASSERT( le_mdc_SetAPN(*profileRefPtr, configuration.apn) == LE_OK );
+        LE_ASSERT(LE_OK == le_mdc_SetAPN(*profileRefPtr, configuration.apn));
     }
 
     le_mdc_Auth_t auth = LE_MDC_AUTH_NONE;
-    if ( configuration.auth[0] != '\0' )
+    if ('\0' != configuration.auth[0])
     {
-        // Set the authentification, username and password
-        if ( strncmp(configuration.auth, AuthPapChap, sizeof(AuthPapChap)) == 0 )
+        // Set the authentication, username and password
+        if (0 == strncmp(configuration.auth, AuthPapChap, sizeof(AuthPapChap)))
         {
             auth = LE_MDC_AUTH_PAP | LE_MDC_AUTH_CHAP;
         }
-        // Set the authentification, username and password
-        else if ( strncmp(configuration.auth, AuthPap, sizeof(AuthPap)) == 0 )
+        // Set the authentication, username and password
+        else if (0 == strncmp(configuration.auth, AuthPap, sizeof(AuthPap)))
         {
             auth = LE_MDC_AUTH_PAP;
         }
-        else if ( strncmp(configuration.auth, AuthChap, sizeof(AuthChap)) == 0 )
+        else if (0 == strncmp(configuration.auth, AuthChap, sizeof(AuthChap)))
         {
             auth = LE_MDC_AUTH_CHAP;
         }
 
-        if (auth != LE_MDC_AUTH_NONE)
+        if (LE_MDC_AUTH_NONE != auth)
         {
-            LE_ASSERT( le_mdc_SetAuthentication( *profileRefPtr,
-                                                 auth,
-                                                 configuration.userName,
-                                                 configuration.password ) == LE_OK );
+            LE_ASSERT(LE_OK == le_mdc_SetAuthentication(*profileRefPtr,
+                                                auth,
+                                                configuration.userName,
+                                                configuration.password));
         }
     }
 
-    LE_INFO("cid: %d pdp: %d apn: %s auth: %d username: %s password: %s", profile, pdp,
-            configuration.apn, auth, configuration.userName, configuration.password);
+    LE_INFO("cid: %d pdp: %d apn: %s auth: %d username: %s password: %s",
+            le_mdc_GetProfileIndex(*profileRefPtr), pdp, configuration.apn, auth,
+            configuration.userName, configuration.password);
 }
 //! [Profiles]
+//! [Profile_parameters]
 
 //! [Sessions]
 //--------------------------------------------------------------------------------------------------
@@ -440,6 +508,8 @@ static void* TestThread
 
     // Run the event loop
     le_event_RunLoop();
+
+    return NULL;
 }
 
 
@@ -448,7 +518,6 @@ static void* TestThread
 //--------------------------------------------------------------------------------------------------
 /**
  * Test the connectivity.
- *
  */
 //--------------------------------------------------------------------------------------------------
 void TestConnectivity
@@ -456,25 +525,25 @@ void TestConnectivity
     le_mdc_ProfileRef_t profileRef
 )
 {
-    le_result_t res;
+    int status;
     char systemCmd[200] = {0};
-    char itfName[LE_MDC_INTERFACE_NAME_MAX_BYTES]="\0";
-
+    char itfName[LE_MDC_INTERFACE_NAME_MAX_BYTES] = "\0";
     le_mdc_DataBearerTechnology_t downlinkDataBearerTech;
     le_mdc_DataBearerTechnology_t uplinkDataBearerTech;
+    uint64_t rxBytes = 0, txBytes = 0;
+    uint64_t latestRxBytes = 0, latestTxBytes = 0;
 
-    LE_ASSERT(le_mdc_GetDataBearerTechnology(profileRef,
-                                             &downlinkDataBearerTech,
-                                             &uplinkDataBearerTech) == LE_OK);
+    LE_ASSERT_OK(le_mdc_GetDataBearerTechnology(profileRef,
+                                                &downlinkDataBearerTech,
+                                                &uplinkDataBearerTech));
 
     LE_INFO("downlinkDataBearerTech %d, uplinkDataBearerTech %d",
-                downlinkDataBearerTech, uplinkDataBearerTech);
+            downlinkDataBearerTech, uplinkDataBearerTech);
 
     // Get interface name
-    LE_ASSERT(le_mdc_GetInterfaceName(profileRef, itfName, LE_MDC_INTERFACE_NAME_MAX_BYTES)
-                                                                                          == LE_OK);
+    LE_ASSERT_OK(le_mdc_GetInterfaceName(profileRef, itfName, LE_MDC_INTERFACE_NAME_MAX_BYTES));
 
-    if ( le_mdc_IsIPv4(profileRef) )
+    if (le_mdc_IsIPv4(profileRef))
     {
         snprintf(systemCmd, sizeof(systemCmd), "ping -c 4 www.sierrawireless.com -I %s", itfName);
     }
@@ -485,18 +554,37 @@ void TestConnectivity
         snprintf(systemCmd, sizeof(systemCmd), "ping6 -c 4 www.sierrawireless.com -I %s", itfName);
     }
 
-    res = system(systemCmd);
-    if (res != LE_OK)
+    // Ping to test the connectivity
+    status = system(systemCmd);
+    if (WEXITSTATUS(status))
     {
         le_mdc_StopSession(profileRef);
     }
-    LE_ASSERT(res == LE_OK);
+    LE_ASSERT(!WEXITSTATUS(status));
 
     // Get data counters
-    uint64_t rxBytes=0, txBytes=0;
-    LE_ASSERT( le_mdc_GetBytesCounters(&rxBytes, &txBytes) == LE_OK );
+    LE_ASSERT_OK(le_mdc_GetBytesCounters(&rxBytes, &txBytes));
+    latestRxBytes = rxBytes;
+    latestTxBytes = txBytes;
+    LE_INFO("rxBytes %"PRIu64", txBytes %"PRIu64, rxBytes, txBytes);
 
-    LE_INFO("rxBytes %ld, txBytes %ld", (long int) rxBytes, (long int) txBytes);
+    // Stop data counters and ping to test the connectivity
+    LE_ASSERT_OK(le_mdc_StopBytesCounter());
+    status = system(systemCmd);
+    if (WEXITSTATUS(status))
+    {
+        le_mdc_StopSession(profileRef);
+    }
+    LE_ASSERT(!WEXITSTATUS(status));
+
+    // Get data counters
+    LE_ASSERT_OK(le_mdc_GetBytesCounters(&rxBytes, &txBytes));
+    LE_INFO("rxBytes %"PRIu64", txBytes %"PRIu64, rxBytes, txBytes);
+    LE_ASSERT(latestRxBytes == rxBytes);
+    LE_ASSERT(latestTxBytes == txBytes);
+
+    // Start data counters
+    LE_ASSERT_OK(le_mdc_StartBytesCounter());
 }
 //! [Statistics]
 
@@ -511,7 +599,6 @@ COMPONENT_INIT
     le_mdc_ProfileRef_t profileRef  = NULL;
     le_clk_Time_t myTimeout = { 0, 0 };
     myTimeout.sec = 120;
-    le_result_t res;
     Testcase_t test = TEST_SYNC;
     le_thread_Ref_t testThread;
 
@@ -529,44 +616,42 @@ COMPONENT_INIT
     le_thread_Start(testThread);
 
     // Wait for the call of the event handler
-    res = le_sem_WaitWithTimeOut(TestSemaphore, myTimeout);
-    LE_ASSERT(res == LE_OK);
+    LE_ASSERT_OK(le_sem_WaitWithTimeOut(TestSemaphore, myTimeout));
 
     while (testsDef[test].testCase != TEST_MAX)
     {
-        LE_ASSERT( le_mdc_ResetBytesCounter() == LE_OK );
-
         LE_INFO("======= MDC %s STARTED =======", testsDef[test].testName);
 
-        // start the profile
+        // Start the profile
         switch (testsDef[test].testCase)
         {
             case TEST_SYNC:
-                LE_ASSERT( le_mdc_StartSession(profileRef) == LE_OK );
+                LE_ASSERT_OK(le_mdc_StartSession(profileRef));
+                LE_ASSERT_OK(le_mdc_ResetBytesCounter());
             break;
+
             case TEST_ASYNC:
             {
                 le_result_t sessionStart = LE_FAULT;
-
                 le_event_QueueFunctionToThread(testThread,
-                                   SessionStartAsync,
-                                   profileRef,
-                                   &sessionStart);
+                                               SessionStartAsync,
+                                               profileRef,
+                                               &sessionStart);
 
                 // Wait for the call of the event handler
-                res = le_sem_WaitWithTimeOut(AsyncTestSemaphore, myTimeout);
-                LE_ASSERT(res == LE_OK);
-                LE_ASSERT(sessionStart == LE_OK);
+                LE_ASSERT_OK(le_sem_WaitWithTimeOut(AsyncTestSemaphore, myTimeout));
+                LE_ASSERT_OK(sessionStart);
+                LE_ASSERT_OK(le_mdc_ResetBytesCounter());
             }
             break;
+
             default:
                 LE_ERROR("Unknown test case");
                 exit(EXIT_FAILURE);
         }
 
         // Wait for the call of the event handler
-        res = le_sem_WaitWithTimeOut(TestSemaphore, myTimeout);
-        LE_ASSERT(res == LE_OK);
+        LE_ASSERT_OK(le_sem_WaitWithTimeOut(TestSemaphore, myTimeout));
 
         // Set the network configuration
         SetNetworkConfiguration(profileRef);
@@ -580,31 +665,30 @@ COMPONENT_INIT
         switch (testsDef[test].testCase)
         {
             case TEST_SYNC:
-                LE_ASSERT(le_mdc_StopSession(profileRef) == LE_OK);
-            break;
+                LE_ASSERT_OK(le_mdc_StopSession(profileRef));
+                break;
+
             case TEST_ASYNC:
             {
                 le_result_t sessionStart = LE_FAULT;
                 le_event_QueueFunctionToThread(testThread,
-                                   SessionStopAsync,
-                                   profileRef,
-                                   &sessionStart);
+                                               SessionStopAsync,
+                                               profileRef,
+                                               &sessionStart);
 
                 // Wait for the call of the event handler
-                res = le_sem_WaitWithTimeOut(AsyncTestSemaphore, myTimeout);
-                LE_ASSERT(res == LE_OK);
-                LE_ASSERT(sessionStart == LE_OK);
+                LE_ASSERT_OK(le_sem_WaitWithTimeOut(AsyncTestSemaphore, myTimeout));
+                LE_ASSERT_OK(sessionStart);
             }
             break;
+
             default:
                 LE_ERROR("Unknown test case");
                 exit(EXIT_FAILURE);
         }
 
-
         // Wait for the call of the event handler
-        res = le_sem_WaitWithTimeOut(TestSemaphore, myTimeout);
-        LE_ASSERT(res == LE_OK);
+        LE_ASSERT_OK(le_sem_WaitWithTimeOut(TestSemaphore, myTimeout));
 
         LE_INFO("======= MDC %s PASSED =======", testsDef[test].testName);
 

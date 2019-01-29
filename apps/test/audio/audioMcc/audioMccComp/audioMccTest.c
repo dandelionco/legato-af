@@ -5,7 +5,7 @@
  * $ app start audioMccTest
  * $ app runProc audioMccTest --exe=audioMccTest -- <Phone number> <test case> [main audio path] [file's name]
  *
- * Copyright (C) Sierra Wireless Inc. Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  *
  */
 
@@ -273,7 +273,6 @@ static void ConnectAudioToFileLocalRec
     }
 }
 
-#if (ENABLE_CODEC == 1)
 //--------------------------------------------------------------------------------------------------
 /**
  * Connect audio to analogic input/output.
@@ -316,7 +315,6 @@ static void ConnectAudioToCodec
         LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmRx on Output connector!");
     }
 }
-#endif
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -452,6 +450,182 @@ static void ConnectAudioToUsb
 
 //--------------------------------------------------------------------------------------------------
 /**
+ * Connect audio to USB-TX & I2S-RX.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void ConnectAudioToUsbTxI2sRx
+(
+    void
+)
+{
+    le_result_t res;
+
+    MdmRxAudioRef = le_audio_OpenModemVoiceRx();
+    LE_ERROR_IF((MdmRxAudioRef == NULL), "GetRxAudioStream returns NULL!");
+    MdmTxAudioRef = le_audio_OpenModemVoiceTx();
+    LE_ERROR_IF((MdmTxAudioRef == NULL), "GetTxAudioStream returns NULL!");
+
+    // Redirect audio to the USB.
+    FeOutRef = le_audio_OpenUsbTx();
+    LE_ERROR_IF((FeOutRef == NULL), "OpenUsbTx returns NULL!");
+    // Redirect audio to the I2S.
+    FeInRef = le_audio_OpenI2sRx(LE_AUDIO_I2S_STEREO);
+    LE_ERROR_IF((FeInRef == NULL), "OpenI2sRx returns NULL!");
+
+    AudioInputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioInputConnectorRef == NULL), "AudioInputConnectorRef is NULL!");
+    AudioOutputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioOutputConnectorRef == NULL), "AudioOutputConnectorRef is NULL!");
+
+    if (MdmRxAudioRef && MdmTxAudioRef && FeOutRef && FeInRef &&
+        AudioInputConnectorRef && AudioOutputConnectorRef)
+    {
+        res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect I2S Rx on Input connector!");
+        res = le_audio_Connect(AudioInputConnectorRef, MdmTxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmTx on Input connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Tx on Output connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, MdmRxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmRx on Output connector!");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Connect audio to USB-TX & PCM-RX.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void ConnectAudioToUsbTxPcmRx
+(
+    void
+)
+{
+    le_result_t res;
+
+    MdmRxAudioRef = le_audio_OpenModemVoiceRx();
+    LE_ERROR_IF((MdmRxAudioRef == NULL), "GetRxAudioStream returns NULL!");
+    MdmTxAudioRef = le_audio_OpenModemVoiceTx();
+    LE_ERROR_IF((MdmTxAudioRef == NULL), "GetTxAudioStream returns NULL!");
+
+    // Redirect audio to the USB.
+    FeOutRef = le_audio_OpenUsbTx();
+    LE_ERROR_IF((FeOutRef == NULL), "OpenUsbTx returns NULL!");
+    // Redirect audio to the PCM.
+    FeInRef = le_audio_OpenPcmRx(0);
+    LE_ERROR_IF((FeInRef == NULL), "OpenPcmRx returns NULL!");
+
+    AudioInputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioInputConnectorRef == NULL), "AudioInputConnectorRef is NULL!");
+    AudioOutputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioOutputConnectorRef == NULL), "AudioOutputConnectorRef is NULL!");
+
+    if (MdmRxAudioRef && MdmTxAudioRef && FeOutRef && FeInRef &&
+        AudioInputConnectorRef && AudioOutputConnectorRef)
+    {
+        res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect PCM Rx on Input connector!");
+        res = le_audio_Connect(AudioInputConnectorRef, MdmTxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmTx on Input connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Tx on Output connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, MdmRxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmRx on Output connector!");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Connect audio to USB-RX & I2S-TX.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void ConnectAudioToUsbRxI2sTx
+(
+    void
+)
+{
+    le_result_t res;
+
+    MdmRxAudioRef = le_audio_OpenModemVoiceRx();
+    LE_ERROR_IF((MdmRxAudioRef == NULL), "GetRxAudioStream returns NULL!");
+    MdmTxAudioRef = le_audio_OpenModemVoiceTx();
+    LE_ERROR_IF((MdmTxAudioRef == NULL), "GetTxAudioStream returns NULL!");
+
+    // Redirect audio to the I2S.
+    FeOutRef = le_audio_OpenI2sTx(LE_AUDIO_I2S_STEREO);
+    LE_ERROR_IF((FeOutRef == NULL), "OpenI2sTx returns NULL!");
+    // Redirect audio to the USB.
+    FeInRef = le_audio_OpenUsbRx();
+    LE_ERROR_IF((FeInRef == NULL), "OpenUsbRx returns NULL!");
+
+    AudioInputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioInputConnectorRef == NULL), "AudioInputConnectorRef is NULL!");
+    AudioOutputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioOutputConnectorRef == NULL), "AudioOutputConnectorRef is NULL!");
+
+    if (MdmRxAudioRef && MdmTxAudioRef && FeOutRef && FeInRef &&
+        AudioInputConnectorRef && AudioOutputConnectorRef)
+    {
+        res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Rx on Input connector!");
+        res = le_audio_Connect(AudioInputConnectorRef, MdmTxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmTx on Input connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect I2S Tx on Output connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, MdmRxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmRx on Output connector!");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Connect audio to USB-RX & PCM-TX.
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static void ConnectAudioToUsbRxPcmTx
+(
+    void
+)
+{
+    le_result_t res;
+
+    MdmRxAudioRef = le_audio_OpenModemVoiceRx();
+    LE_ERROR_IF((MdmRxAudioRef == NULL), "GetRxAudioStream returns NULL!");
+    MdmTxAudioRef = le_audio_OpenModemVoiceTx();
+    LE_ERROR_IF((MdmTxAudioRef == NULL), "GetTxAudioStream returns NULL!");
+
+    // Redirect audio to the PCM.
+    FeOutRef = le_audio_OpenPcmTx(0);
+    LE_ERROR_IF((FeOutRef == NULL), "OpenPcmTx returns NULL!");
+    // Redirect audio to the USB.
+    FeInRef = le_audio_OpenUsbRx();
+    LE_ERROR_IF((FeInRef == NULL), "OpenUsbRx returns NULL!");
+
+    AudioInputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioInputConnectorRef == NULL), "AudioInputConnectorRef is NULL!");
+    AudioOutputConnectorRef = le_audio_CreateConnector();
+    LE_ERROR_IF((AudioOutputConnectorRef == NULL), "AudioOutputConnectorRef is NULL!");
+
+    if (MdmRxAudioRef && MdmTxAudioRef && FeOutRef && FeInRef &&
+        AudioInputConnectorRef && AudioOutputConnectorRef)
+    {
+        res = le_audio_Connect(AudioInputConnectorRef, FeInRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect USB Rx on Input connector!");
+        res = le_audio_Connect(AudioInputConnectorRef, MdmTxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmTx on Input connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, FeOutRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect PCM Tx on Output connector!");
+        res = le_audio_Connect(AudioOutputConnectorRef, MdmRxAudioRef);
+        LE_ERROR_IF((res!=LE_OK), "Failed to connect mdmRx on Output connector!");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
  * Main audio connection function.
  *
  */
@@ -462,15 +636,12 @@ static void ConnectAudio
 )
 {
 
-#if (ENABLE_CODEC == 1)
     if (strcmp(AudioTestCase,"MIC")==0)
     {
         LE_INFO("Connect MIC and SPEAKER ");
         ConnectAudioToCodec();
     }
-    else
-#endif
-    if (strcmp(AudioTestCase,"PCM")==0)
+    else if (strcmp(AudioTestCase,"PCM")==0)
     {
         LE_INFO("Connect PCM ");
         ConnectAudioToPcm();
@@ -485,17 +656,34 @@ static void ConnectAudio
         LE_INFO("Connect USB ");
         ConnectAudioToUsb();
     }
+    else if (strcmp(MainAudioSoundPath,"USBTXI2SRX")==0)
+    {
+        LE_INFO("Connect USBTXI2SRX ");
+        ConnectAudioToUsbTxI2sRx();
+    }
+    else if (strcmp(MainAudioSoundPath,"USBTXPCMRX")==0)
+    {
+        LE_INFO("Connect USBTXPCMRX ");
+        ConnectAudioToUsbTxPcmRx();
+    }
+    else if (strcmp(MainAudioSoundPath,"USBRXI2STX")==0)
+    {
+        LE_INFO("Connect USBRXI2STX ");
+        ConnectAudioToUsbRxI2sTx();
+    }
+    else if (strcmp(MainAudioSoundPath,"USBRXPCMTX")==0)
+    {
+        LE_INFO("Connect USBRXPCMTX ");
+        ConnectAudioToUsbRxPcmTx();
+    }
     else if ((strncmp(AudioTestCase,"R-",2)==0) || (strncmp(AudioTestCase,"L-",2)==0))
     {
-#if (ENABLE_CODEC == 1)
         if (strcmp(MainAudioSoundPath,"MIC")==0)
         {
             LE_INFO("Connect MIC and SPEAKER ");
             ConnectAudioToCodec();
         }
-        else
-#endif
-        if (strcmp(MainAudioSoundPath,"PCM")==0)
+        else if (strcmp(MainAudioSoundPath,"PCM")==0)
         {
             LE_INFO("Connect PCM ");
             ConnectAudioToPcm();
@@ -509,6 +697,26 @@ static void ConnectAudio
         {
             LE_INFO("Connect USB ");
             ConnectAudioToUsb();
+        }
+        else if (strcmp(MainAudioSoundPath,"USBTXI2SRX")==0)
+        {
+            LE_INFO("Connect USBTXI2SRX ");
+            ConnectAudioToUsbTxI2sRx();
+        }
+        else if (strcmp(MainAudioSoundPath,"USBTXPCMRX")==0)
+        {
+            LE_INFO("Connect USBTXPCMRX ");
+            ConnectAudioToUsbTxPcmRx();
+        }
+        else if (strcmp(MainAudioSoundPath,"USBRXI2STX")==0)
+        {
+            LE_INFO("Connect USBRXI2STX ");
+            ConnectAudioToUsbRxI2sTx();
+        }
+        else if (strcmp(MainAudioSoundPath,"USBRXPCMTX")==0)
+        {
+            LE_INFO("Connect USBRXPCMTX ");
+            ConnectAudioToUsbRxPcmTx();
         }
         else
         {
@@ -612,7 +820,8 @@ static void DisconnectAllAudio
         MediaHandlerRef = NULL;
     }
 
-    close(AudioFileFd);
+    // Closing AudioFileFd is unnecessary since the messaging infrastructure underneath
+    // le_audio_xxx APIs that use it would close it.
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -736,11 +945,11 @@ static void PrintUsage()
             "   audioMccTest <Phone number> <test case> [main audio path] [file's name]",
             "",
             "Test cases are:",
-#if (ENABLE_CODEC == 1)
             " - MIC (for mic/speaker)",
-#endif
-            " - PCM (for devkit's codec use, execute 'wm8940_demo --pcm' command)",
-            " - I2S (for devkit's codec use, execute 'wm8940_demo --i2s' command)",
+            " - PCM (not supported on mangOH board - for AR755x, AR8652 devkit's codec use, "
+                "execute 'wm8940_demo --pcm' command)",
+            " - I2S (not supported on mangOH board - for AR755x, AR8652 devkit's codec use, "
+                "execute 'wm8940_demo --i2s' command)",
             " - USB (for USB)",
             " - R-PB (for Remote playback)",
             " - R-REC (for Remote recording)",
@@ -748,11 +957,11 @@ static void PrintUsage()
             " - L-REC (for Local recording)",
             "",
             "Main audio paths are: (for file playback/recording only)",
-#if (ENABLE_CODEC == 1)
             " - MIC (for mic/speaker)",
-#endif
-            " - PCM (for devkit's codec use, execute 'wm8940_demo --pcm' command)",
-            " - I2S (for devkit's codec use, execute 'wm8940_demo --i2s' command)",
+            " - PCM (not supported on mangOH board - for AR755x, AR8652 devkit's codec use, "
+                "execute 'wm8940_demo --pcm' command)",
+            " - I2S (not supported on mangOH board - for AR755x, AR8652 devkit's codec use, "
+                "execute 'wm8940_demo --i2s' command)",
             " - USB (for USB)",
             "",
             "File's name can be the complete file's path (for file playback/recording only).",
@@ -784,6 +993,11 @@ COMPONENT_INIT
         LE_INFO("======== Start Audio implementation Test (audioMccTest) ========");
 
         DestinationNumber = le_arg_GetArg(0);
+        if (NULL == DestinationNumber)
+        {
+            LE_ERROR("DestinationNumber is NULL");
+            exit(EXIT_FAILURE);
+        }
         AudioTestCase = le_arg_GetArg(1);
         LE_INFO("   Phone number.%s", DestinationNumber);
         LE_INFO("   Test case.%s", AudioTestCase);

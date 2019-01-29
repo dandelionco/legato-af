@@ -20,7 +20,7 @@
  *
  * <hr>
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -34,6 +34,7 @@ namespace parseTree
 #include "token.h"
 #include "compoundItem.h"
 #include "defFile.h"
+#include "substitution.h"
 
 } // namespace parseTree
 

@@ -2,7 +2,7 @@
 /**
  *  Class whose objects can be used to store faultAction settings.
  *
- *  Copyright (C) Sierra Wireless, Inc. Use of this work is subject to license.
+ *  Copyright (C) Sierra Wireless, Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ class FaultAction_t : public Limit_t
 
     public:
 
-        void operator =(const std::string &action);
+        FaultAction_t& operator =(const std::string &action);
 
         const std::string& Get() const;
 };

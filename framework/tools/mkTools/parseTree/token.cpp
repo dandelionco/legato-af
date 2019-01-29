@@ -4,7 +4,7 @@
  *
  * Implementation of Token_t functions.
  *
- * Copyright (C) Sierra Wireless Inc.  Use of this work is subject to license.
+ * Copyright (C) Sierra Wireless Inc.
  */
 //--------------------------------------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ namespace parseTree
 Token_t::Token_t
 (
     Type_t tokenType,
-    DefFile_t* fileObjPtr,
+    DefFileFragment_t* fileObjPtr,
     size_t lineNum,
     size_t columnNum
 )
@@ -191,7 +191,9 @@ void Token_t::ThrowException
 const
 //--------------------------------------------------------------------------------------------------
 {
-    throw mk::Exception_t(GetLocation() + ": error: " + message);
+    throw mk::Exception_t(
+        mk::format(LE_I18N("%s: error: %s"), GetLocation(), message)
+    );
 }
 
 
@@ -209,8 +211,8 @@ void Token_t::PrintWarning
 const
 //--------------------------------------------------------------------------------------------------
 {
-    std::cerr << "** WARNING: " << std::endl
-              << GetLocation() << ": warning: " << message
+    std::cerr << LE_I18N("** WARNING: ") << std::endl
+              << mk::format(LE_I18N("%s: warning: %s"), GetLocation(), message)
               << std::endl;
 }
 
