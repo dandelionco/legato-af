@@ -66,5 +66,5 @@ docManagement
 3rdParty/*
 
 # Apps
-apps/platformServices/airVantageConnector/
-apps/leTP
+# apps/platformServices/airVantageConnector/
+# apps/leTP
