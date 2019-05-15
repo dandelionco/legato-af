@@ -37,8 +37,9 @@ apps:
     // Dandelion Custom Applications
     $LEGATO_ROOT/apps/dandelionApps/cellularMonitor/cellularMonitor
     // $LEGATO_ROOT/apps/dandelionApps/wifiController/wifiController
-    $LEGATO_ROOT/apps/dandelionApps/heatPumpManager/heatPumpManager
-    $LEGATO_ROOT/apps/dandelionApps/avcControl/avcControl
+    // $LEGATO_ROOT/apps/dandelionApps/heatPumpManager/heatPumpManager
+    $LEGATO_ROOT/apps/dandelionApps/otaManager/otaManager
+    // $LEGATO_ROOT/apps/dandelionApps/configurationServer/configurationServer
 }
 
 #if ${LEGATO_FEATURE_SPISVC} = ""
