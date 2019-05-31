@@ -12,7 +12,7 @@
 /version
 /sources.md5
 /delivery
-/platformAdaptor
+# /platformAdaptor
 # *proprietary
 doxygen.*.log
 doxygen.*.err
