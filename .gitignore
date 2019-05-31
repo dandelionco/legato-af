@@ -63,7 +63,7 @@ modules/*
 docManagement
 
 # 3rd Party content
-3rdParty/*
+# 3rdParty/*
 
 # Apps
 # apps/platformServices/airVantageConnector/
