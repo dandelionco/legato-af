@@ -59,7 +59,7 @@ targetFiles/*/backup_*
 
 # Injected target defs
 targetDefs.extra
-modules/*
+# modules/*
 docManagement
 
 # 3rd Party content
