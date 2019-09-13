@@ -1,0 +1,3 @@
+[submodule "modules/WiFi"]
+	path = modules/WiFi
+	url = https://github.com/legatoproject/legato-WiFi.git

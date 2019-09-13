@@ -31,6 +31,5 @@ dist:	doc
 	test -d $(DISTDIR)/doc || mkdir $(DISTDIR)/doc
 	cp -r $(FILES) $(DISTDIR)/doc
 
-install:	$(doc) html
-	test -d $(htmldir) || mkdir -p $(htmldir)
-	cp -r html/* $(htmldir)
+install:	$(doc)
+	if test -e html ; then mkdir -p $(htmldir); cp -r html/* $(htmldir) ; fi
