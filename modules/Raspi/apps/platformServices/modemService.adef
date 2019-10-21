@@ -1,0 +1,7 @@
+
+#include "$LEGATO_ROOT/apps/platformServices/modemService.adef"
+
+bindings:
+{
+    modemDaemon.le_pa.le_atClient -> atService.le_atClient
+}

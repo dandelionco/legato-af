@@ -1,0 +1,22 @@
+sandboxed: false
+executables:
+{
+    coapHandlerTest = ( coapHandlerTestComponent )
+}
+
+processes:
+{
+    run:
+    {
+        (coapHandlerTest)
+    }
+
+    // Maximum size of CBOR payload file that is generated
+    maxFileBytes: 50000K
+}
+
+bindings:
+{
+    coapHandlerTest.coapHandlerTestComponent.le_avdata -> avcService.le_avdata
+    coapHandlerTest.coapHandlerTestComponent.le_coap -> avcService.le_coap
+}

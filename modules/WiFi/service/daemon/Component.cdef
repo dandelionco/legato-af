@@ -1,0 +1,40 @@
+requires:
+{
+    api:
+    {
+        ${LEGATO_ROOT}/interfaces/le_cfg.api
+        ${LEGATO_ROOT}/interfaces/le_secStore.api
+    }
+}
+
+provides:
+{
+    api:
+    {
+        ${LEGATO_ROOT}/interfaces/wifi/le_wifiClient.api
+        ${LEGATO_ROOT}/interfaces/wifi/le_wifiAp.api
+    }
+}
+
+sources:
+{
+    wifiService.c
+    le_wifiClient.c
+    le_wifiAp.c
+    ${LEGATO_WIFI_ROOT}/service/platformAdaptor/common/pa_wifi_client.c
+    ${LEGATO_WIFI_ROOT}/service/platformAdaptor/common/pa_wifi_ap.c
+}
+
+cflags:
+{
+    -I${LEGATO_WIFI_ROOT}/service/platformAdaptor/inc/
+}
+
+bundles:
+{
+    file:
+    {
+        // Script file implementing Wifi PA
+        [x] ${LEGATO_WIFI_PA}  pa_wifi
+    }
+}

@@ -1,0 +1,26 @@
+cflags:
+{
+    -I${LEGATO_ROOT}/platformAdaptor/fwupdate/apps/test/sys_flash
+    -I${LEGATO_ROOT}/platformAdaptor/fwupdate/common
+    -I${LEGATO_ROOT}/platformAdaptor/fwupdate/mdm9x07/le_pa_fwupdate_singlesys
+    -I${LEGATO_ROOT}/3rdParty/include
+    -DPA_FWUPDATE_APP_PRODUCT_ID=0x59393231
+    -DPA_FWUPDATE_USR_PRODUCT_ID=0x39583238
+    -Dwrite=sys_flashWrite
+    -Dioctl=sys_flashIoctl
+    -Dopen=sys_flashOpen
+    -Dfopen=sys_flashFOpen
+    -Dopendir=sys_flashOpendir
+    -Dunlink=sys_flashUnlink
+    -Dsystem=sys_flashSystem
+}
+
+sources:
+{
+    ${LEGATO_ROOT}/platformAdaptor/fwupdate/pa_flash/src/pa_flash_mtd.c
+    ${LEGATO_ROOT}/platformAdaptor/fwupdate/mdm9x07/le_pa_fwupdate_singlesys/pa_flash_ubi.c
+    ${LEGATO_ROOT}/platformAdaptor/fwupdate/mdm9x07/le_pa_fwupdate_singlesys/partition.c
+    main.c
+    ${LEGATO_ROOT}/platformAdaptor/fwupdate/common/cwe.c
+    ${LEGATO_ROOT}/platformAdaptor/fwupdate/common/utils.c
+}

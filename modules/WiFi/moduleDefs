@@ -1,0 +1,17 @@
+export LEGATO_WIFI_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+
+# Check whether the version is already defined.
+ifeq ($(origin LEGATO_WIFI_VERSION),undefined)
+  # If not, try to define it through Git information
+  LEGATO_WIFI_VERSION := $(shell (git --git-dir=$(LEGATO_WIFI_ROOT)/.git describe --tags || git rev-parse HEAD) 2> /dev/null)
+
+  # If the folder is not managed by Git
+  ifeq ($(LEGATO_WIFI_VERSION),)
+    # Define the version as "UNDEFINED"
+    LEGATO_WIFI_VERSION := UNDEFINED
+    $(warning Legato WiFi version is undefined...)
+  endif
+
+  # And finally, export it.
+  export LEGATO_WIFI_VERSION
+endif

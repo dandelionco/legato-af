@@ -1,0 +1,43 @@
+requires:
+{
+    api:
+    {
+        airVantage/le_avdata.api
+        airVantage/le_coap.api
+    }
+
+    component:
+    {
+        ${LEGATO_ROOT}/components/3rdParty/tinycbor
+    }
+
+    lib:
+    {
+        libtinycbor.so
+    }
+}
+
+sources:
+{
+    main.c
+}
+
+bundles:
+{
+    file:
+    {
+        $CURDIR/testVectors/transmitSmallString.cbor  transmitSmallString.cbor
+        $CURDIR/testVectors/getSmallString.cbor       getSmallString.cbor
+        $CURDIR/testVectors/get2kbString.cbor         get2kbString.cbor
+    }
+}
+
+cflags:
+{
+    -I${LEGATO_ROOT}/3rdParty/tinycbor/src
+}
+
+ldflags:
+{
+    -L${LEGATO_BUILD}/3rdParty/lib
+}
